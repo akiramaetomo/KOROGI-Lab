@@ -1,0 +1,1890 @@
+{
+  "formatVersion": "KOROGI-Lab/session-v8",
+  "name": "Akino-mushi",
+  "savedAt": "2026-09-22T16:07:10.084Z",
+  "channels": [
+    {
+      "id": "1",
+      "gainDb": -20.7,
+      "muted": false,
+      "balance": 1,
+      "pan": 0,
+      "timbre": {
+        "formatVersion": "KOROGI-Lab/timbre-v7",
+        "name": "Kogata-Kantan_many",
+        "settings": {
+          "blocksEnabled": {
+            "osc1": true,
+            "osc2": false,
+            "penv": false,
+            "mod": false,
+            "filter1": false,
+            "filter2": false,
+            "aenv": true
+          },
+          "phaseMode": "sync",
+          "osc1": {
+            "sourceType": "sine",
+            "baseFrequencyHz": 2450,
+            "dutyRatio": 0.5
+          },
+          "osc2": {
+            "sourceType": "sine",
+            "baseFrequencyHz": 30,
+            "dutyRatio": 0.5
+          },
+          "pitchEnvelope": {
+            "amount": 0,
+            "transitionTimeSec": 0.05
+          },
+          "mod": {
+            "mode": "am",
+            "amDepth": 0.5,
+            "amOffset": 1,
+            "fmDepthCent": 100
+          },
+          "filter1": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 1000,
+            "q": 0.707
+          },
+          "filter2": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 1000,
+            "q": 0.707
+          },
+          "filter2Route": "mod",
+          "filter1CutoffDepthCent": 1200,
+          "ampEnvelope": {
+            "attackSec": 0.005,
+            "decaySec": 0.006,
+            "sustain": 1,
+            "releaseSec": 0.005,
+            "attackCurve": "linear",
+            "decayCurve": "linear",
+            "releaseCurve": "linear",
+            "mode": "one-shot"
+          },
+          "fx1": {
+            "enabled": true,
+            "type": "distortion",
+            "distortionDriveDb": 14,
+            "distortionWet": 0.5,
+            "delayTimeSec": 0.25,
+            "delayFeedback": 0.3,
+            "delayWet": 0.25,
+            "chorusRateHz": 0.8,
+            "chorusDepthSec": 0.004,
+            "chorusWet": 0.25,
+            "reverbDecaySec": 1.5,
+            "reverbWet": 0.25
+          },
+          "autoTrigger": {
+            "tonSec": 0.01,
+            "toffSec": 0.077,
+            "oneShotRepeatSec": 0.5
+          },
+          "burst": {
+            "enabled": true,
+            "pulseCountMin": 3,
+            "pulseCountMax": 3,
+            "pulseIntervalSec": 0.023,
+            "pulseIntervalJitter": 0.05,
+            "groupPeriodSec": 0.087,
+            "groupPeriodJitter": 0.13
+          }
+        },
+        "detuneRangeCent": 0,
+        "detuneNormalized": 0,
+        "patterns": [
+          {
+            "id": "user-1",
+            "recording": null
+          },
+          {
+            "id": "user-2",
+            "recording": null
+          }
+        ],
+        "playbackSource": {
+          "kind": "auto"
+        }
+      }
+    },
+    {
+      "id": "2",
+      "gainDb": -16,
+      "muted": false,
+      "balance": 0.06,
+      "pan": -0.44,
+      "timbre": {
+        "formatVersion": "KOROGI-Lab/timbre-v7",
+        "name": "Suzu-Mushi-1",
+        "settings": {
+          "blocksEnabled": {
+            "osc1": true,
+            "osc2": true,
+            "penv": false,
+            "mod": true,
+            "filter1": true,
+            "filter2": true,
+            "aenv": true
+          },
+          "phaseMode": "sync",
+          "osc1": {
+            "sourceType": "sawtooth",
+            "baseFrequencyHz": 4500,
+            "dutyRatio": 0.5
+          },
+          "osc2": {
+            "sourceType": "square",
+            "baseFrequencyHz": 28,
+            "dutyRatio": 0.5
+          },
+          "pitchEnvelope": {
+            "amount": 0.009000000000000001,
+            "transitionTimeSec": 0.08794
+          },
+          "mod": {
+            "mode": "am",
+            "amDepth": 1,
+            "amOffset": 1,
+            "fmDepthCent": 100
+          },
+          "filter1": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 6064,
+            "q": 0.1
+          },
+          "filter2": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 70.7,
+            "q": 0.707
+          },
+          "filter2Route": "mod",
+          "filter1CutoffDepthCent": 1200,
+          "ampEnvelope": {
+            "attackSec": 0.011640000000000001,
+            "decaySec": 0.0074,
+            "sustain": 0.36,
+            "releaseSec": 1.178,
+            "attackCurve": "linear",
+            "decayCurve": "linear",
+            "releaseCurve": "linear",
+            "mode": "gate"
+          },
+          "fx1": {
+            "enabled": true,
+            "type": "distortion",
+            "distortionDriveDb": 20,
+            "distortionWet": 0.73,
+            "delayTimeSec": 0.25,
+            "delayFeedback": 0.3,
+            "delayWet": 0.25,
+            "chorusRateHz": 0.8,
+            "chorusDepthSec": 0.004,
+            "chorusWet": 0.25,
+            "reverbDecaySec": 1.5,
+            "reverbWet": 0.25
+          },
+          "autoTrigger": {
+            "tonSec": 0.03529,
+            "toffSec": 2.02371,
+            "oneShotRepeatSec": 0.5
+          },
+          "burst": {
+            "enabled": false,
+            "pulseCountMin": 3,
+            "pulseCountMax": 3,
+            "pulseIntervalSec": 0.025,
+            "pulseIntervalJitter": 0,
+            "groupPeriodSec": 0.1,
+            "groupPeriodJitter": 0
+          }
+        },
+        "detuneRangeCent": 0,
+        "detuneNormalized": 0,
+        "patterns": [
+          {
+            "id": "user-1",
+            "recording": {
+              "durationSec": 30,
+              "selectionStartSec": 0,
+              "selectionEndSec": 30,
+              "gates": [
+                {
+                  "onSec": 0.9258956916100942,
+                  "offSec": 1.4831746031745752
+                },
+                {
+                  "onSec": 3.1288888888889232,
+                  "offSec": 3.941587301587333
+                },
+                {
+                  "onSec": 5.151927437641916,
+                  "offSec": 6.147482993197627
+                },
+                {
+                  "onSec": 7.253333333333558,
+                  "offSec": 8.382403628118027
+                },
+                {
+                  "onSec": 9.04126984127015,
+                  "offSec": 10.373514739228995
+                },
+                {
+                  "onSec": 10.881451247165842,
+                  "offSec": 12.393650793650977
+                },
+                {
+                  "onSec": 13.08444444444467,
+                  "offSec": 14.437006802721044
+                },
+                {
+                  "onSec": 15.441269841269786,
+                  "offSec": 16.253968253968196
+                },
+                {
+                  "onSec": 17.188571428571777,
+                  "offSec": 17.850340136054456
+                },
+                {
+                  "onSec": 18.895238095238255,
+                  "offSec": 20.256507936508115
+                },
+                {
+                  "onSec": 20.94730158730181,
+                  "offSec": 22.34920634920627
+                },
+                {
+                  "onSec": 23.010975056689404,
+                  "offSec": 24.401269841269823
+                },
+                {
+                  "onSec": 25.031111111111386,
+                  "offSec": 26.493968253968433
+                },
+                {
+                  "onSec": 27.785578231292675,
+                  "offSec": 28.74049886621333
+                }
+              ]
+            }
+          },
+          {
+            "id": "user-2",
+            "recording": null
+          }
+        ],
+        "playbackSource": {
+          "kind": "user",
+          "patternId": "user-1"
+        }
+      }
+    },
+    {
+      "id": "3",
+      "gainDb": -3.1,
+      "muted": false,
+      "balance": 0,
+      "pan": 0.33,
+      "timbre": {
+        "formatVersion": "KOROGI-Lab/timbre-v7",
+        "name": "Kane-tataki-1",
+        "settings": {
+          "blocksEnabled": {
+            "osc1": true,
+            "osc2": true,
+            "penv": false,
+            "mod": true,
+            "filter1": true,
+            "filter2": true,
+            "aenv": true
+          },
+          "phaseMode": "free",
+          "osc1": {
+            "sourceType": "sawtooth",
+            "baseFrequencyHz": 6060,
+            "dutyRatio": 0.5
+          },
+          "osc2": {
+            "sourceType": "sawtooth",
+            "baseFrequencyHz": 299.8,
+            "dutyRatio": 0.5
+          },
+          "pitchEnvelope": {
+            "amount": 0,
+            "transitionTimeSec": 0.05
+          },
+          "mod": {
+            "mode": "fm",
+            "amDepth": 1,
+            "amOffset": 0.5,
+            "fmDepthCent": 813
+          },
+          "filter1": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 11040,
+            "q": 0.707
+          },
+          "filter2": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 31.89,
+            "q": 1
+          },
+          "filter2Route": "mod",
+          "filter1CutoffDepthCent": 1200,
+          "ampEnvelope": {
+            "attackSec": 0.015,
+            "decaySec": 0.018,
+            "sustain": 1,
+            "releaseSec": 0.015,
+            "attackCurve": "linear",
+            "decayCurve": "linear",
+            "releaseCurve": "linear",
+            "mode": "one-shot"
+          },
+          "fx1": {
+            "enabled": false,
+            "type": "distortion",
+            "distortionDriveDb": 32,
+            "distortionWet": 0.6,
+            "delayTimeSec": 0.25,
+            "delayFeedback": 0.3,
+            "delayWet": 0.25,
+            "chorusRateHz": 0.8,
+            "chorusDepthSec": 0.004,
+            "chorusWet": 0.25,
+            "reverbDecaySec": 1.5,
+            "reverbWet": 0.25
+          },
+          "autoTrigger": {
+            "tonSec": 0.01,
+            "toffSec": 0.335,
+            "oneShotRepeatSec": 0.344756
+          },
+          "burst": {
+            "enabled": false,
+            "pulseCountMin": 3,
+            "pulseCountMax": 3,
+            "pulseIntervalSec": 0.025,
+            "pulseIntervalJitter": 0,
+            "groupPeriodSec": 0.1,
+            "groupPeriodJitter": 0
+          }
+        },
+        "detuneRangeCent": 0,
+        "detuneNormalized": 0,
+        "patterns": [
+          {
+            "id": "user-1",
+            "recording": {
+              "durationSec": 40,
+              "selectionStartSec": 0.631226953116053,
+              "selectionEndSec": 38.8520910631671,
+              "gates": [
+                {
+                  "onSec": 1.0768253968253703,
+                  "offSec": 1.1987301587300863
+                },
+                {
+                  "onSec": 1.4338321995464867,
+                  "offSec": 1.5557369614512027
+                },
+                {
+                  "onSec": 1.8082539682538936,
+                  "offSec": 1.9098412698413085
+                },
+                {
+                  "onSec": 2.1449433106574816,
+                  "offSec": 2.2465306122448965
+                },
+                {
+                  "onSec": 2.4990476190475874,
+                  "offSec": 2.5919274376417434
+                },
+                {
+                  "onSec": 2.864761904761963,
+                  "offSec": 2.9663492063491503
+                },
+                {
+                  "onSec": 3.221768707483079,
+                  "offSec": 3.3233560090702667
+                },
+                {
+                  "onSec": 3.5758730158729577,
+                  "offSec": 3.689070294784642
+                },
+                {
+                  "onSec": 3.941587301587333,
+                  "offSec": 4.0228571428572195
+                },
+                {
+                  "onSec": 4.2666666666666515,
+                  "offSec": 4.3885714285713675
+                },
+                {
+                  "onSec": 7.772879818593992,
+                  "offSec": 7.854149659863879
+                },
+                {
+                  "onSec": 8.126984126984098,
+                  "offSec": 8.228571428571513
+                },
+                {
+                  "onSec": 8.483990929705215,
+                  "offSec": 8.573968253968133
+                },
+                {
+                  "onSec": 8.829387755102061,
+                  "offSec": 8.910657596371948
+                },
+                {
+                  "onSec": 9.18349206349194,
+                  "offSec": 9.305396825396883
+                },
+                {
+                  "onSec": 9.540498866213056,
+                  "offSec": 9.65079365079373
+                },
+                {
+                  "onSec": 9.96716553287979,
+                  "offSec": 10.048435374149676
+                },
+                {
+                  "onSec": 10.312562358276637,
+                  "offSec": 10.422857142857083
+                },
+                {
+                  "onSec": 10.698594104308313,
+                  "offSec": 10.800181405895728
+                },
+                {
+                  "onSec": 11.04399092970516,
+                  "offSec": 11.174603174603135
+                },
+                {
+                  "onSec": 15.116190476190468,
+                  "offSec": 15.197460317460354
+                },
+                {
+                  "onSec": 15.493514739229113,
+                  "offSec": 15.60380952380956
+                },
+                {
+                  "onSec": 15.85922902494326,
+                  "offSec": 15.960816326530676
+                },
+                {
+                  "onSec": 16.224943310657636,
+                  "offSec": 16.346848072562352
+                },
+                {
+                  "onSec": 16.61968253968257,
+                  "offSec": 16.741587301587288
+                },
+                {
+                  "onSec": 16.96507936507942,
+                  "offSec": 17.098594104308404
+                },
+                {
+                  "onSec": 17.342403628117836,
+                  "offSec": 17.452698412698282
+                },
+                {
+                  "onSec": 17.72843537414974,
+                  "offSec": 17.838730158730186
+                },
+                {
+                  "onSec": 22.30857142857144,
+                  "offSec": 22.401451247165596
+                },
+                {
+                  "onSec": 22.653968253968287,
+                  "offSec": 22.755555555555475
+                },
+                {
+                  "onSec": 22.999365079365134,
+                  "offSec": 23.080634920634793
+                },
+                {
+                  "onSec": 23.35637188208625,
+                  "offSec": 23.44634920634917
+                },
+                {
+                  "onSec": 23.71047619047613,
+                  "offSec": 23.803356009070285
+                },
+                {
+                  "onSec": 24.076190476190504,
+                  "offSec": 24.16907029478466
+                },
+                {
+                  "onSec": 24.441904761904652,
+                  "offSec": 24.543492063492067
+                },
+                {
+                  "onSec": 24.79891156462577,
+                  "offSec": 24.888888888888914
+                },
+                {
+                  "onSec": 25.150113378684864,
+                  "offSec": 25.24589569161003
+                },
+                {
+                  "onSec": 25.51002267573699,
+                  "offSec": 25.59999999999991
+                },
+                {
+                  "onSec": 25.86412698412687,
+                  "offSec": 25.945396825396756
+                },
+                {
+                  "onSec": 26.241451247165514,
+                  "offSec": 26.343038548752702
+                },
+                {
+                  "onSec": 30.487800453514637,
+                  "offSec": 30.59809523809531
+                },
+                {
+                  "onSec": 30.86222222222227,
+                  "offSec": 30.97541950113373
+                },
+                {
+                  "onSec": 31.219229024943388,
+                  "offSec": 31.341133786848104
+                },
+                {
+                  "onSec": 31.564625850340008,
+                  "offSec": 31.695238095237983
+                },
+                {
+                  "onSec": 31.95065759637191,
+                  "offSec": 32.07256235827663
+                },
+                {
+                  "onSec": 32.30476190476179,
+                  "offSec": 32.406349206349205
+                },
+                {
+                  "onSec": 32.65015873015864,
+                  "offSec": 32.75174603174605
+                },
+                {
+                  "onSec": 33.00716553287975,
+                  "offSec": 33.10875283446717
+                },
+                {
+                  "onSec": 33.36126984126986,
+                  "offSec": 33.474467120181316
+                },
+                {
+                  "onSec": 33.72698412698401,
+                  "offSec": 33.84888888888895
+                },
+                {
+                  "onSec": 34.10430839002265,
+                  "offSec": 34.2146031746031
+                },
+                {
+                  "onSec": 34.47002267573703,
+                  "offSec": 34.580317460317474
+                },
+                {
+                  "onSec": 34.856054421768704,
+                  "offSec": 34.96634920634915
+                }
+              ]
+            }
+          },
+          {
+            "id": "user-2",
+            "recording": null
+          }
+        ],
+        "playbackSource": {
+          "kind": "user",
+          "patternId": "user-1"
+        }
+      }
+    },
+    {
+      "id": "4",
+      "gainDb": -12,
+      "muted": false,
+      "balance": 0,
+      "pan": -0.04,
+      "timbre": {
+        "formatVersion": "KOROGI-Lab/timbre-v7",
+        "name": "Ao-Matsumushi-1",
+        "settings": {
+          "blocksEnabled": {
+            "osc1": true,
+            "osc2": true,
+            "penv": true,
+            "mod": true,
+            "filter1": false,
+            "filter2": true,
+            "aenv": true
+          },
+          "phaseMode": "free",
+          "osc1": {
+            "sourceType": "square",
+            "baseFrequencyHz": 4094,
+            "dutyRatio": 0.5
+          },
+          "osc2": {
+            "sourceType": "square",
+            "baseFrequencyHz": 24,
+            "dutyRatio": 0.735
+          },
+          "pitchEnvelope": {
+            "amount": 0.028999999999999998,
+            "transitionTimeSec": 2.076
+          },
+          "mod": {
+            "mode": "am",
+            "amDepth": 1,
+            "amOffset": 0,
+            "fmDepthCent": 100
+          },
+          "filter1": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 1000,
+            "q": 0.707
+          },
+          "filter2": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 91.02,
+            "q": 3.95
+          },
+          "filter2Route": "mod",
+          "filter1CutoffDepthCent": 1200,
+          "ampEnvelope": {
+            "attackSec": 0.005,
+            "decaySec": 0.02,
+            "sustain": 0.8,
+            "releaseSec": 0.03,
+            "attackCurve": "exponential",
+            "decayCurve": "exponential",
+            "releaseCurve": "exponential",
+            "mode": "gate"
+          },
+          "fx1": {
+            "enabled": true,
+            "type": "distortion",
+            "distortionDriveDb": 9,
+            "distortionWet": 0.5,
+            "delayTimeSec": 0.25,
+            "delayFeedback": 0.3,
+            "delayWet": 0.25,
+            "chorusRateHz": 0.8,
+            "chorusDepthSec": 0.004,
+            "chorusWet": 0.25,
+            "reverbDecaySec": 1.5,
+            "reverbWet": 0.25
+          },
+          "autoTrigger": {
+            "tonSec": 0.25,
+            "toffSec": 0.25,
+            "oneShotRepeatSec": 0.5
+          },
+          "burst": {
+            "enabled": false,
+            "pulseCountMin": 3,
+            "pulseCountMax": 3,
+            "pulseIntervalSec": 0.025,
+            "pulseIntervalJitter": 0,
+            "groupPeriodSec": 0.1,
+            "groupPeriodJitter": 0
+          }
+        },
+        "detuneRangeCent": 0,
+        "detuneNormalized": 0,
+        "patterns": [
+          {
+            "id": "user-1",
+            "recording": {
+              "durationSec": 30,
+              "selectionStartSec": 0,
+              "selectionEndSec": 30,
+              "gates": [
+                {
+                  "onSec": 0.6559637188211127,
+                  "offSec": 1.448344671201994
+                },
+                {
+                  "onSec": 2.0665759637190604,
+                  "offSec": 2.899591836734544
+                },
+                {
+                  "onSec": 3.4394557823129617,
+                  "offSec": 5.256417233560114
+                },
+                {
+                  "onSec": 6.324535147392453,
+                  "offSec": 7.166258503401423
+                },
+                {
+                  "onSec": 7.8280272108845566,
+                  "offSec": 8.751020408163185
+                },
+                {
+                  "onSec": 9.433106575963848,
+                  "offSec": 11.51419501133796
+                },
+                {
+                  "onSec": 13.537233560090954,
+                  "offSec": 14.675011337868455
+                },
+                {
+                  "onSec": 15.090068027211146,
+                  "offSec": 16.976689342403915
+                },
+                {
+                  "onSec": 20.514829931973054,
+                  "offSec": 21.42911564625865
+                },
+                {
+                  "onSec": 21.937052154195044,
+                  "offSec": 23.18802721088423
+                },
+                {
+                  "onSec": 23.582766439909392,
+                  "offSec": 25.919274376417434
+                }
+              ]
+            }
+          },
+          {
+            "id": "user-2",
+            "recording": null
+          }
+        ],
+        "playbackSource": {
+          "kind": "user",
+          "patternId": "user-1"
+        }
+      }
+    },
+    {
+      "id": "5",
+      "gainDb": 0,
+      "muted": false,
+      "balance": 0,
+      "pan": -1,
+      "timbre": {
+        "formatVersion": "KOROGI-Lab/timbre-v7",
+        "name": "Korogi-Mitsukado-1",
+        "settings": {
+          "blocksEnabled": {
+            "osc1": true,
+            "osc2": true,
+            "penv": true,
+            "mod": true,
+            "filter1": false,
+            "filter2": true,
+            "aenv": true
+          },
+          "phaseMode": "free",
+          "osc1": {
+            "sourceType": "square",
+            "baseFrequencyHz": 5000,
+            "dutyRatio": 0.5
+          },
+          "osc2": {
+            "sourceType": "square",
+            "baseFrequencyHz": 66,
+            "dutyRatio": 0.5
+          },
+          "pitchEnvelope": {
+            "amount": 0,
+            "transitionTimeSec": 0.05
+          },
+          "mod": {
+            "mode": "am",
+            "amDepth": 1,
+            "amOffset": 1,
+            "fmDepthCent": 100
+          },
+          "filter1": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 1000,
+            "q": 0.707
+          },
+          "filter2": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 265.5,
+            "q": 0.707
+          },
+          "filter2Route": "mod",
+          "filter1CutoffDepthCent": 1200,
+          "ampEnvelope": {
+            "attackSec": 0.001,
+            "decaySec": 0.028,
+            "sustain": 0.8,
+            "releaseSec": 0.001,
+            "attackCurve": "linear",
+            "decayCurve": "linear",
+            "releaseCurve": "linear",
+            "mode": "one-shot"
+          },
+          "fx1": {
+            "enabled": false,
+            "type": "distortion",
+            "distortionDriveDb": 12,
+            "distortionWet": 0.5,
+            "delayTimeSec": 0.25,
+            "delayFeedback": 0.3,
+            "delayWet": 0.25,
+            "chorusRateHz": 0.8,
+            "chorusDepthSec": 0.004,
+            "chorusWet": 0.25,
+            "reverbDecaySec": 1.5,
+            "reverbWet": 0.25
+          },
+          "autoTrigger": {
+            "tonSec": 0.03,
+            "toffSec": 0.12,
+            "oneShotRepeatSec": 0.5
+          },
+          "burst": {
+            "enabled": false,
+            "pulseCountMin": 3,
+            "pulseCountMax": 3,
+            "pulseIntervalSec": 0.025,
+            "pulseIntervalJitter": 0,
+            "groupPeriodSec": 0.1,
+            "groupPeriodJitter": 0
+          }
+        },
+        "detuneRangeCent": 0,
+        "detuneNormalized": 0,
+        "patterns": [
+          {
+            "id": "user-1",
+            "recording": {
+              "durationSec": 41.4476190476189,
+              "selectionStartSec": 1.9618516327163,
+              "selectionEndSec": 37.0860946343671,
+              "gates": [
+                {
+                  "onSec": 2.1130158730156836,
+                  "offSec": 2.226213151927368
+                },
+                {
+                  "onSec": 2.2755555555550018,
+                  "offSec": 2.377142857142644
+                },
+                {
+                  "onSec": 3.393015873015429,
+                  "offSec": 3.4946031746030712
+                },
+                {
+                  "onSec": 3.5671655328796987,
+                  "offSec": 3.6687528344664315
+                },
+                {
+                  "onSec": 3.7093877551014884,
+                  "offSec": 3.8109750566891307
+                },
+                {
+                  "onSec": 5.31446712018078,
+                  "offSec": 5.445079365079437
+                },
+                {
+                  "onSec": 5.485714285713584,
+                  "offSec": 5.587301587301226
+                },
+                {
+                  "onSec": 5.639546485260325,
+                  "offSec": 5.7498412698405446
+                },
+                {
+                  "onSec": 7.131428571427932,
+                  "offSec": 7.2330158730155745
+                },
+                {
+                  "onSec": 7.2852607709746735,
+                  "offSec": 7.395555555554893
+                },
+                {
+                  "onSec": 7.447800453513992,
+                  "offSec": 7.549387755101634
+                },
+                {
+                  "onSec": 9.488253968253957,
+                  "offSec": 9.62176870748226
+                },
+                {
+                  "onSec": 9.697233560090353,
+                  "offSec": 9.824943310657545
+                },
+                {
+                  "onSec": 9.874285714285179,
+                  "offSec": 9.975873015872821
+                },
+                {
+                  "onSec": 10.036825396825407,
+                  "offSec": 10.118095238094611
+                },
+                {
+                  "onSec": 12.007619047618391,
+                  "offSec": 12.109206349206033
+                },
+                {
+                  "onSec": 12.161451247165132,
+                  "offSec": 12.263038548752775
+                },
+                {
+                  "onSec": 13.145396825396347,
+                  "offSec": 13.238276643990503
+                },
+                {
+                  "onSec": 13.299229024943088,
+                  "offSec": 13.40081632653073
+                },
+                {
+                  "onSec": 13.461768707482406,
+                  "offSec": 13.572063492063535
+                },
+                {
+                  "onSec": 14.709841269840581,
+                  "offSec": 14.802721088434737
+                },
+                {
+                  "onSec": 14.863673469387322,
+                  "offSec": 15.005895691610021
+                },
+                {
+                  "onSec": 16.65160997732437,
+                  "offSec": 16.753197278911102
+                },
+                {
+                  "onSec": 16.814149659863688,
+                  "offSec": 16.91573696145133
+                },
+                {
+                  "onSec": 16.965079365078964,
+                  "offSec": 17.098594104308177
+                },
+                {
+                  "onSec": 18.703673469387468,
+                  "offSec": 18.80526077097511
+                },
+                {
+                  "onSec": 18.866213151926786,
+                  "offSec": 18.996825396825443
+                },
+                {
+                  "onSec": 20.085260770974855,
+                  "offSec": 20.16653061224497
+                },
+                {
+                  "onSec": 20.227482993196645,
+                  "offSec": 20.337777777777774
+                },
+                {
+                  "onSec": 20.390022675736873,
+                  "offSec": 20.52063492063462
+                },
+                {
+                  "onSec": 22.587210884353226,
+                  "offSec": 22.69460317460289
+                },
+                {
+                  "onSec": 22.755555555555475,
+                  "offSec": 22.857142857142208
+                },
+                {
+                  "onSec": 22.909387755101307,
+                  "offSec": 23.01097505668895
+                },
+                {
+                  "onSec": 23.071927437641534,
+                  "offSec": 23.193832199545795
+                },
+                {
+                  "onSec": 24.08780045351432,
+                  "offSec": 24.198095238094538
+                },
+                {
+                  "onSec": 24.259047619047124,
+                  "offSec": 24.35192743764128
+                },
+                {
+                  "onSec": 24.412879818593865,
+                  "offSec": 24.514467120181507
+                },
+                {
+                  "onSec": 24.58412698412667,
+                  "offSec": 24.677006802720825
+                },
+                {
+                  "onSec": 24.73795918367341,
+                  "offSec": 24.839546485260144
+                },
+                {
+                  "onSec": 26.20952380952349,
+                  "offSec": 26.322721088435173
+                },
+                {
+                  "onSec": 26.38367346938776,
+                  "offSec": 26.464943310656963
+                },
+                {
+                  "onSec": 26.534603174603035,
+                  "offSec": 26.62748299319719
+                },
+                {
+                  "onSec": 26.708752834466395,
+                  "offSec": 26.778412698412467
+                },
+                {
+                  "onSec": 26.850975056689094,
+                  "offSec": 26.940952380951785
+                },
+                {
+                  "onSec": 27.84653061224435,
+                  "offSec": 27.948117913831993
+                },
+                {
+                  "onSec": 28.00907029478458,
+                  "offSec": 28.11065759637131
+                },
+                {
+                  "onSec": 28.171609977323897,
+                  "offSec": 28.27319727891154
+                },
+                {
+                  "onSec": 29.927619047618464,
+                  "offSec": 30.02049886621262
+                },
+                {
+                  "onSec": 30.069841269841163,
+                  "offSec": 30.191746031745424
+                },
+                {
+                  "onSec": 31.106031746031476,
+                  "offSec": 31.20761904761912
+                },
+                {
+                  "onSec": 31.280181405895746,
+                  "offSec": 31.38176870748248
+                },
+                {
+                  "onSec": 31.431111111111022,
+                  "offSec": 31.553015873015283
+                },
+                {
+                  "onSec": 32.69079365079324,
+                  "offSec": 32.80399092970492
+                },
+                {
+                  "onSec": 32.85333333333347,
+                  "offSec": 32.97523809523773
+                },
+                {
+                  "onSec": 34.58031746031702,
+                  "offSec": 34.6935147392287
+                },
+                {
+                  "onSec": 34.75446712018129,
+                  "offSec": 34.85605442176802
+                },
+                {
+                  "onSec": 34.905396825396565,
+                  "offSec": 35.01859410430825
+                }
+              ]
+            }
+          },
+          {
+            "id": "user-2",
+            "recording": null
+          }
+        ],
+        "playbackSource": {
+          "kind": "user",
+          "patternId": "user-1"
+        }
+      }
+    },
+    {
+      "id": "6",
+      "gainDb": -8.1,
+      "muted": false,
+      "balance": 0.56,
+      "pan": 0.68,
+      "timbre": {
+        "formatVersion": "KOROGI-Lab/timbre-v7",
+        "name": "Korogi-Okame-1",
+        "settings": {
+          "blocksEnabled": {
+            "osc1": true,
+            "osc2": true,
+            "penv": true,
+            "mod": true,
+            "filter1": true,
+            "filter2": true,
+            "aenv": true
+          },
+          "phaseMode": "free",
+          "osc1": {
+            "sourceType": "sawtooth",
+            "baseFrequencyHz": 3800,
+            "dutyRatio": 0.5
+          },
+          "osc2": {
+            "sourceType": "square",
+            "baseFrequencyHz": 63.93,
+            "dutyRatio": 0.5
+          },
+          "pitchEnvelope": {
+            "amount": -0.01,
+            "transitionTimeSec": 0.05
+          },
+          "mod": {
+            "mode": "am",
+            "amDepth": 1,
+            "amOffset": 1,
+            "fmDepthCent": 100
+          },
+          "filter1": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 3584,
+            "q": 0.707
+          },
+          "filter2": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 60.22,
+            "q": 0.1
+          },
+          "filter2Route": "mod",
+          "filter1CutoffDepthCent": 1200,
+          "ampEnvelope": {
+            "attackSec": 0.02,
+            "decaySec": 0.07,
+            "sustain": 1,
+            "releaseSec": 0.01,
+            "attackCurve": "linear",
+            "decayCurve": "linear",
+            "releaseCurve": "linear",
+            "mode": "one-shot"
+          },
+          "fx1": {
+            "enabled": true,
+            "type": "distortion",
+            "distortionDriveDb": 8,
+            "distortionWet": 0.5,
+            "delayTimeSec": 0.25,
+            "delayFeedback": 0.3,
+            "delayWet": 0.25,
+            "chorusRateHz": 0.8,
+            "chorusDepthSec": 0.004,
+            "chorusWet": 0.25,
+            "reverbDecaySec": 1.5,
+            "reverbWet": 0.25
+          },
+          "autoTrigger": {
+            "tonSec": 0.25,
+            "toffSec": 0.25,
+            "oneShotRepeatSec": 0.5
+          },
+          "burst": {
+            "enabled": false,
+            "pulseCountMin": 3,
+            "pulseCountMax": 3,
+            "pulseIntervalSec": 0.025,
+            "pulseIntervalJitter": 0,
+            "groupPeriodSec": 0.1,
+            "groupPeriodJitter": 0
+          }
+        },
+        "detuneRangeCent": 0,
+        "detuneNormalized": 0,
+        "patterns": [
+          {
+            "id": "user-1",
+            "recording": {
+              "durationSec": 43.966984126984244,
+              "selectionStartSec": 3.32883323740564,
+              "selectionEndSec": 43.966984126984244,
+              "gates": [
+                {
+                  "onSec": 3.7993650793650886,
+                  "offSec": 3.9531972789109204
+                },
+                {
+                  "onSec": 4.0838095238095775,
+                  "offSec": 4.246349206348896
+                },
+                {
+                  "onSec": 4.400181405895637,
+                  "offSec": 4.568526077096976
+                },
+                {
+                  "onSec": 4.713650793650231,
+                  "offSec": 4.85587301587293
+                },
+                {
+                  "onSec": 5.018412698412249,
+                  "offSec": 5.140317460317419
+                },
+                {
+                  "onSec": 5.294149659864161,
+                  "offSec": 5.456689342403479
+                },
+                {
+                  "onSec": 5.607619047618755,
+                  "offSec": 5.761451247165496
+                },
+                {
+                  "onSec": 5.912380952380772,
+                  "offSec": 6.054603174602562
+                },
+                {
+                  "onSec": 6.196825396825261,
+                  "offSec": 6.3506575963720024
+                },
+                {
+                  "onSec": 6.492879818593792,
+                  "offSec": 6.643809523809068
+                },
+                {
+                  "onSec": 6.7976417233558095,
+                  "offSec": 6.939863945577599
+                },
+                {
+                  "onSec": 7.070476190476256,
+                  "offSec": 7.224308390022088
+                },
+                {
+                  "onSec": 7.354920634920745,
+                  "offSec": 7.514557823128598
+                },
+                {
+                  "onSec": 7.671292517006805,
+                  "offSec": 7.822222222222081
+                },
+                {
+                  "onSec": 7.984761904761399,
+                  "offSec": 8.129886621314654
+                },
+                {
+                  "onSec": 8.277913832199374,
+                  "offSec": 8.411428571428587
+                },
+                {
+                  "onSec": 8.553650793650377,
+                  "offSec": 8.707482993197118
+                },
+                {
+                  "onSec": 8.849705215418908,
+                  "offSec": 9.000634920635093
+                },
+                {
+                  "onSec": 9.154467120180925,
+                  "offSec": 9.305396825396201
+                },
+                {
+                  "onSec": 9.418594104307886,
+                  "offSec": 9.581133786848113
+                },
+                {
+                  "onSec": 9.73206349206339,
+                  "offSec": 9.894603174602707
+                },
+                {
+                  "onSec": 10.036825396825407,
+                  "offSec": 10.210975056688767
+                },
+                {
+                  "onSec": 10.341587301587424,
+                  "offSec": 10.504126984126742
+                },
+                {
+                  "onSec": 10.657959183673483,
+                  "offSec": 10.805986394557294
+                },
+                {
+                  "onSec": 10.942403628117972,
+                  "offSec": 11.093333333333248
+                },
+                {
+                  "onSec": 11.226848072562461,
+                  "offSec": 11.38938775510178
+                },
+                {
+                  "onSec": 12.811609977324224,
+                  "offSec": 12.982857142857029
+                },
+                {
+                  "onSec": 13.125079365078818,
+                  "offSec": 13.27891156462556
+                },
+                {
+                  "onSec": 13.429841269840836,
+                  "offSec": 13.583673469387577
+                },
+                {
+                  "onSec": 13.725895691609367,
+                  "offSec": 13.868117913832066
+                },
+                {
+                  "onSec": 14.010340136053856,
+                  "offSec": 14.152562358276555
+                },
+                {
+                  "onSec": 14.26575963718824,
+                  "offSec": 14.416689342403515
+                },
+                {
+                  "onSec": 14.558911564625305,
+                  "offSec": 14.70984126984149
+                },
+                {
+                  "onSec": 14.831746031745752,
+                  "offSec": 14.985578231292493
+                },
+                {
+                  "onSec": 15.11619047619024,
+                  "offSec": 15.270022675736982
+                },
+                {
+                  "onSec": 15.380317460317201,
+                  "offSec": 15.534149659863942
+                },
+                {
+                  "onSec": 15.656054421768204,
+                  "offSec": 15.818594104308431
+                },
+                {
+                  "onSec": 15.98113378684775,
+                  "offSec": 16.143673469387977
+                },
+                {
+                  "onSec": 16.285895691609767,
+                  "offSec": 16.45714285714257
+                },
+                {
+                  "onSec": 16.59936507936527,
+                  "offSec": 16.74158730158706
+                },
+                {
+                  "onSec": 16.875102040816273,
+                  "offSec": 17.046349206349078
+                },
+                {
+                  "onSec": 17.159546485260762,
+                  "offSec": 17.313378684806594
+                },
+                {
+                  "onSec": 17.46430839002278,
+                  "offSec": 17.626848072562098
+                },
+                {
+                  "onSec": 17.769070294784797,
+                  "offSec": 17.931609977324115
+                },
+                {
+                  "onSec": 18.062222222221862,
+                  "offSec": 18.24507936507871
+                },
+                {
+                  "onSec": 18.39891156462545,
+                  "offSec": 18.570158730158255
+                },
+                {
+                  "onSec": 18.712380952380954,
+                  "offSec": 18.874920634920272
+                },
+                {
+                  "onSec": 19.049070294784542,
+                  "offSec": 19.17968253968229
+                },
+                {
+                  "onSec": 19.33351473922903,
+                  "offSec": 19.47573696145082
+                },
+                {
+                  "onSec": 20.924081632652815,
+                  "offSec": 21.080816326530112
+                },
+                {
+                  "onSec": 21.21142857142877,
+                  "offSec": 21.35365079365056
+                },
+                {
+                  "onSec": 21.47555555555573,
+                  "offSec": 21.638095238095048
+                },
+                {
+                  "onSec": 21.780317460316837,
+                  "offSec": 21.922539682539536
+                },
+                {
+                  "onSec": 22.076371882086278,
+                  "offSec": 22.218594104308067
+                },
+                {
+                  "onSec": 22.360816326530767,
+                  "offSec": 22.491428571428514
+                },
+                {
+                  "onSec": 22.645260770975256,
+                  "offSec": 22.79619047619053
+                },
+                {
+                  "onSec": 22.929705215418835,
+                  "offSec": 23.08063492063502
+                },
+                {
+                  "onSec": 23.202539682539282,
+                  "offSec": 23.34476190476198
+                },
+                {
+                  "onSec": 23.48698412698377,
+                  "offSec": 23.62920634920647
+                },
+                {
+                  "onSec": 23.75111111111073,
+                  "offSec": 23.91365079365096
+                },
+                {
+                  "onSec": 24.026848072561734,
+                  "offSec": 24.18938775510196
+                },
+                {
+                  "onSec": 24.33160997732375,
+                  "offSec": 24.514467120181507
+                },
+                {
+                  "onSec": 24.665396825396783,
+                  "offSec": 24.819229024943525
+                },
+                {
+                  "onSec": 24.9701587301588,
+                  "offSec": 25.123990929704632
+                },
+                {
+                  "onSec": 25.26621315192733,
+                  "offSec": 25.42875283446665
+                },
+                {
+                  "onSec": 25.559365079365307,
+                  "offSec": 25.701587301587097
+                },
+                {
+                  "onSec": 25.875736961451366,
+                  "offSec": 26.017959183673156
+                },
+                {
+                  "onSec": 26.168888888888432,
+                  "offSec": 26.33142857142866
+                },
+                {
+                  "onSec": 26.493968253967978,
+                  "offSec": 26.64780045351472
+                },
+                {
+                  "onSec": 26.778412698412467,
+                  "offSec": 26.940952380951785
+                },
+                {
+                  "onSec": 27.103492063492013,
+                  "offSec": 27.257324263038754
+                },
+                {
+                  "onSec": 27.40825396825403,
+                  "offSec": 27.570793650793348
+                },
+                {
+                  "onSec": 27.683990929705033,
+                  "offSec": 27.83492063492031
+                },
+                {
+                  "onSec": 27.95682539682548,
+                  "offSec": 28.11065759637131
+                },
+                {
+                  "onSec": 29.08589569160995,
+                  "offSec": 29.236825396825225
+                },
+                {
+                  "onSec": 29.410975056689495,
+                  "offSec": 29.541587301587242
+                },
+                {
+                  "onSec": 29.663492063491503,
+                  "offSec": 29.823129251700266
+                },
+                {
+                  "onSec": 29.947936507935992,
+                  "offSec": 30.122086167800262
+                },
+                {
+                  "onSec": 30.28462585033958,
+                  "offSec": 30.447165532879808
+                },
+                {
+                  "onSec": 30.63873015873014,
+                  "offSec": 30.80126984126946
+                },
+                {
+                  "onSec": 30.9551020408162,
+                  "offSec": 31.106031746031476
+                },
+                {
+                  "onSec": 31.216326530611695,
+                  "offSec": 31.370158730158437
+                },
+                {
+                  "onSec": 31.486258503401586,
+                  "offSec": 31.634285714285397
+                },
+                {
+                  "onSec": 31.776507936508096,
+                  "offSec": 31.90421768707438
+                },
+                {
+                  "onSec": 32.092879818594156,
+                  "offSec": 32.255419501133474
+                },
+                {
+                  "onSec": 32.4179591836737,
+                  "offSec": 32.58049886621302
+                },
+                {
+                  "onSec": 32.74303854875234,
+                  "offSec": 32.91428571428514
+                },
+                {
+                  "onSec": 33.08843537414941,
+                  "offSec": 33.25968253968222
+                },
+                {
+                  "onSec": 33.36126984126986,
+                  "offSec": 33.52380952380918
+                },
+                {
+                  "onSec": 33.65732426303839,
+                  "offSec": 33.808253968253666
+                },
+                {
+                  "onSec": 33.94176870748288,
+                  "offSec": 34.092698412698155
+                },
+                {
+                  "onSec": 34.234920634920854,
+                  "offSec": 34.388752834466686
+                },
+                {
+                  "onSec": 34.57741496598646,
+                  "offSec": 34.75446712018129
+                },
+                {
+                  "onSec": 34.847346938775445,
+                  "offSec": 34.98666666666668
+                },
+                {
+                  "onSec": 36.40888888888912,
+                  "offSec": 36.583038548752484
+                },
+                {
+                  "onSec": 36.74557823129271,
+                  "offSec": 36.87619047619046
+                },
+                {
+                  "onSec": 37.03002267573629,
+                  "offSec": 37.19256235827652
+                },
+                {
+                  "onSec": 37.36380952380932,
+                  "offSec": 37.52634920634864
+                },
+                {
+                  "onSec": 37.68018140589538,
+                  "offSec": 37.83111111111066
+                },
+                {
+                  "onSec": 38.00526077097493,
+                  "offSec": 38.167800453514246
+                },
+                {
+                  "onSec": 38.310022675736946,
+                  "offSec": 38.452244897958735
+                },
+                {
+                  "onSec": 38.594467120181434,
+                  "offSec": 38.72507936507918
+                },
+                {
+                  "onSec": 38.864399092970416,
+                  "offSec": 39.02113378684771
+                },
+                {
+                  "onSec": 39.17206349206299,
+                  "offSec": 39.31428571428569
+                },
+                {
+                  "onSec": 39.47682539682501,
+                  "offSec": 39.63065759637175
+                },
+                {
+                  "onSec": 39.793197278911066,
+                  "offSec": 39.94412698412634
+                },
+                {
+                  "onSec": 40.077641723355555,
+                  "offSec": 40.24018140589578
+                },
+                {
+                  "onSec": 40.38240362811757,
+                  "offSec": 40.53333333333285
+                },
+                {
+                  "onSec": 40.69877551020363,
+                  "offSec": 40.858412698412394
+                },
+                {
+                  "onSec": 40.980317460317565,
+                  "offSec": 41.14285714285688
+                }
+              ]
+            }
+          },
+          {
+            "id": "user-2",
+            "recording": null
+          }
+        ],
+        "playbackSource": {
+          "kind": "user",
+          "patternId": "user-1"
+        }
+      }
+    },
+    {
+      "id": "7",
+      "gainDb": -7.1,
+      "muted": false,
+      "balance": 1,
+      "pan": -0.45,
+      "timbre": {
+        "formatVersion": "KOROGI-Lab/timbre-v7",
+        "name": "Kubi-Kirigisu",
+        "settings": {
+          "blocksEnabled": {
+            "osc1": true,
+            "osc2": true,
+            "penv": true,
+            "mod": true,
+            "filter1": true,
+            "filter2": false,
+            "aenv": true
+          },
+          "phaseMode": "free",
+          "osc1": {
+            "sourceType": "sine",
+            "baseFrequencyHz": 12000,
+            "dutyRatio": 0.5
+          },
+          "osc2": {
+            "sourceType": "triangle",
+            "baseFrequencyHz": 73,
+            "dutyRatio": 0.005
+          },
+          "pitchEnvelope": {
+            "amount": 0,
+            "transitionTimeSec": 0.05
+          },
+          "mod": {
+            "mode": "fm",
+            "amDepth": 1,
+            "amOffset": 1,
+            "fmDepthCent": 620
+          },
+          "filter1": {
+            "type": "highpass",
+            "order": 2,
+            "frequencyHz": 12719.6,
+            "q": 17.27
+          },
+          "filter2": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 1000,
+            "q": 0.707
+          },
+          "filter2Route": "mod",
+          "filter1CutoffDepthCent": 1200,
+          "ampEnvelope": {
+            "attackSec": 0.005,
+            "decaySec": 0.02,
+            "sustain": 1,
+            "releaseSec": 0.03,
+            "attackCurve": "linear",
+            "decayCurve": "linear",
+            "releaseCurve": "linear",
+            "mode": "gate"
+          },
+          "fx1": {
+            "enabled": false,
+            "type": "distortion",
+            "distortionDriveDb": 11,
+            "distortionWet": 0.58,
+            "delayTimeSec": 0.25,
+            "delayFeedback": 0.3,
+            "delayWet": 0.25,
+            "chorusRateHz": 0.8,
+            "chorusDepthSec": 0.004,
+            "chorusWet": 0.25,
+            "reverbDecaySec": 1.5,
+            "reverbWet": 0.25
+          },
+          "autoTrigger": {
+            "tonSec": 2.631,
+            "toffSec": 0.374,
+            "oneShotRepeatSec": 0.5
+          },
+          "burst": {
+            "enabled": false,
+            "pulseCountMin": 3,
+            "pulseCountMax": 3,
+            "pulseIntervalSec": 0.025,
+            "pulseIntervalJitter": 0,
+            "groupPeriodSec": 0.1,
+            "groupPeriodJitter": 0
+          }
+        },
+        "detuneRangeCent": 0,
+        "detuneNormalized": 0,
+        "patterns": [
+          {
+            "id": "user-1",
+            "recording": {
+              "durationSec": 50,
+              "selectionStartSec": 0,
+              "selectionEndSec": 50,
+              "gates": [
+                {
+                  "onSec": 1.036190476190768,
+                  "offSec": 16.790929705215603
+                },
+                {
+                  "onSec": 20.651247165533277,
+                  "offSec": 34.40036281179164
+                },
+                {
+                  "onSec": 37.16063492063495,
+                  "offSec": 50
+                }
+              ]
+            }
+          },
+          {
+            "id": "user-2",
+            "recording": null
+          }
+        ],
+        "playbackSource": {
+          "kind": "user",
+          "patternId": "user-1"
+        }
+      }
+    },
+    {
+      "id": "8",
+      "gainDb": 0,
+      "muted": false,
+      "balance": 0.5,
+      "pan": 0,
+      "timbre": null
+    }
+  ],
+  "near": {
+    "gainDb": 0,
+    "gainEnabled": true,
+    "effects": [
+      {
+        "enabled": true,
+        "type": "delay",
+        "distortionDriveDb": 12,
+        "distortionWet": 0.5,
+        "delayTimeSec": 0.014539999999999999,
+        "delayFeedback": 0.2,
+        "delayWet": 0.28,
+        "chorusRateHz": 0.8,
+        "chorusDepthSec": 0.004,
+        "chorusWet": 0.25,
+        "reverbDecaySec": 1.5,
+        "reverbWet": 0.25
+      },
+      {
+        "enabled": false,
+        "type": "reverb",
+        "distortionDriveDb": 12,
+        "distortionWet": 0.5,
+        "delayTimeSec": 0.25,
+        "delayFeedback": 0.3,
+        "delayWet": 0.25,
+        "chorusRateHz": 0.8,
+        "chorusDepthSec": 0.004,
+        "chorusWet": 0.25,
+        "reverbDecaySec": 1.5,
+        "reverbWet": 0.25
+      }
+    ]
+  },
+  "far": {
+    "gainDb": 0,
+    "gainEnabled": true,
+    "effects": [
+      {
+        "enabled": true,
+        "type": "delay",
+        "distortionDriveDb": 12,
+        "distortionWet": 0.5,
+        "delayTimeSec": 0.5785,
+        "delayFeedback": 0.39,
+        "delayWet": 0.31,
+        "chorusRateHz": 0.8,
+        "chorusDepthSec": 0.004,
+        "chorusWet": 0.62,
+        "reverbDecaySec": 1.5,
+        "reverbWet": 0.25
+      },
+      {
+        "enabled": true,
+        "type": "delay",
+        "distortionDriveDb": 12,
+        "distortionWet": 0.5,
+        "delayTimeSec": 0.9345,
+        "delayFeedback": 0.38,
+        "delayWet": 0.26,
+        "chorusRateHz": 0.8,
+        "chorusDepthSec": 0.004,
+        "chorusWet": 0.25,
+        "reverbDecaySec": 1.5,
+        "reverbWet": 1
+      }
+    ]
+  },
+  "crossfade": 0.5,
+  "masterGainDb": -12,
+  "masterMuted": false
+}

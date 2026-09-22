@@ -1,0 +1,8 @@
+{
+  "description": "Unmodified AEnv in Chrome OfflineAudioContext. Constant input, A/D=1ms, S=1, R=1000ms; OFF submitted 75ms ahead. Regression evidence, not expected output.",
+  "measurements": [
+    { "tonSec": 0.5, "gainAtOff": 0.046797964721918106, "expectedGainAtOff": 1 },
+    { "tonSec": 0.2, "gainAtOff": 0.21822181344032288, "expectedGainAtOff": 1 },
+    { "tonSec": 0.1, "gainAtOff": 0.4395287036895752, "expectedGainAtOff": 1 }
+  ]
+}

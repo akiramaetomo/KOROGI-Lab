@@ -1,0 +1,385 @@
+{
+  "formatVersion": "KOROGI-Lab/session-v8",
+  "name": "Filter-Acid2",
+  "savedAt": "2026-09-22T16:34:43.068Z",
+  "channels": [
+    {
+      "id": "1",
+      "gainDb": -6.5,
+      "muted": false,
+      "balance": 0.5,
+      "pan": 0,
+      "timbre": {
+        "formatVersion": "KOROGI-Lab/timbre-v7",
+        "name": "Demo-filter-acid2",
+        "settings": {
+          "blocksEnabled": {
+            "osc1": true,
+            "osc2": true,
+            "penv": false,
+            "mod": false,
+            "filter1": true,
+            "filter2": true,
+            "aenv": true
+          },
+          "phaseMode": "free",
+          "osc1": {
+            "sourceType": "sawtooth",
+            "baseFrequencyHz": 200,
+            "dutyRatio": 0.5
+          },
+          "osc2": {
+            "sourceType": "white-noise",
+            "baseFrequencyHz": 20.35,
+            "dutyRatio": 0.5
+          },
+          "pitchEnvelope": {
+            "amount": 0,
+            "transitionTimeSec": 0.05
+          },
+          "mod": {
+            "mode": "am",
+            "amDepth": 0.5,
+            "amOffset": 1,
+            "fmDepthCent": 100
+          },
+          "filter1": {
+            "type": "lowpass",
+            "order": 4,
+            "frequencyHz": 404,
+            "q": 16.69
+          },
+          "filter2": {
+            "type": "lowpass",
+            "order": 4,
+            "frequencyHz": 36.16,
+            "q": 19.47
+          },
+          "filter2Route": "filter1-cutoff",
+          "filter1CutoffDepthCent": 3244,
+          "ampEnvelope": {
+            "attackSec": 0.001,
+            "decaySec": 0.060399999999999995,
+            "sustain": 1,
+            "releaseSec": 0.001,
+            "attackCurve": "exponential",
+            "decayCurve": "exponential",
+            "releaseCurve": "exponential",
+            "mode": "gate"
+          },
+          "fx1": {
+            "enabled": false,
+            "type": "distortion",
+            "distortionDriveDb": 10,
+            "distortionWet": 0.5,
+            "delayTimeSec": 0.25,
+            "delayFeedback": 0.3,
+            "delayWet": 0.25,
+            "chorusRateHz": 0.8,
+            "chorusDepthSec": 0.004,
+            "chorusWet": 0.25,
+            "reverbDecaySec": 1.5,
+            "reverbWet": 0.25
+          },
+          "autoTrigger": {
+            "tonSec": 0.011439999999999999,
+            "toffSec": 0.09356,
+            "oneShotRepeatSec": 0.5
+          },
+          "burst": {
+            "enabled": false,
+            "pulseCountMin": 3,
+            "pulseCountMax": 3,
+            "pulseIntervalSec": 0.06478,
+            "pulseIntervalJitter": 0.14,
+            "groupPeriodSec": 0.38180000000000003,
+            "groupPeriodJitter": 0.12
+          }
+        },
+        "detuneRangeCent": 0,
+        "detuneNormalized": 0,
+        "patterns": [
+          {
+            "id": "user-1",
+            "recording": null
+          },
+          {
+            "id": "user-2",
+            "recording": null
+          }
+        ],
+        "playbackSource": {
+          "kind": "auto"
+        }
+      }
+    },
+    {
+      "id": "2",
+      "gainDb": 0,
+      "muted": false,
+      "balance": 0.49,
+      "pan": 0,
+      "timbre": {
+        "formatVersion": "KOROGI-Lab/timbre-v7",
+        "name": "FM-Hihat",
+        "settings": {
+          "blocksEnabled": {
+            "osc1": true,
+            "osc2": true,
+            "penv": false,
+            "mod": true,
+            "filter1": false,
+            "filter2": false,
+            "aenv": true
+          },
+          "phaseMode": "free",
+          "osc1": {
+            "sourceType": "sine",
+            "baseFrequencyHz": 10330,
+            "dutyRatio": 0.5
+          },
+          "osc2": {
+            "sourceType": "triangle",
+            "baseFrequencyHz": 191.2,
+            "dutyRatio": 0.5
+          },
+          "pitchEnvelope": {
+            "amount": 0,
+            "transitionTimeSec": 0.05
+          },
+          "mod": {
+            "mode": "fm",
+            "amDepth": 0.5,
+            "amOffset": 1,
+            "fmDepthCent": 730
+          },
+          "filter1": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 1000,
+            "q": 0.707
+          },
+          "filter2": {
+            "type": "lowpass",
+            "order": 2,
+            "frequencyHz": 1000,
+            "q": 0.707
+          },
+          "filter2Route": "mod",
+          "filter1CutoffDepthCent": 1200,
+          "ampEnvelope": {
+            "attackSec": 0.001,
+            "decaySec": 0.0313,
+            "sustain": 0.41,
+            "releaseSec": 0.020579999999999998,
+            "attackCurve": "linear",
+            "decayCurve": "linear",
+            "releaseCurve": "linear",
+            "mode": "gate"
+          },
+          "fx1": {
+            "enabled": true,
+            "type": "distortion",
+            "distortionDriveDb": 13,
+            "distortionWet": 0.38,
+            "delayTimeSec": 0.25,
+            "delayFeedback": 0.3,
+            "delayWet": 0.25,
+            "chorusRateHz": 0.8,
+            "chorusDepthSec": 0.004,
+            "chorusWet": 0.25,
+            "reverbDecaySec": 1.5,
+            "reverbWet": 0.25
+          },
+          "autoTrigger": {
+            "tonSec": 0.01,
+            "toffSec": 0.083,
+            "oneShotRepeatSec": 0.372
+          },
+          "burst": {
+            "enabled": false,
+            "pulseCountMin": 3,
+            "pulseCountMax": 3,
+            "pulseIntervalSec": 0.025,
+            "pulseIntervalJitter": 0,
+            "groupPeriodSec": 0.1,
+            "groupPeriodJitter": 0
+          }
+        },
+        "detuneRangeCent": 0,
+        "detuneNormalized": 0,
+        "patterns": [
+          {
+            "id": "user-1",
+            "recording": {
+              "durationSec": 5,
+              "selectionStartSec": 0.37994459562000477,
+              "selectionEndSec": 3.719788766056344,
+              "gates": [
+                {
+                  "onSec": 0.37732426303864486,
+                  "offSec": 0.47891156462605977
+                },
+                {
+                  "onSec": 0.9752380952381827,
+                  "offSec": 1.0681179138323387
+                },
+                {
+                  "onSec": 1.3003174603175012,
+                  "offSec": 1.4135147392291856
+                },
+                {
+                  "onSec": 1.6370068027210891,
+                  "offSec": 1.869206349206479
+                },
+                {
+                  "onSec": 2.052063492063553,
+                  "offSec": 2.2349206349208544
+                },
+                {
+                  "onSec": 2.6615873015873603,
+                  "offSec": 2.795102040816346
+                },
+                {
+                  "onSec": 2.977959183673647,
+                  "offSec": 3.099863945578363
+                },
+                {
+                  "onSec": 3.282721088435437,
+                  "offSec": 3.567165532879926
+                }
+              ]
+            }
+          },
+          {
+            "id": "user-2",
+            "recording": null
+          }
+        ],
+        "playbackSource": {
+          "kind": "user",
+          "patternId": "user-1"
+        }
+      }
+    },
+    {
+      "id": "3",
+      "gainDb": 0,
+      "muted": false,
+      "balance": 0.5,
+      "pan": 0,
+      "timbre": null
+    },
+    {
+      "id": "4",
+      "gainDb": 0,
+      "muted": false,
+      "balance": 0.5,
+      "pan": 0,
+      "timbre": null
+    },
+    {
+      "id": "5",
+      "gainDb": 0,
+      "muted": false,
+      "balance": 0.5,
+      "pan": 0,
+      "timbre": null
+    },
+    {
+      "id": "6",
+      "gainDb": 0,
+      "muted": false,
+      "balance": 0.5,
+      "pan": 0,
+      "timbre": null
+    },
+    {
+      "id": "7",
+      "gainDb": 0,
+      "muted": false,
+      "balance": 0.5,
+      "pan": 0,
+      "timbre": null
+    },
+    {
+      "id": "8",
+      "gainDb": 0,
+      "muted": false,
+      "balance": 0.5,
+      "pan": 0,
+      "timbre": null
+    }
+  ],
+  "near": {
+    "gainDb": 0,
+    "gainEnabled": true,
+    "effects": [
+      {
+        "enabled": false,
+        "type": "chorus",
+        "distortionDriveDb": 12,
+        "distortionWet": 0.5,
+        "delayTimeSec": 0.25,
+        "delayFeedback": 0.3,
+        "delayWet": 0.25,
+        "chorusRateHz": 0.8,
+        "chorusDepthSec": 0.004,
+        "chorusWet": 0.25,
+        "reverbDecaySec": 1.5,
+        "reverbWet": 0.25
+      },
+      {
+        "enabled": false,
+        "type": "reverb",
+        "distortionDriveDb": 12,
+        "distortionWet": 0.5,
+        "delayTimeSec": 0.25,
+        "delayFeedback": 0.3,
+        "delayWet": 0.25,
+        "chorusRateHz": 0.8,
+        "chorusDepthSec": 0.004,
+        "chorusWet": 0.25,
+        "reverbDecaySec": 1.5,
+        "reverbWet": 0.25
+      }
+    ]
+  },
+  "far": {
+    "gainDb": 0,
+    "gainEnabled": true,
+    "effects": [
+      {
+        "enabled": false,
+        "type": "chorus",
+        "distortionDriveDb": 12,
+        "distortionWet": 0.5,
+        "delayTimeSec": 0.25,
+        "delayFeedback": 0.3,
+        "delayWet": 0.25,
+        "chorusRateHz": 0.8,
+        "chorusDepthSec": 0.004,
+        "chorusWet": 0.25,
+        "reverbDecaySec": 1.5,
+        "reverbWet": 0.25
+      },
+      {
+        "enabled": false,
+        "type": "reverb",
+        "distortionDriveDb": 12,
+        "distortionWet": 0.5,
+        "delayTimeSec": 0.25,
+        "delayFeedback": 0.3,
+        "delayWet": 0.25,
+        "chorusRateHz": 0.8,
+        "chorusDepthSec": 0.004,
+        "chorusWet": 0.25,
+        "reverbDecaySec": 1.5,
+        "reverbWet": 0.25
+      }
+    ]
+  },
+  "crossfade": 0.5,
+  "masterGainDb": -18,
+  "masterMuted": false
+}

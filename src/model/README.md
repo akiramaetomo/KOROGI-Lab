@@ -1,0 +1,7 @@
+# model
+
+`documents.ts` validates and normalizes plain timbre/session data before application.
+Timbres contain source settings, FX1, BURST articulation, Auto timing and per-source detune; sessions embed timbres and add instance levels, mute, Near/Far sends, shared buses and Master state.
+Generic sessions have unique channel IDs; `parseLabSession` accepts the Lab's eight slots (IDs 1–8) or pads a valid four-slot Session with empty slots 5–8 before application.
+`patch.ts` provides shared structural/type validation helpers. New files use timbre-v7/session-v8 and save the Auto/User playback source with each timbre. Timbre v2/v3 load without a recording; v4/v5 retain the legacy recording in User 1; v6 preserves User 1/2 and phase settings. V6 and earlier acquire disabled default BURST settings. V2 additionally migrates FILTER2 destination to MOD. Session v2-v4 load with centered pan. Legacy internal OFF for MOD, Filter or FX in v2/v3 becomes its outer block switch OFF and a default mode/type. Old v1 and legacy harness v4 are rejected before audio application. The fixed -18 dB TIMBRE reference input and sampled BURST randomness are not serialized.
+`triggerRecording.ts` validates a bounded, ordered external phrase-Gate interval list and clips it to a non-destructive selection. BURST-generated pulses are not recorded. A timbre owns its recording; sessions embed it with the timbre. No live AudioNode state, active Gates, playback positions or effect tails are serialized.

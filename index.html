@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="KOROGI-Lab is a Web Audio research app for designing insect and environmental sounds with eight timbres and shared Near/Far processing." />
+    <title>KOROGI-Lab Ver.0.1</title>
+    <link rel="stylesheet" href="/src/ui/harness.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-title">
+            <strong>KOROGI-Lab Ver.0.1</strong>
+            <div class="demo-picker">
+              <button id="demo-menu-button" class="demo-menu-button" type="button" data-audio-control disabled aria-haspopup="menu" aria-expanded="false" aria-controls="demo-menu">Demo</button>
+              <div id="demo-menu" class="demo-menu" role="menu" aria-label="Demo Sessions" hidden>
+                <button type="button" role="menuitem" data-demo-session="akino-mushi" data-audio-control disabled>Akino-mushi</button>
+                <button type="button" role="menuitem" data-demo-session="filter-acid1" data-audio-control disabled>Filter-Acid1</button>
+                <button type="button" role="menuitem" data-demo-session="filter-acid2" data-audio-control disabled>Filter-Acid2</button>
+              </div>
+            </div>
+          </div>
+          <span>8 Timbres · Near / Far</span>
+          <small class="play-hint">Hold GATE or press Play All</small>
+          <small id="audio-error" class="audio-error" role="alert" hidden></small>
+          <small id="display-error" class="display-error" role="alert" hidden></small>
+        </div>
+
+        <div class="audio-state" aria-live="polite">
+          <span class="state-dot" id="state-dot"></span>
+          <button id="status" class="audio-status" type="button" disabled>Audio: loading</button>
+          <span class="gate-lamp trigger-gate-led" id="gate-lamp">GATE</span>
+        </div>
+
+        <div class="transport">
+          <button id="fullscreen-toggle" class="fullscreen-toggle" type="button" aria-label="Enter fullscreen" aria-pressed="false" title="Fullscreen" hidden>⛶</button>
+          <button id="files-menu" data-panel-target="patch">FILES</button>
+          <button id="play-all" disabled>Play All</button>
+          <button id="trigger" class="header-trigger" disabled aria-label="Hold Trigger for selected timbre">Trigger</button>
+        </div>
+      </header>
+
+      <div class="lab-body">
+        <aside class="mixer-panel" aria-label="Eight timbres and common mix">
+          <div class="mixer-content">
+            <div class="mixer-heading"><strong>8 TIMBRES</strong><span id="selected-source">Editing · 1</span></div>
+            <div id="mixer-slots" class="mixer-slots"></div>
+          </div>
+        </aside>
+        <div id="mixer-divider" class="mixer-divider" role="separator" aria-label="TIMBRES width" aria-orientation="vertical" tabindex="0" aria-valuemin="0" aria-valuemax="248" aria-valuenow="248"></div>
+        <div class="editor-column">
+      <section class="signal-map" aria-label="TIMBRE and parallel Near Far signal flow">
+        <div class="signal-canvas">
+          <svg class="signal-wires" aria-hidden="true"><defs><marker id="wire-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8aafb5" /></marker></defs><g class="wire-paths"></g></svg>
+          <div class="signal-group source-group" role="group" aria-label="Selected TIMBRE">
+            <div class="voice-heading"><strong id="voice-title">TIMBRE · 1 / Standard</strong><span>Solid: audio · Dashed: control</span></div>
+            <div class="voice-grid">
+              <div class="osc-control-stack">
+                <button id="flow-osc1" class="flow-node" data-flow-block="osc1" data-panel-target="sources" data-focus-target="#osc1-type">OSC1</button>
+                <button id="flow-penv" class="flow-node control-node" data-flow-block="penv" data-panel-target="modulation" data-focus-target="#penv-amount">PEnv</button>
+                <button id="flow-osc2" class="flow-node" data-flow-block="osc2" data-panel-target="sources" data-focus-target="#osc2-type">OSC2</button>
+              </div>
+              <button id="flow-mod" class="flow-node" data-flow-block="mod" data-panel-target="modulation" data-focus-target="#mod-mode">MOD</button>
+              <button id="flow-filter1" class="flow-node" data-flow-block="filter1" data-panel-target="filters" data-focus-target="#filter1-type">FILTER1</button>
+              <div class="aenv-control-stack">
+                <button id="flow-aenv" class="flow-node" data-flow-block="aenv" data-panel-target="amp" data-focus-target="#attack">AEnv</button>
+                <span class="signal-block burst-signal-block">
+                  <button id="flow-burst" class="flow-node control-node" data-panel-target="burst" data-focus-target="#burst-enabled">BURST</button>
+                  <button id="burst-block-enabled" type="button" class="flow-toggle" data-audio-control aria-label="BURST ON/OFF" aria-pressed="false" disabled>OFF</button>
+                </span>
+              </div>
+              <button id="flow-fx1" class="flow-node" data-flow-block="fx1" data-panel-target="voice-effects" data-focus-target="#fx1-type">FX1</button>
+              <span id="flow-fx1-common" class="fx1-common-output">COMMON SPACE</span>
+              <button id="flow-filter2" class="flow-node" data-flow-block="filter2" data-panel-target="filters" data-focus-target="#filter2-type">FILTER2</button>
+              <button id="flow-detune" class="flow-node" data-panel-target="output" data-focus-target="#detune-range">DETUNE</button>
+              <button id="trigger-menu" class="flow-node trigger-node" data-panel-target="triggering" data-focus-target="#ton">SEQUENCE</button>
+            </div>
+          </div>
+          <section class="signal-group common-space" aria-label="COMMON SPACE">
+            <div class="common-heading"><strong>COMMON SPACE</strong><div class="input-page-switch" role="group" aria-label="Displayed summing inputs"><button type="button" data-input-page="0" aria-pressed="true">1–4</button><button type="button" data-input-page="1" aria-pressed="false">5–8</button></div></div>
+            <div class="common-grid">
+              <div class="channel-inputs" aria-label="Parallel signals from channels 1 to 4">
+                <span class="channel-input-spacer" aria-hidden="true"></span>
+                <span id="flow-input-1" class="channel-input">1</span>
+                <span id="flow-input-2" class="channel-input">2</span>
+                <span id="flow-input-3" class="channel-input">3</span>
+                <span id="flow-input-4" class="channel-input">4</span>
+                <span id="flow-input-5" class="channel-input" hidden>5</span>
+                <span id="flow-input-6" class="channel-input" hidden>6</span>
+                <span id="flow-input-7" class="channel-input" hidden>7</span>
+                <span id="flow-input-8" class="channel-input" hidden>8</span>
+              </div>
+              <div class="space-columns" role="group" aria-label="Parallel Near and Far buses">
+                <section class="bus-group" data-space="near" aria-label="Near common space">
+                  <div id="flow-near-input" class="flow-node passive bus-input" aria-label="Near stereo L R summing junction">Σ<small>L/R</small></div>
+                  <button id="flow-near-fx2" class="flow-node" data-flow-block="fx2" data-bus="near" data-panel-target="space-effects" data-focus-target="#fx2-type">FX2</button>
+                  <button id="flow-near-fx3" class="flow-node" data-flow-block="fx3" data-bus="near" data-panel-target="space-effects" data-focus-target="#fx3-type">FX3</button>
+                  <button id="flow-near-gain" class="diagram-gain" data-bus="near" data-panel-target="space-effects" data-focus-target="#near-gain"><strong>BUS GAIN</strong><output id="near-gain-readout">0 dB</output></button>
+                </section>
+                <section class="bus-group" data-space="far" aria-label="Far common space">
+                  <div id="flow-far-input" class="flow-node passive bus-input" aria-label="Far stereo L R summing junction">Σ<small>L/R</small></div>
+                  <button id="flow-far-fx2" class="flow-node" data-flow-block="fx2" data-bus="far" data-panel-target="space-effects" data-focus-target="#fx2-type">FX2</button>
+                  <button id="flow-far-fx3" class="flow-node" data-flow-block="fx3" data-bus="far" data-panel-target="space-effects" data-focus-target="#fx3-type">FX3</button>
+                  <button id="flow-far-gain" class="diagram-gain" data-bus="far" data-panel-target="space-effects" data-focus-target="#far-gain"><strong>BUS GAIN</strong><output id="far-gain-readout">0 dB</output></button>
+                </section>
+              </div>
+              <button id="flow-balance" class="output-node" data-panel-target="space-output" data-focus-target="#crossfade"><strong>OUTPUT BALANCE</strong><output id="crossfade-readout">50% Far</output></button>
+              <div class="output-chain" aria-label="Common space output">
+                <button id="flow-master" class="output-node" data-panel-target="space-output" data-focus-target="#master-gain"><strong>MASTER</strong><small id="master-input-readout">COMMON SPACE</small><output id="master-gain-readout">−18 dB</output></button>
+                <div id="flow-limiter" class="output-node"><strong>LIMITER</strong></div>
+              </div>
+            </div>
+          </section>
+        </div>
+      </section>
+      <div id="panel-divider" class="panel-divider" role="separator" aria-label="Signal map and editor height" aria-orientation="horizontal" tabindex="0" aria-valuemin="25" aria-valuemax="75" aria-valuenow="50"></div>
+      <section class="workspace">
+
+        <div class="panel-deck">
+          <section class="function-panel active" data-panel="sources">
+            <div class="panel-heading">
+              <div><strong>SOURCES</strong><span>OSC1 = carrier / OSC2 = modulation source</span></div>
+              <span id="source-path-label" class="path-label">OSC1 → MOD　　OSC2 → FILTER2 → MOD</span>
+            </div>
+            <div class="source-phase-row"><div class="choice-field"><span>Gate Phase</span><select id="phase-mode" data-audio-control hidden disabled><option value="sync">SYNC</option><option value="free">FREE</option></select></div><span>SYNC restarts periodic OSC1/2 only after AEnv reaches silence.</span></div>
+            <div class="control-columns two">
+              <fieldset>
+                <legend>OSC1 / Carrier</legend>
+                <label>Source Type
+                  <select id="osc1-type" data-audio-control disabled>
+                    <option value="sine">Sine</option>
+                    <option value="sawtooth">Sawtooth</option>
+                    <option value="triangle">Triangle</option>
+                    <option value="square">Square</option>
+                    <option value="white-noise">White Noise</option>
+                  </select>
+                </label>
+                <div class="inline-grid oscillator-controls">
+                <label>Base Frequency <span class="unit">Hz</span>
+                  <input id="osc1-frequency" data-audio-control data-numeric-scale="linear" data-numeric-integer="true" data-numeric-coarse-step="10" type="number" min="100" max="10000" step="1" value="4000" disabled />
+                </label>
+                <label>Duty (Square) <span class="unit">%</span>
+                  <input id="osc1-duty" data-audio-control type="number" min="1" max="99" step="0.1" value="50" disabled />
+                </label>
+                </div>
+                <div class="readout-line" id="osc1-detune-readout">Global detune: -- cent → -- Hz</div>
+              </fieldset>
+
+              <fieldset>
+                <legend>OSC2 / Modulator</legend>
+                <label>Source Type
+                  <select id="osc2-type" data-audio-control disabled>
+                    <option value="sine">Sine</option>
+                    <option value="sawtooth">Sawtooth</option>
+                    <option value="triangle">Triangle</option>
+                    <option value="square">Square</option>
+                    <option value="white-noise">White Noise</option>
+                  </select>
+                </label>
+                <div class="inline-grid oscillator-controls">
+                <label>Base Frequency <span class="unit">Hz</span>
+                  <input id="osc2-frequency" data-audio-control type="number" min="1" max="100" step="0.1" value="30" disabled />
+                </label>
+                <label>Duty (Square) <span class="unit">%</span>
+                  <input id="osc2-duty" data-audio-control type="number" min="1" max="99" step="0.1" value="50" disabled />
+                </label>
+                </div>
+                <div class="readout-line" id="osc2-detune-readout">Global detune: -- cent → -- Hz</div>
+              </fieldset>
+            </div>
+          </section>
+
+          <section class="function-panel" data-panel="modulation">
+            <div class="panel-heading">
+              <div><strong>PITCH / MODULATION</strong><span>PEnv is common to OSC1/OSC2 and runs in log-frequency space. AM and FM are exclusive.</span></div>
+              <span id="mod-path-label" class="path-label">OSC2 → FILTER2 → MOD</span>
+            </div>
+            <div class="control-columns two mod-layout">
+              <fieldset class="mod-editor">
+                <legend>MOD Mode / Depth</legend>
+                <div class="choice-field"><span>Mode</span>
+                  <select id="mod-mode" data-audio-control hidden disabled>
+                    <option value="am">AM</option>
+                    <option value="fm">FM</option>
+                  </select>
+                </div>
+                <div class="mode-readout" id="mod-readout">AM: OSC2 modulates OSC1 level</div>
+                <div class="inline-grid am-controls mod-depth-am" hidden>
+                <label>AM Depth <span class="unit">%</span>
+                  <input id="am-depth" data-audio-control type="number" min="0" max="200" step="1" value="50" disabled />
+                </label>
+                <label>AM Offset
+                  <input id="am-offset" data-audio-control type="number" min="0" max="2" step="0.01" value="1" disabled />
+                </label>
+                </div>
+                <label class="mod-depth-fm" hidden>FM Depth <span class="unit">cent</span>
+                  <input id="fm-depth" data-audio-control type="number" min="0" max="4800" step="1" value="100" disabled />
+                </label>
+              </fieldset>
+              <fieldset>
+                <legend>PEnv</legend>
+                <label>Pitch Amount <span class="unit">%</span>
+                  <input id="penv-amount" data-audio-control type="number" min="-10" max="10" step="0.1" value="0" disabled />
+                </label>
+                <label>Transition Time <span class="unit">ms</span>
+                  <input id="penv-time" data-audio-control type="number" min="1" max="5000" step="1" value="50" disabled />
+                </label>
+              </fieldset>
+            </div>
+          </section>
+
+          <section class="function-panel" data-panel="filters">
+            <div class="panel-heading">
+              <div><strong>FILTERS</strong><span>Filter1 = OSC1 audio path / Filter2 = OSC2 modulation path</span></div>
+              <span class="path-label">4th order = two identical 2nd-order stages in series</span>
+            </div>
+            <div class="control-columns two">
+              <fieldset>
+                <legend>FILTER1 / Audio Path</legend>
+                <div class="filter-control-grid">
+                  <div class="choice-field"><span>Type</span>
+                    <select id="filter1-type" data-audio-control hidden disabled>
+                      <option value="lowpass">LPF</option>
+                      <option value="bandpass">BPF</option>
+                      <option value="highpass">HPF</option>
+                    </select>
+                  </div>
+                  <div class="choice-field"><span>Order</span>
+                    <select id="filter1-order" data-audio-control hidden disabled>
+                      <option value="2">2nd</option>
+                      <option value="4">4th</option>
+                    </select>
+                  </div>
+                  <label>Freq <span class="unit">Hz</span>
+                    <input id="filter1-frequency" data-audio-control type="number" min="20" max="20000" step="0.1" value="1000" disabled />
+                  </label>
+                  <label>Q
+                    <input id="filter1-q" data-audio-control type="number" min="0.1" max="30" step="0.01" value="0.707" disabled />
+                  </label>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend>FILTER2 / Modulation Path</legend>
+                <div class="filter-control-grid">
+                  <div class="choice-field"><span>Type</span>
+                    <select id="filter2-type" data-audio-control hidden disabled>
+                      <option value="lowpass">LPF</option>
+                      <option value="bandpass">BPF</option>
+                      <option value="highpass">HPF</option>
+                    </select>
+                  </div>
+                  <div class="choice-field"><span>Order</span>
+                    <select id="filter2-order" data-audio-control hidden disabled>
+                      <option value="2">2nd</option>
+                      <option value="4">4th</option>
+                    </select>
+                  </div>
+                  <label>Freq <span class="unit">Hz</span>
+                    <input id="filter2-frequency" data-audio-control type="number" min="20" max="20000" step="0.1" value="1000" disabled />
+                  </label>
+                  <label>Q
+                    <input id="filter2-q" data-audio-control type="number" min="0.1" max="30" step="0.01" value="0.707" disabled />
+                  </label>
+                </div>
+                <div class="choice-field filter-route-field"><span>Destination</span>
+                  <select id="filter2-route" data-audio-control hidden disabled>
+                    <option value="mod">MOD</option>
+                    <option value="filter1-cutoff">F1 CUTOFF</option>
+                  </select>
+                </div>
+                <label class="cutoff-depth-control" hidden>Cutoff Depth <span class="unit">cent</span>
+                  <input id="filter1-cutoff-depth" data-audio-control type="number" min="0" max="4800" step="1" value="1200" disabled />
+                </label>
+              </fieldset>
+            </div>
+          </section>
+
+          <section class="function-panel" data-panel="amp">
+            <div class="panel-heading">
+              <div><strong>AMPLITUDE ENVELOPE</strong><span>Curve applies to Attack, Decay and Release. Gate releases on OFF; One-shot releases after Decay.</span></div>
+              <span class="path-label">FILTER1 → AEnv → Channel Gain</span>
+            </div>
+            <fieldset class="wide-fieldset">
+              <legend>AEnv / ADSR</legend>
+              <div class="inline-grid four">
+                <label>Attack <span class="unit">ms</span>
+                  <input id="attack" data-audio-control type="number" min="1" max="5000" step="1" value="5" disabled />
+                </label>
+                <label>Decay <span class="unit">ms</span>
+                  <input id="decay" data-audio-control type="number" min="1" max="5000" step="1" value="20" disabled />
+                </label>
+                <label>Sustain <span class="unit">0..1</span>
+                  <input id="sustain" data-audio-control type="number" min="0" max="1" step="0.01" value="0.8" disabled />
+                </label>
+                <label>Release <span class="unit">ms</span>
+                  <input id="release" data-audio-control type="number" min="1" max="5000" step="1" value="30" disabled />
+                </label>
+              </div>
+              <div class="aenv-mode-row">
+                <div class="aenv-curve-control">
+                  <label class="choice-field"><span>A/D/R curve</span><select id="aenv-curve" data-audio-control hidden disabled><option value="exponential">Exponential</option><option value="linear">Linear</option></select></label>
+                  <output id="aenv-curve-status" aria-live="polite" hidden>Mixed A/D/R curves</output>
+                </div>
+                <div class="aenv-mode-control">
+                  <label class="choice-field"><span>Envelope mode</span><select id="aenv-mode" data-audio-control hidden disabled><option value="gate">Gate</option><option value="one-shot">One-shot</option></select></label>
+                </div>
+              </div>
+            </fieldset>
+          </section>
+
+          <section class="function-panel" data-panel="burst">
+            <div class="panel-heading">
+              <div><strong>BURST</strong><span>Timbre articulation · repeat AEnv One-shot pulse groups while the phrase Gate is on.</span></div>
+            </div>
+            <fieldset class="wide-fieldset burst-editor">
+              <legend>ONE-SHOT PULSE GROUP <button id="burst-enabled" type="button" class="flow-toggle" data-audio-control aria-pressed="false" disabled>OFF</button></legend>
+              <div class="burst-control-grid">
+                <label>Pulse Min
+                  <input id="burst-count-min" data-audio-control type="number" min="1" max="8" step="1" value="3" disabled />
+                </label>
+                <label>Pulse Max
+                  <input id="burst-count-max" data-audio-control type="number" min="1" max="8" step="1" value="3" disabled />
+                </label>
+                <label>Pulse Interval <span class="unit">ms</span>
+                  <input id="burst-pulse-interval" data-audio-control type="number" min="5" max="250" step="1" value="25" disabled />
+                </label>
+                <label>Pulse Jitter <span class="unit">±%</span>
+                  <input id="burst-pulse-jitter" data-audio-control type="number" min="0" max="50" step="1" value="0" disabled />
+                </label>
+                <label>Group Period <span class="unit">ms</span>
+                  <input id="burst-group-period" data-audio-control type="number" min="10" max="6000" step="1" value="100" disabled />
+                </label>
+                <label>Group Jitter <span class="unit">±%</span>
+                  <input id="burst-group-jitter" data-audio-control type="number" min="0" max="50" step="1" value="0" disabled />
+                </label>
+              </div>
+              <div id="burst-timing-summary" class="mode-readout">AEnv T: -- · Full-group guide: --</div>
+              <div id="burst-timing-warnings" class="burst-timing-warnings" role="status" aria-live="polite"></div>
+            </fieldset>
+          </section>
+
+          <section class="function-panel" data-panel="triggering">
+            <div class="panel-heading">
+              <div><strong>SEQUENCE</strong><span>Play and record Gate gestures for the selected timbre.</span></div>
+              <span class="gate-lamp trigger-gate-led" id="gate-lamp-panel" role="status" aria-label="Gate off">GATE</span>
+            </div>
+            <div class="trigger-editor">
+              <div class="trigger-top-row">
+                <div class="trigger-settings trigger-group" role="group" aria-label="Auto timing">
+                  <strong class="trigger-group-title">AUTO</strong>
+                  <div class="timing-controls"><label>Ton <span class="unit">ms</span>
+                    <input id="ton" data-audio-control type="number" min="50" max="10000" step="1" value="250" disabled />
+                  </label>
+                  <span id="ton-one-shot-status" class="mode-readout" hidden>AEnv One Shot Mode</span>
+                  <label>T repeat <span class="unit">ms</span>
+                    <input id="trepeat" data-audio-control type="number" min="10" max="6000" step="1" value="500" disabled />
+                  </label></div>
+                </div>
+                <div class="record-performance trigger-group" role="group" aria-label="Playback controls">
+                  <div class="source-choice" role="group" aria-label="Playback source"><button id="source-auto" type="button" aria-pressed="true">Auto</button><button id="source-user-1" type="button" aria-pressed="false">User 1</button><button id="source-user-2" type="button" aria-pressed="false">User 2</button></div>
+                  <button id="sequence-panel" type="button" disabled>Play</button>
+                  <button id="record-gate" type="button" disabled aria-label="Hold Trigger">Trigger</button>
+                </div>
+              </div>
+              <div class="trigger-user-group trigger-group" role="group" aria-label="User recording">
+                <strong class="trigger-group-title">USER</strong>
+                <div class="record-controls">
+                  <label class="record-length-label">Record length <span>s</span><input id="record-length" type="text" inputmode="numeric" value="30" aria-label="Record length in seconds, 1 to 300"></label>
+                  <button id="record-toggle" type="button" disabled>Start Recording</button>
+                  <output id="record-counter" aria-live="off">00:00.00 / 00:30.00</output>
+                </div>
+                <div class="record-timeline-area">
+                <div class="record-timeline-label"><strong>Gate timeline</strong><span id="record-target">Timbre 1 · No recording</span></div>
+                <div id="record-timeline" class="record-timeline" role="group" aria-label="Recorded Gate positions along time"><div id="record-selection" class="record-selection"></div><div id="record-gates" class="record-gates"></div><button id="record-start-handle" class="record-selection-handle start" type="button" role="slider" aria-label="Selection start" disabled></button><button id="record-end-handle" class="record-selection-handle end" type="button" role="slider" aria-label="Selection end" disabled></button><div id="record-playhead" class="record-playhead"></div></div>
+                <div class="record-ticks"><span>0</span><span id="record-midpoint">15 s</span><span id="record-endpoint">30 s</span></div>
+                <div class="record-selection-values">
+                  <span>Start <output id="record-start-value">0.00 s</output></span>
+                  <span>End <output id="record-end-value">30.00 s</output></span>
+                </div>
+                <div class="record-playback"><span id="record-status" role="status">Ready</span></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="function-panel effects-panel" data-panel="voice-effects">
+            <div class="panel-heading">
+              <div><strong>TIMBRE FX1</strong><span>Effect for the selected timbre</span></div>
+            </div>
+            <div class="effects-grid voice-effects-grid">
+              <fieldset class="effect-slot" data-effect-slot="fx1">
+                <legend><span data-effect-label>Timbre / FX1</span></legend>
+                <p class="effect-role">Typical use: distortion</p>
+                <label>Effect
+                  <select id="fx1-type" data-audio-control disabled>
+                    <option value="distortion">Distortion</option><option value="delay">Delay</option><option value="chorus">Chorus</option><option value="reverb">Reverb</option>
+                  </select>
+                </label>
+                <div class="effect-params" data-effect="distortion"><label>Drive dB<input id="fx1-dist-drive" data-audio-control type="number" min="0" max="36" step="1" value="12" disabled /></label><label>Wet %<input id="fx1-dist-wet" data-audio-control type="number" min="0" max="100" step="1" value="50" disabled /></label></div>
+                <div class="effect-params" data-effect="delay"><label>Time ms<input id="fx1-delay-time" data-audio-control type="number" min="1" max="2000" step="1" value="250" disabled /></label><label>Feedback %<input id="fx1-delay-feedback" data-audio-control type="number" min="0" max="95" step="1" value="30" disabled /></label><label>Wet %<input id="fx1-delay-wet" data-audio-control type="number" min="0" max="100" step="1" value="25" disabled /></label></div>
+                <div class="effect-params" data-effect="chorus"><label>Rate Hz<input id="fx1-chorus-rate" data-audio-control type="number" min="0.05" max="10" step="0.01" value="0.8" disabled /></label><label>Depth ms<input id="fx1-chorus-depth" data-audio-control type="number" min="0" max="10" step="0.1" value="4" disabled /></label><label>Wet %<input id="fx1-chorus-wet" data-audio-control type="number" min="0" max="100" step="1" value="25" disabled /></label></div>
+                <div class="effect-params" data-effect="reverb"><label>T60 s<input id="fx1-reverb-decay" data-audio-control type="number" min="0.1" max="10" step="0.1" value="1.5" disabled /></label><label>Wet %<input id="fx1-reverb-wet" data-audio-control type="number" min="0" max="100" step="1" value="25" disabled /></label></div>
+              </fieldset>
+            </div>
+          </section>
+
+          <section class="function-panel effects-panel" data-panel="space-effects">
+            <div class="panel-heading">
+              <div><strong>COMMON SPACE FX / GAIN</strong><span>Near / Far FX2, FX3 and bus gain</span></div>
+            </div>
+                <div class="space-bus-editor">
+                <div class="bus-segment" role="group" aria-label="Bus to edit">
+                  <button id="effects-near" type="button" data-bus-choice="near" aria-pressed="true">Near</button>
+                  <button id="effects-far" type="button" data-bus-choice="far" aria-pressed="false">Far</button>
+                </div>
+                <div class="effects-grid space-effects-grid">
+              <fieldset class="effect-slot" data-effect-slot="fx2">
+                <legend><span data-effect-label>Mix1 / FX2</span></legend>
+                <p class="effect-role">Typical use: chorus / delay</p>
+                <label>Effect
+                  <select id="fx2-type" data-audio-control disabled>
+                    <option value="distortion">Distortion</option><option value="delay">Delay</option><option value="chorus">Chorus</option><option value="reverb">Reverb</option>
+                  </select>
+                </label>
+                <div class="effect-params" data-effect="distortion"><label>Drive dB<input id="fx2-dist-drive" data-audio-control type="number" min="0" max="36" step="1" value="12" disabled /></label><label>Wet %<input id="fx2-dist-wet" data-audio-control type="number" min="0" max="100" step="1" value="50" disabled /></label></div>
+                <div class="effect-params" data-effect="delay"><label>Time ms<input id="fx2-delay-time" data-audio-control type="number" min="1" max="2000" step="1" value="250" disabled /></label><label>Feedback %<input id="fx2-delay-feedback" data-audio-control type="number" min="0" max="95" step="1" value="30" disabled /></label><label>Wet %<input id="fx2-delay-wet" data-audio-control type="number" min="0" max="100" step="1" value="25" disabled /></label></div>
+                <div class="effect-params" data-effect="chorus"><label>Rate Hz<input id="fx2-chorus-rate" data-audio-control type="number" min="0.05" max="10" step="0.01" value="0.8" disabled /></label><label>Depth ms<input id="fx2-chorus-depth" data-audio-control type="number" min="0" max="10" step="0.1" value="4" disabled /></label><label>Wet %<input id="fx2-chorus-wet" data-audio-control type="number" min="0" max="100" step="1" value="25" disabled /></label></div>
+                <div class="effect-params" data-effect="reverb"><label>T60 s<input id="fx2-reverb-decay" data-audio-control type="number" min="0.1" max="10" step="0.1" value="1.5" disabled /></label><label>Wet %<input id="fx2-reverb-wet" data-audio-control type="number" min="0" max="100" step="1" value="25" disabled /></label></div>
+              </fieldset>
+
+              <fieldset class="effect-slot" data-effect-slot="fx3">
+                <legend><span data-effect-label>Mix1 / FX3</span></legend>
+                <p class="effect-role">Typical use: reverb</p>
+                <label>Effect
+                  <select id="fx3-type" data-audio-control disabled>
+                    <option value="distortion">Distortion</option><option value="delay">Delay</option><option value="chorus">Chorus</option><option value="reverb">Reverb</option>
+                  </select>
+                </label>
+                <div class="effect-params" data-effect="distortion"><label>Drive dB<input id="fx3-dist-drive" data-audio-control type="number" min="0" max="36" step="1" value="12" disabled /></label><label>Wet %<input id="fx3-dist-wet" data-audio-control type="number" min="0" max="100" step="1" value="50" disabled /></label></div>
+                <div class="effect-params" data-effect="delay"><label>Time ms<input id="fx3-delay-time" data-audio-control type="number" min="1" max="2000" step="1" value="250" disabled /></label><label>Feedback %<input id="fx3-delay-feedback" data-audio-control type="number" min="0" max="95" step="1" value="30" disabled /></label><label>Wet %<input id="fx3-delay-wet" data-audio-control type="number" min="0" max="100" step="1" value="25" disabled /></label></div>
+                <div class="effect-params" data-effect="chorus"><label>Rate Hz<input id="fx3-chorus-rate" data-audio-control type="number" min="0.05" max="10" step="0.01" value="0.8" disabled /></label><label>Depth ms<input id="fx3-chorus-depth" data-audio-control type="number" min="0" max="10" step="0.1" value="4" disabled /></label><label>Wet %<input id="fx3-chorus-wet" data-audio-control type="number" min="0" max="100" step="1" value="25" disabled /></label></div>
+                <div class="effect-params" data-effect="reverb"><label>T60 s<input id="fx3-reverb-decay" data-audio-control type="number" min="0.1" max="10" step="0.1" value="1.5" disabled /></label><label>Wet %<input id="fx3-reverb-wet" data-audio-control type="number" min="0" max="100" step="1" value="25" disabled /></label></div>
+              </fieldset>
+              <fieldset class="space-gain-controls">
+                <legend>BUS GAIN</legend>
+                <label class="bus-gain-near">Near Bus dB<input id="near-gain" data-audio-control type="number" min="-60" max="6" step="0.1" value="0" disabled /></label>
+                <label class="bus-gain-far">Far Bus dB<input id="far-gain" data-audio-control type="number" min="-60" max="6" step="0.1" value="0" disabled /></label>
+              </fieldset>
+                </div>
+              </div>
+            </section>
+
+            <section class="function-panel" data-panel="space-output">
+              <div class="panel-heading"><div><strong>COMMON SPACE OUTPUT</strong><span>Final balance and master level</span></div></div>
+              <fieldset class="space-output-editor">
+                <legend>OUTPUT</legend>
+                <label>Balance <span class="unit">% Far</span><input id="crossfade" data-audio-control type="number" min="0" max="100" step="1" value="50" disabled /></label>
+                <label>Master <span class="unit">dB</span><input id="master-gain" data-audio-control type="number" min="-60" max="0" step="0.1" value="-18" disabled /></label>
+                <button id="master-mute" data-audio-control aria-pressed="false" disabled>Mute</button>
+              </fieldset>
+            </section>
+
+          <section class="function-panel" data-panel="output">
+            <div class="panel-heading">
+              <div><strong>TIMBRE DETUNE</strong><span>Pitch variation per timbre. Use Level in TIMBRES and Drive in FX1 for loudness and distortion.</span></div>
+              <span class="path-label">TIMBRE · Detune</span>
+            </div>
+            <div class="control-columns two">
+
+              <fieldset>
+                <legend>Source Detune</legend>
+                <label>Range <span class="unit">cent</span>
+                  <input id="detune-range" data-audio-control type="number" min="0" max="100" step="0.1" value="0" disabled />
+                </label>
+                <button id="randomize-detune" data-audio-control disabled>Randomize Detune</button>
+                <div class="readout-line" id="detune-cent-readout">ri: -- / detune: -- cent</div>
+              </fieldset>
+
+            </div>
+          </section>
+
+          <section class="function-panel" data-panel="patch">
+            <div class="panel-heading">
+              <div><strong>FILES / SESSION</strong><span>Save or load all eight timbres and their common settings.</span></div>
+            </div>
+            <div class="control-columns two patch-layout">
+              <fieldset>
+                <legend>Session File</legend>
+                <label>Session Name<input id="patch-name" type="text" value="KOROGI Session" /></label>
+                <div class="transport-clone">
+                  <button id="export-patch" data-audio-control disabled>Save Session</button>
+                  <button id="import-patch" data-audio-control disabled>Load Session</button>
+                  <input id="patch-file" type="file" accept="application/json,.json" hidden />
+                </div>
+              </fieldset>
+              <fieldset>
+                <legend>Status</legend>
+                <div class="patch-status" id="patch-status">No patch operation yet.</div>
+                <div class="readout-line">Use Load and Save in TIMBRES for individual timbres. Session files include all eight slots, User patterns and COMMON SPACE. New files use timbre-v7 / session-v8; supported older files can be loaded.</div>
+              </fieldset>
+            </div>
+          </section>
+        </div>
+      </section>
+
+        </div>
+      </div>
+
+      <footer class="footer-strip">
+        <span id="active-path">Viewing: SOURCES</span>
+        <span>Numeric edit: place caret at a digit, then ↑ / ↓ changes that decade</span>
+        <span id="sample-rate">sampleRate: -- Hz</span>
+      </footer>
+    </main>
+    <script type="module" src="/src/bootstrap.ts"></script>
+  </body>
+</html>
