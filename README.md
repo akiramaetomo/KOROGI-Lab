@@ -2,7 +2,7 @@
 
 KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するWeb Audio研究用アプリです。8つの独立したTimbreを、共通のNear／Far空間処理へ送って重ねられます。
 
-公開候補バージョンは **0.1.0** です。GitHub Pages公開後のURLは `https://akiramaetomo.github.io/KOROGI-Lab/` を予定しています。
+現在の公開バージョンは **0.1.0** です。[GitHub PagesでKOROGI-Labを開く](https://akiramaetomo.github.io/KOROGI-Lab/)。
 
 ## 特徴
 - 秋の虫の鳴き声に寄せた目的指向のシンセサイザ
