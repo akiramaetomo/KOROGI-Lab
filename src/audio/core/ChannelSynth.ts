@@ -5,9 +5,12 @@ import {
   PARAM_SMOOTH_SEC,
   STRUCTURE_FADE_SEC
 } from '../constants';
+import { PARAMETER_RANGES as P } from '../../config/parameterRanges';
+import { FilterEnvelopeControl } from '../dsp/FilterEnvelopeControl';
 import { AmplitudeEnvelope } from '../dsp/AmplitudeEnvelope';
 import { FilterChain } from '../dsp/FilterChain';
 import { PitchEnvelopeControl } from '../dsp/PitchEnvelopeControl';
+import { SequencePitchControl } from '../dsp/SequencePitchControl';
 import { SourceUnit } from '../dsp/SourceUnit';
 import { clamp, dbToGain, smoothAudioParam } from '../dsp/params';
 import { WhiteNoiseFactory } from '../dsp/WhiteNoiseFactory';
@@ -16,6 +19,7 @@ import { BurstScheduler } from '../scheduler/BurstScheduler';
 import { EffectSlot } from '../effects/EffectSlot';
 import type {
   AmplitudeEnvelopeSettings,
+  FilterEnvelopeSettings,
   AutoTriggerSettings,
   BurstSettings,
   ChannelBlock,
@@ -32,7 +36,7 @@ import type {
   OscSourceType
 } from '../types';
 
-type BaseGateEvent = { kind: 'on'; time: number; amp: AmplitudeEnvelopeSettings; pitch: PitchEnvelopeSettings }
+type BaseGateEvent = { kind: 'on'; time: number; amp: AmplitudeEnvelopeSettings; pitch: PitchEnvelopeSettings; filter: FilterEnvelopeSettings }
   | { kind: 'off'; time: number };
 
 function cloneDefaults(): ChannelSettings {
@@ -42,9 +46,12 @@ function cloneDefaults(): ChannelSettings {
 export class ChannelSynth {
   readonly output: GainNode;
 
+  private readonly fEnv: FilterEnvelopeControl;
   private readonly pEnv: PitchEnvelopeControl;
   private readonly amDepthGain: GainNode;
   private readonly fmDepthGain: GainNode;
+  private readonly sequencePitch: SequencePitchControl;
+  private readonly sequenceFilter: SequencePitchControl;
   private readonly modRouteGain: GainNode;
   private readonly cutoffLimiter: WaveShaperNode;
   private readonly cutoffDepthGain: GainNode;
@@ -82,17 +89,15 @@ export class ChannelSynth {
     this.settings.blocksEnabled = { ...DEFAULT_CHANNEL_SETTINGS.blocksEnabled, ...initial.blocksEnabled };
     this.detuneNormalized = clamp(detuneNormalized, -1, 1);
 
-    this.pEnv = new PitchEnvelopeControl(context);
-    this.pEnv.setSettings(
-      this.settings.pitchEnvelope.amount,
-      this.settings.pitchEnvelope.transitionTimeSec
-    );
+    this.pEnv = new PitchEnvelopeControl(context, this.settings.pitchEnvelope);
 
     this.amDepthGain = context.createGain();
     this.amDepthGain.gain.value = 0;
 
     this.fmDepthGain = context.createGain();
     this.fmDepthGain.gain.value = 0;
+    this.sequencePitch = new SequencePitchControl(context);
+    this.sequenceFilter = new SequencePitchControl(context, P['sequence-filter-amount'].max);
 
     this.osc1 = new SourceUnit(
       context,
@@ -100,7 +105,7 @@ export class ChannelSynth {
       this.pEnv.output,
       this.settings.osc1.sourceType,
       this.settings.osc1.baseFrequencyHz,
-      this.fmDepthGain,
+      [this.fmDepthGain, this.sequencePitch.output],
       this.settings.osc1.dutyRatio
     );
     this.osc2 = new SourceUnit(
@@ -109,7 +114,7 @@ export class ChannelSynth {
       this.pEnv.output,
       this.settings.osc2.sourceType,
       this.settings.osc2.baseFrequencyHz,
-      undefined,
+      [this.sequencePitch.output],
       this.settings.osc2.dutyRatio
     );
 
@@ -138,6 +143,10 @@ export class ChannelSynth {
     this.filter1 = new FilterChain(context, this.settings.filter1);
     this.amGain.connect(this.filter1.input);
     this.filter1.connectDetune(this.cutoffDepthGain);
+    this.filter1.connectDetune(this.sequenceFilter.output);
+    this.filter2.connectDetune(this.sequenceFilter.output);
+    this.fEnv = new FilterEnvelopeControl(context, this.settings.filterEnvelope);
+    this.filter1.connectDetune(this.fEnv.output);
 
     this.ampEnvelope = new AmplitudeEnvelope(context, this.settings.ampEnvelope);
     this.filter1.output.connect(this.ampEnvelope.node);
@@ -165,11 +174,11 @@ export class ChannelSynth {
       context,
       {
         gateOn: (time) => this.scheduleInputGateOn(time),
-        gateOff: (time) => this.scheduleInputGateOff(time)
+        gateOff: (time) => this.scheduleInputGateOff(time),
+        cancelFrom: (time) => this.cancelScheduledGatesFrom(time)
       },
       this.settings.autoTrigger
     );
-    this.refreshAutoSchedulerMode();
     this.applyModMode(context.currentTime, false);
     this.applyGlobalDetune(context.currentTime);
     for (const block of Object.keys(this.settings.blocksEnabled) as ChannelBlock[]) {
@@ -211,8 +220,8 @@ export class ChannelSynth {
     this.manualGateActive = false;
     this.baseGateEvents = [{ kind: 'off', time: now }];
     this.ampEnvelope.preserveCurrent(now);
-    if (!this.triggerHeld) this.ampEnvelope.gateOff(now);
-    this.pEnv.reset(now);
+    this.pEnv.preserveCurrent(now); this.fEnv.preserveCurrent(now);
+    if (!this.triggerHeld) { this.ampEnvelope.gateOff(now); this.pEnv.gateOff(now); this.fEnv.gateOff(now); }
     this.emitGate({ kind: 'reset', time: now });
     if (this.triggerHeld) this.emitGate({ kind: 'on', time: now });
   }
@@ -230,7 +239,7 @@ export class ChannelSynth {
     this.cancelPhaseResetsFrom(boundary);
     this.baseGateEvents = this.baseGateEvents.filter(event => event.time < boundary);
     this.ampEnvelope.preserveCurrent(boundary);
-    this.pEnv.reset(boundary);
+    this.pEnv.preserveCurrent(boundary); this.fEnv.preserveCurrent(boundary);
     this.emitGate({ kind: 'cancel', time: boundary });
     this.scheduleGateOff(boundary);
   }
@@ -252,7 +261,7 @@ export class ChannelSynth {
     this.syncPhaseIfSilent(now);
     this.performGateOn(now);
     for (const event of future) {
-      if (event.kind === 'on') this.performGateOn(event.time, event.amp, event.pitch);
+      if (event.kind === 'on') this.performGateOn(event.time, event.amp, event.pitch, event.filter);
     }
   }
 
@@ -268,12 +277,12 @@ export class ChannelSynth {
     this.triggerHeld = false;
     const future = this.futureBaseGates(now);
     const baseOn = this.baseGateIsOn(now);
-    if (baseOn) this.ampEnvelope.preserveCurrent(now);
-    else this.ampEnvelope.gateOff(now);
+    if (baseOn) { this.ampEnvelope.preserveCurrent(now); this.pEnv.preserveCurrent(now); this.fEnv.preserveCurrent(now); }
+    else { this.ampEnvelope.gateOff(now); this.pEnv.gateOff(now); this.fEnv.gateOff(now); }
     this.emitGate({ kind: 'reset', time: now });
     if (baseOn) this.emitGate({ kind: 'on', time: now });
     for (const event of future) {
-      if (event.kind === 'on') this.performGateOn(event.time, event.amp, event.pitch);
+      if (event.kind === 'on') this.performGateOn(event.time, event.amp, event.pitch, event.filter);
       else this.performGateOff(event.time);
     }
   }
@@ -308,7 +317,7 @@ export class ChannelSynth {
   private scheduleInputGateOn(time: number): void {
     if (!this.burstActive()) { this.scheduleGateOn(time); return; }
     const wasOn = this.baseGateIsOn(Math.max(this.context.currentTime, time - 1e-9));
-    const event: BaseGateEvent = { kind: 'on', time, amp: { ...this.settings.ampEnvelope }, pitch: { ...this.settings.pitchEnvelope } };
+    const event: BaseGateEvent = { kind: 'on', time, amp: { ...this.settings.ampEnvelope }, pitch: { ...this.settings.pitchEnvelope }, filter: { ...this.settings.filterEnvelope } };
     this.rememberBaseGate(event);
     if (!wasOn && !this.triggerHeld) this.burstScheduler.gateOn(time);
   }
@@ -323,7 +332,7 @@ export class ChannelSynth {
     const amp = { ...this.settings.ampEnvelope };
     const pitch = { ...this.settings.pitchEnvelope };
     this.syncPhaseIfSilent(time);
-    this.performGateOn(time, amp, pitch);
+    this.performGateOn(time, amp, pitch, this.settings.filterEnvelope, this.ampEnvelope.oneShotEndTime(time, amp));
     this.emitGate({ kind: 'off', time: displayOffTime });
   }
 
@@ -331,15 +340,15 @@ export class ChannelSynth {
     const boundary = Math.max(time, this.context.currentTime);
     this.cancelPhaseResetsFrom(boundary);
     this.ampEnvelope.preserveCurrent(boundary);
-    this.pEnv.reset(boundary);
+    this.pEnv.preserveCurrent(boundary); this.fEnv.preserveCurrent(boundary);
     this.emitGate({ kind: 'cancel', time: boundary });
   }
 
   private scheduleGateOn(time: number): void {
-    const event: BaseGateEvent = { kind: 'on', time, amp: { ...this.settings.ampEnvelope }, pitch: { ...this.settings.pitchEnvelope } };
+    const event: BaseGateEvent = { kind: 'on', time, amp: { ...this.settings.ampEnvelope }, pitch: { ...this.settings.pitchEnvelope }, filter: { ...this.settings.filterEnvelope } };
     this.rememberBaseGate(event);
     this.syncPhaseIfSilent(time);
-    this.performGateOn(time, event.amp, event.pitch);
+    this.performGateOn(time, event.amp, event.pitch, event.filter);
   }
 
   private syncPhaseIfSilent(time: number): void {
@@ -351,10 +360,10 @@ export class ChannelSynth {
     this.osc1.cancelPhaseResetsFrom(time); this.osc2.cancelPhaseResetsFrom(time);
   }
 
-  private performGateOn(time: number, amp = this.settings.ampEnvelope, pitch = this.settings.pitchEnvelope): void {
-    const { amount } = this.pEnv.gateOn(time, pitch);
-    this.osc1.setActivePitchAmount(amount, time);
-    this.osc2.setActivePitchAmount(amount, time);
+  private performGateOn(time: number, amp = this.settings.ampEnvelope, pitch = this.settings.pitchEnvelope,
+    filter = this.settings.filterEnvelope, ownedPitchOffTime?: number): void {
+    this.pEnv.gateOn(time, pitch, ownedPitchOffTime);
+    this.fEnv.gateOn(time, filter, ownedPitchOffTime);
     this.ampEnvelope.gateOn(time, amp);
     this.emitGate({ kind: 'on', time });
   }
@@ -366,6 +375,7 @@ export class ChannelSynth {
 
   private performGateOff(time: number): void {
     this.ampEnvelope.gateOff(time);
+    this.pEnv.gateOff(time); this.fEnv.gateOff(time);
     this.emitGate({ kind: 'off', time });
   }
 
@@ -380,7 +390,7 @@ export class ChannelSynth {
     this.scheduleInputGateOff(now + clamp(durationSec, LIMITS.triggerSec.min, LIMITS.triggerSec.max));
   }
 
-  startAutoTrigger(startAt?: number): void {
+  startAutoTrigger(startAt?: number, playSpeed = 1): void {
     const now = this.context.currentTime;
     this.manualGateActive = false;
     this.discardFutureBaseGates();
@@ -388,7 +398,11 @@ export class ChannelSynth {
     // transferring ownership to Auto Play.
     this.scheduleInputGateOff(now);
     this.emitGate({ kind: 'reset', time: now });
-    this.scheduler.start(startAt);
+    this.scheduler.start(startAt, playSpeed);
+  }
+
+  setAutoTriggerPlaybackSpeed(playSpeed: number): void {
+    this.scheduler.setPlaybackSpeed(playSpeed);
   }
 
   stopAutoTrigger(): void {
@@ -396,7 +410,7 @@ export class ChannelSynth {
     const burst = this.burstActive();
     this.discardFutureBaseGates();
     this.scheduler.stop(true);
-    if (!burst) this.ampEnvelope.preserveCurrent(this.context.currentTime);
+    if (!burst) { this.ampEnvelope.preserveCurrent(this.context.currentTime); this.pEnv.preserveCurrent(this.context.currentTime); this.fEnv.preserveCurrent(this.context.currentTime); }
     this.emitGate({ kind: 'reset', time: this.context.currentTime });
     if (this.triggerHeld) this.emitGate({ kind: 'on', time: this.context.currentTime });
   }
@@ -425,9 +439,14 @@ export class ChannelSynth {
     this.applyGlobalDetune(this.context.currentTime);
   }
 
-  setPitchEnvelope(amount: number, transitionTimeSec: number): void {
-    this.settings.pitchEnvelope = { amount, transitionTimeSec };
-    this.pEnv.setSettings(amount, transitionTimeSec);
+  setPitchEnvelope(settings: PitchEnvelopeSettings): void {
+    this.settings.pitchEnvelope = { ...settings };
+    this.pEnv.setSettings(settings);
+  }
+
+  setFilterEnvelope(settings: FilterEnvelopeSettings): void {
+    this.settings.filterEnvelope = { ...settings };
+    this.fEnv.setSettings(settings);
   }
 
   setAmplitudeEnvelope(settings: AmplitudeEnvelopeSettings): void {
@@ -436,7 +455,6 @@ export class ChannelSynth {
     }
     this.settings.ampEnvelope = { ...settings };
     this.ampEnvelope.setSettings(settings);
-    this.refreshAutoSchedulerMode();
   }
 
   setBurstSettings(settings: BurstSettings): void {
@@ -457,11 +475,6 @@ export class ChannelSynth {
     const now = this.context.currentTime;
     if (wasActive && !active) this.burstScheduler.gateOff(now);
     else if (!wasActive && active && (this.baseGateIsOn(now) || this.triggerHeld)) this.burstScheduler.gateOn(now);
-    this.refreshAutoSchedulerMode();
-  }
-
-  private refreshAutoSchedulerMode(): void {
-    this.scheduler?.setMode(this.burstActive() || this.settings.ampEnvelope.mode !== 'one-shot' ? 'gate' : 'one-shot');
   }
 
   setBlockEnabled(block: ChannelBlock, enabled: boolean): void {
@@ -473,6 +486,7 @@ export class ChannelSynth {
       case 'mod': this.applyModMode(this.context.currentTime, true); break;
       case 'filter1': this.filter1.setEnabled(enabled); break;
       case 'filter2': this.filter2.setEnabled(enabled); break;
+      case 'fenv': this.fEnv.setEnabled(enabled); break;
       case 'aenv': this.ampEnvelope.setEnabled(enabled); break;
     }
   }
@@ -641,10 +655,44 @@ export class ChannelSynth {
     return this.detuneNormalized * this.detuneRangeCent;
   }
 
+  setSequencePitch(normalized: number, pitchScaleCent: number, filterAmountCent: number, time = this.context.currentTime, portamentoSec = 0): void {
+    if (![normalized, pitchScaleCent, filterAmountCent, time, portamentoSec].every(Number.isFinite)) throw new Error('Invalid sequence pitch automation.');
+    const value = clamp(normalized, -1, 1);
+    this.sequencePitch.setTarget(value * clamp(pitchScaleCent, 0, P['sequence-pitch-scale'].max), time, portamentoSec);
+    this.sequenceFilter.setTarget(value * clamp(filterAmountCent, P['sequence-filter-amount'].min, P['sequence-filter-amount'].max), time, portamentoSec);
+  }
+
+  getSequenceFilterCent(time = this.context.currentTime): number { return this.sequenceFilter.valueAt(time); }
+
+  /** Legacy OSC-only cent entry; Sequence UI/transport use the normalized entry above. */
+  setSequencePitchCent(cents: number, time = this.context.currentTime, portamentoSec = 0): void {
+    this.sequencePitch.setTarget(cents, time, portamentoSec);
+  }
+
+  holdSequencePitch(time = this.context.currentTime): number {
+    this.sequenceFilter.holdAt(time);
+    return this.sequencePitch.holdAt(time);
+  }
+
+  resetSequencePitch(time = this.context.currentTime, transitionSec = PARAM_SMOOTH_SEC): void {
+    this.sequencePitch.reset(time, transitionSec);
+    this.sequenceFilter.reset(time, transitionSec);
+  }
+
+  getSequencePitchCent(time = this.context.currentTime): number {
+    return this.sequencePitch.valueAt(time);
+  }
+
   getDetunedFrequencyHz(oscillator: 1 | 2): number | null {
     const oscSettings = oscillator === 1 ? this.settings.osc1 : this.settings.osc2;
     if (oscSettings.sourceType === 'white-noise') return null;
     return oscSettings.baseFrequencyHz * 2 ** (this.getCurrentDetuneCent() / 1200);
+  }
+
+  isPitchFloorLimitedNow(): boolean {
+    if (!this.settings.blocksEnabled.penv) return false;
+    const ratio = 1 + this.pEnv.scaledValueAt(this.context.currentTime);
+    return [this.osc1, this.osc2].some(osc => osc.isPeriodic() && osc.frequencyHz * ratio <= .1);
   }
 
   getSettings(): ChannelSettings {
@@ -676,7 +724,7 @@ export class ChannelSynth {
     this.setOsc1DutyRatio(next.osc1.dutyRatio);
     this.setOsc2DutyRatio(next.osc2.dutyRatio);
     this.setPhaseMode(next.phaseMode);
-    this.setPitchEnvelope(next.pitchEnvelope.amount, next.pitchEnvelope.transitionTimeSec);
+    this.setPitchEnvelope(next.pitchEnvelope);
     this.setModMode(next.mod.mode);
     this.setAmDepth(next.mod.amDepth);
     this.setAmOffset(next.mod.amOffset);
@@ -690,6 +738,7 @@ export class ChannelSynth {
     this.setFilter1Q(next.filter1.q);
     this.setFilter2Q(next.filter2.q);
     this.setAmplitudeEnvelope(next.ampEnvelope);
+    this.setFilterEnvelope(next.filterEnvelope);
     this.setAutoTrigger(next.autoTrigger);
     this.setBurstSettings(next.burst);
     await this.fx1.applySettings(next.fx1);
@@ -704,6 +753,7 @@ export class ChannelSynth {
     this.burstScheduler.cancelFrom(this.context.currentTime);
     this.burstScheduler.stop();
     this.ampEnvelope.silence();
+    this.fEnv.silence(); this.fEnv.dispose();
     this.osc1.dispose();
     this.osc2.dispose();
     this.filter1.dispose();
@@ -720,6 +770,8 @@ export class ChannelSynth {
     this.fx1.dispose();
     this.output.disconnect();
     this.pEnv.dispose();
+    this.sequencePitch.dispose();
+    this.sequenceFilter.dispose();
     this.gateListeners.clear();
     this.disposed = true;
   }

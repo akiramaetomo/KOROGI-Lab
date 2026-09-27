@@ -83,10 +83,12 @@ export class MixerPanel {
         const file = fileInput.files?.[0]; if (!file || this.loading) return;
         this.loading = true; this.refresh();
         try {
-          const timbre = parseTimbre(await file.text());
+          const source = await file.text();
+          const oldPitchEnvelope = !['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14'].includes((JSON.parse(source) as { formatVersion?: string }).formatVersion ?? '');
+          const timbre = parseTimbre(source);
           this.beforeReplace(id);
           this.manual.forgetSource(id); this.engine()?.replaceChannel(id, timbre); this.refresh(); this.selectionChanged();
-          this.report(`Loaded timbre ${id}: ${timbre.name}`);
+          this.report(`Loaded timbre ${id}: ${timbre.name}${oldPitchEnvelope ? ' · Legacy PEnv Amount/Time was ignored; new PEnv is neutral.' : ''}`);
         } catch (error) { this.report(`Timbre import failed: ${error instanceof Error ? error.message : String(error)}`); }
         finally { this.loading = false; fileInput.value = ''; this.refresh(); }
       });

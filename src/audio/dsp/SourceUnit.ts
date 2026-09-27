@@ -31,23 +31,22 @@ type SourceNodes = PeriodicSourceNodes | NoiseSourceNodes;
 /**
  * Stable source slot with a stable output node.
  * For periodic sources:
- *   Oscillator.frequency = base frequency
- *   Oscillator.detune = global detune + PEnv(cents) + optional FM(cents)
+ *   Oscillator.frequency = base frequency * max(0.1/base, 1 + scaled PEnv)
+ *   Oscillator.detune = global detune + external cent signals
  *
- * CR-2026-09-16: PEnv is interpolated in logarithmic frequency space.
- * The user-facing peak remains a +/- percentage. The percentage is converted
- * to cents so the peak frequency stays exactly f0 * (1 + p).
+ * PEnv's frequency-ratio trajectory is linear. The shaper only bounds the
+ * nonpositive endpoint; it is an identity map elsewhere.
  */
 export class SourceUnit {
   readonly output: GainNode;
   readonly pEnvScale: GainNode;
+  private readonly pEnvFloor: WaveShaperNode;
 
   private baseFrequencyControl: ConstantSourceNode;
   private current: SourceNodes | null = null;
   private sourceType: OscSourceType;
   private baseFrequencyHz: number;
   private detuneCent = 0;
-  private activePitchAmount = 0;
   private dutyRatio = 0.5;
   private readonly pendingPhaseResets: PendingPhaseReset[] = [];
 
@@ -57,7 +56,7 @@ export class SourceUnit {
     pEnvShape: AudioNode,
     initialType: OscSourceType,
     initialBaseFrequencyHz: number,
-    private readonly externalDetuneSignal?: AudioNode,
+    private readonly externalDetuneSignals: readonly AudioNode[] = [],
     initialDutyRatio = 0.5
   ) {
     this.output = context.createGain();
@@ -67,8 +66,10 @@ export class SourceUnit {
     this.baseFrequencyControl = this.createBaseFrequencyControl();
 
     this.pEnvScale = context.createGain();
-    this.pEnvScale.gain.value = 0;
-    pEnvShape.connect(this.pEnvScale);
+    this.pEnvScale.gain.value = this.baseFrequencyHz;
+    this.pEnvFloor = context.createWaveShaper();
+    this.updatePitchFloor();
+    pEnvShape.connect(this.pEnvFloor).connect(this.pEnvScale);
 
     this.sourceType = initialType;
     this.dutyRatio = clamp(initialDutyRatio, LIMITS.dutyRatio.min, LIMITS.dutyRatio.max);
@@ -111,6 +112,8 @@ export class SourceUnit {
     const next = this.limitFrequency(hz);
     this.baseFrequencyHz = next;
     smoothAudioParam(this.baseFrequencyControl.offset, next, now, PARAM_SMOOTH_SEC);
+    smoothAudioParam(this.pEnvScale.gain, next, now, PARAM_SMOOTH_SEC);
+    this.updatePitchFloor();
   }
 
   /** Recreate sources that were started while a realtime context was suspended. */
@@ -120,14 +123,6 @@ export class SourceUnit {
     this.baseFrequencyControl.disconnect();
     this.baseFrequencyControl = this.createBaseFrequencyControl();
     this.buildSource(this.sourceType);
-  }
-
-  setActivePitchAmount(amount: number, time: number): void {
-    this.activePitchAmount = clamp(amount, LIMITS.pitchAmount.min, LIMITS.pitchAmount.max);
-    const peakRatio = 1 + this.activePitchAmount;
-    const peakCent = 1200 * Math.log2(peakRatio);
-    this.pEnvScale.gain.cancelScheduledValues(time);
-    this.pEnvScale.gain.setValueAtTime(peakCent, time);
   }
 
   setDetune(cents: number, now = this.context.currentTime): void {
@@ -179,6 +174,7 @@ export class SourceUnit {
     }
     this.baseFrequencyControl.disconnect();
     this.pEnvScale.disconnect();
+    this.pEnvFloor.disconnect();
     this.output.disconnect();
   }
 
@@ -212,8 +208,8 @@ export class SourceUnit {
     oscillator.detune.value = this.detuneCent;
     const gain = this.context.createGain(); gain.gain.value = 1;
     this.baseFrequencyControl.connect(oscillator.frequency);
-    this.pEnvScale.connect(oscillator.detune);
-    this.externalDetuneSignal?.connect(oscillator.detune);
+    this.pEnvScale.connect(oscillator.frequency);
+    this.externalDetuneSignals.forEach(signal => signal.connect(oscillator.detune));
     oscillator.connect(gain); gain.connect(this.output);
     oscillator.start(startTime);
     return { oscillator, gain };
@@ -259,8 +255,10 @@ export class SourceUnit {
   private destroyGeneration(generation: PeriodicGeneration): void {
     if (this.current?.kind === 'periodic') this.current.generations.delete(generation);
     try { this.baseFrequencyControl.disconnect(generation.oscillator.frequency); } catch { /* absent */ }
-    try { this.pEnvScale.disconnect(generation.oscillator.detune); } catch { /* absent */ }
-    try { this.externalDetuneSignal?.disconnect(generation.oscillator.detune); } catch { /* absent */ }
+    try { this.pEnvScale.disconnect(generation.oscillator.frequency); } catch { /* absent */ }
+    for (const signal of this.externalDetuneSignals) {
+      try { signal.disconnect(generation.oscillator.detune); } catch { /* absent */ }
+    }
     generation.oscillator.disconnect(); generation.gain.disconnect();
     try { generation.oscillator.stop(); } catch { /* already stopped */ }
   }
@@ -268,5 +266,14 @@ export class SourceUnit {
   private limitFrequency(hz: number): number {
     const nyquistSafe = this.context.sampleRate * 0.5 * 0.999;
     return clamp(hz, LIMITS.oscillatorHz.min, Math.min(LIMITS.oscillatorHz.max, nyquistSafe));
+  }
+
+  private updatePitchFloor(): void {
+    const floorDeviation = .1 / this.baseFrequencyHz - 1;
+    const curve = new Float32Array(8193);
+    for (let i = 0; i < curve.length; i += 1) {
+      curve[i] = Math.max(floorDeviation, 2 * i / (curve.length - 1) - 1);
+    }
+    this.pEnvFloor.curve = curve;
   }
 }

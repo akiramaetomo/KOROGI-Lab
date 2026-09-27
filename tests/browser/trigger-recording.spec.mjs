@@ -10,6 +10,7 @@ async function savedTimbre(page, id = '1') {
 }
 
 async function hold(page, milliseconds) {
+  await page.locator('#record-gate').scrollIntoViewIfNeeded();
   const box = await page.locator('#record-gate').boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
@@ -18,10 +19,11 @@ async function hold(page, milliseconds) {
 }
 
 function userRecording(timbre, patternId = 'user-1') {
-  return timbre.patterns.find(pattern => pattern.id === patternId).recording;
+  return timbre.gatePatterns.find(pattern => pattern.id === patternId).recording;
 }
 
 async function dragTimelineHandle(page, selector, valueSec, durationSec) {
+  await page.locator(selector).scrollIntoViewIfNeeded();
   const handle = await page.locator(selector).boundingBox();
   const timeline = await page.locator('#record-timeline').boundingBox();
   const grabX = selector.includes('end') ? handle.x + 4 : handle.x + handle.width - 4;
@@ -32,12 +34,13 @@ async function dragTimelineHandle(page, selector, valueSec, durationSec) {
 }
 
 test('records only the large Gate, trims without losing the take, loops and round-trips through timbre/session', async ({ page }) => {
-  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeDisabled(); await page.locator('#trigger-menu').click();
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeEnabled(); await page.locator('#trigger-menu').click();
   await page.locator('#record-length').fill('2');
   await page.locator('#source-user-1').click();
+  await page.locator('#record-mode + .segmented-choice [data-value="gate"]').click();
   await expect(page.locator('#record-toggle')).toBeEnabled();
   await page.locator('#record-toggle').click();
-  await expect(page.locator('#record-status')).toHaveText('Recording');
+  await expect(page.locator('#record-status')).toContainText('Recording · One take');
   for (const selector of ['#gate-1', '#play-1', '#trigger', '#select-2']) await expect(page.locator(selector)).toBeDisabled();
   await expect(page.locator('#play-all')).toBeEnabled();
   await hold(page, 230);
@@ -45,7 +48,7 @@ test('records only the large Gate, trims without losing the take, loops and roun
   await page.locator('#record-toggle').click();
   await expect(page.locator('#record-status')).toHaveText('Recording complete');
   const timbre = await savedTimbre(page);
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v7');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v14');
   expect(userRecording(timbre).gates).toHaveLength(1);
   const gate = userRecording(timbre).gates[0];
   expect(gate.offSec - gate.onSec).toBeGreaterThan(.15);
@@ -68,10 +71,10 @@ test('records only the large Gate, trims without losing the take, loops and roun
       return window.originalRecordedGateOn.apply(this, args);
     };
   });
-  await page.locator('#source-user-1').click();
+  await page.locator('#source-recorded').click();
   await page.locator('#sequence-panel').click();
   await expect(page.locator('#record-status')).toHaveText('Loop playing');
-  await expect(page.locator('#sequence-panel')).toHaveText('Stop');
+  await expect(page.locator('#sequence-panel')).toContainText('Stop');
   await expect(page.locator('#gate-1')).toBeEnabled();
   await expect.poll(() => page.evaluate(() => window.recordedGateOns)).toBeGreaterThanOrEqual(2);
   await expect(page.locator('#record-start-handle')).toBeEnabled();
@@ -82,7 +85,7 @@ test('records only the large Gate, trims without losing the take, loops and roun
   const editedWhilePlaying = await savedTimbre(page);
   expect(userRecording(editedWhilePlaying).selectionEndSec).toBeCloseTo(shorterEnd, 2);
   await page.locator('#sequence-panel').click();
-  await expect(page.locator('#sequence-panel')).toHaveText('Play');
+  await expect(page.locator('#sequence-panel')).toContainText('Play');
   const countAtStop = await page.evaluate(() => window.recordedGateOns);
   await page.waitForTimeout(180);
   expect(await page.evaluate(() => window.recordedGateOns)).toBe(countAtStop);
@@ -101,9 +104,9 @@ test('records only the large Gate, trims without losing the take, loops and roun
   const sessionDownload = page.waitForEvent('download');
   await page.locator('#export-patch').click();
   const session = JSON.parse(await readFile(await (await sessionDownload).path(), 'utf8'));
-  expect(session.formatVersion).toBe('KOROGI-Lab/session-v8');
+  expect(session.formatVersion).toBe('KOROGI-Lab/session-v15');
   expect(userRecording(session.channels[0].timbre)).toEqual(userRecording(editedWhilePlaying));
-  expect(session.channels[0].timbre.playbackSource).toEqual({ kind: 'user', patternId: 'user-1' });
+  expect(session.channels[0].timbre.sequence).toMatchObject({ gateMode: 'user', gateUserId: 'user-1', pitchUserId: 'user-1' });
   expect(userRecording(session.channels[1].timbre)).toEqual(userRecording(trimmed));
   await page.locator('#trigger-menu').click(); await page.locator('#sequence-panel').click();
   await expect(page.locator('#record-status')).toHaveText('Loop playing');
@@ -117,7 +120,7 @@ test('records only the large Gate, trims without losing the take, loops and roun
 });
 
 test('Trigger overlays Auto without losing the manual hold and T repeat survives save', async ({ page }) => {
-  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeDisabled(); await page.locator('#trigger-menu').click();
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeEnabled(); await page.locator('#trigger-menu').click();
   await expect(page.locator('#gate-lamp-panel')).toHaveAttribute('aria-label', 'Gate off');
   await expect(page.locator('#record-gate')).toBeEnabled();
   await hold(page, 75);
@@ -125,8 +128,9 @@ test('Trigger overlays Auto without losing the manual hold and T repeat survives
   await page.locator('#ton').fill('100'); await page.locator('#ton').dispatchEvent('change');
   await page.locator('#trepeat').fill('400'); await page.locator('#trepeat').dispatchEvent('change');
   await page.locator('#sequence-panel').click();
-  await expect(page.locator('#sequence-panel')).toHaveText('Stop');
+  await expect(page.locator('#sequence-panel')).toContainText('Stop');
   await expect(page.locator('#play-1')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#record-gate').scrollIntoViewIfNeeded();
   const box = await page.locator('#record-gate').boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
   await expect(page.locator('#gate-lamp-panel')).toHaveAttribute('aria-label', 'Gate on');
@@ -146,29 +150,31 @@ test('Trigger overlays Auto without losing the manual hold and T repeat survives
   await expect(page.locator('#play-1')).toHaveAttribute('aria-pressed', 'true');
   await page.mouse.up();
   await page.locator('#sequence-panel').click();
-  await expect(page.locator('#sequence-panel')).toHaveText('Play');
+  await expect(page.locator('#sequence-panel')).toContainText('Play');
   await page.locator('#ton').fill('500'); await page.locator('#ton').dispatchEvent('change');
-  await expect(page.locator('#trepeat')).toHaveValue('505');
+  await expect(page.locator('#trepeat')).toHaveValue('400');
   const timbre = await savedTimbre(page);
   expect(timbre.settings.autoTrigger.tonSec).toBeCloseTo(.5);
-  expect(timbre.settings.autoTrigger.toffSec).toBeCloseTo(.005);
+  expect(timbre.settings.autoTrigger.repeatSec).toBeCloseTo(.4);
   await page.locator('#timbre-file-2').setInputFiles({ name: 'auto.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
   await page.locator('#select-2').click();
-  await expect(page.locator('#trepeat')).toHaveValue('505');
+  await expect(page.locator('#trepeat')).toHaveValue('400');
   await page.locator('#play-2').click();
-  await expect(page.locator('#sequence-panel')).toHaveText('Stop');
+  await expect(page.locator('#sequence-panel')).toContainText('Stop');
   await page.locator('#play-2').click();
-  await expect(page.locator('#sequence-panel')).toHaveText('Play');
+  await expect(page.locator('#sequence-panel')).toContainText('Play');
 });
 
 test('Trigger stays audible across Loop OFF and stopping Loop preserves the held Gate', async ({ page }) => {
-  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeDisabled(); await page.locator('#trigger-menu').click();
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeEnabled(); await page.locator('#trigger-menu').click();
   const timbre = await savedTimbre(page);
-  timbre.patterns[0].recording = { durationSec: .2, selectionStartSec: 0, selectionEndSec: .2, gates: [{ onSec: 0, offSec: .05 }] };
+  timbre.gatePatterns[0].recording = { durationSec: .2, selectionStartSec: 0, selectionEndSec: .2, gates: [{ onSec: 0, offSec: .05 }] };
+  timbre.sequence.gateMode = 'user';
   await page.locator('#timbre-file-1').setInputFiles({ name: 'loop.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
   await page.locator('#source-user-1').click();
   await page.locator('#sequence-panel').click();
-  await expect(page.locator('#sequence-panel')).toHaveText('Stop');
+  await expect(page.locator('#sequence-panel')).toContainText('Stop');
+  await page.locator('#record-gate').scrollIntoViewIfNeeded();
   const box = await page.locator('#record-gate').boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
   await expect(page.locator('#gate-lamp-panel')).toHaveAttribute('aria-label', 'Gate on');
@@ -234,10 +240,11 @@ test('rebuilding a reserved Gate keeps the ADSR snapshot taken at its original O
 });
 
 test('changing the trim while playing keeps the current cycle and starts the new range at its boundary', async ({ page }) => {
-  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeDisabled(); await page.locator('#trigger-menu').click();
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeEnabled(); await page.locator('#trigger-menu').click();
   const timbre = await savedTimbre(page);
-  timbre.patterns[0].recording = { durationSec: .8, selectionStartSec: 0, selectionEndSec: .8,
+  timbre.gatePatterns[0].recording = { durationSec: .8, selectionStartSec: 0, selectionEndSec: .8,
     gates: [{ onSec: .1, offSec: .2 }, { onSec: .55, offSec: .65 }] };
+  timbre.sequence.gateMode = 'user';
   await page.locator('#timbre-file-1').setInputFiles({ name: 'two-gates.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
   await page.locator('#source-user-1').click();
   await page.evaluate(async () => {
@@ -262,12 +269,14 @@ test('changing the trim while playing keeps the current cycle and starts the new
 });
 
 test('recording limit closes a held Gate, and an empty recording remains saveable', async ({ page }) => {
-  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeDisabled(); await page.locator('#trigger-menu').click();
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeEnabled(); await page.locator('#trigger-menu').click();
   await page.locator('#record-length').fill('1');
   await page.locator('#source-user-1').click();
+  await page.locator('#record-mode + .segmented-choice [data-value="gate"]').click();
   await expect(page.locator('#record-toggle')).toBeEnabled();
   await page.locator('#record-toggle').click();
-  await expect(page.locator('#record-status')).toHaveText('Recording');
+  await expect(page.locator('#record-status')).toContainText('Recording · One take');
+  await page.locator('#record-gate').scrollIntoViewIfNeeded();
   const box = await page.locator('#record-gate').boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
   await expect(page.locator('#record-status')).toHaveText('Recording complete', { timeout: 5000 });
@@ -279,25 +288,56 @@ test('recording limit closes a held Gate, and an empty recording remains saveabl
   await expect(page.locator('#gate-1')).not.toHaveClass(/on/);
 
   await page.locator('#record-toggle').click();
-  await expect(page.locator('#record-status')).toHaveText('Recording');
+  await expect(page.locator('#record-status')).toContainText('Recording · One take');
   expect(userRecording(await savedTimbre(page))).toEqual(userRecording(first));
   await page.locator('#record-toggle').click();
   const empty = await savedTimbre(page);
-  expect(userRecording(empty).gates).toEqual([]);
+  expect(userRecording(empty)).toEqual(userRecording(first));
   await page.locator('#source-user-1').click();
   await expect(page.locator('#sequence-panel')).toBeEnabled();
   await page.locator('#sequence-panel').click();
-  await expect(page.locator('#patch-status')).toContainText('record User 1 before Play');
+  await expect(page.locator('#sequence-panel')).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('Play Speed controls recording clock and retained Pitch playback', async ({ page }) => {
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  const timbre = await savedTimbre(page);
+  timbre.pitchPatterns[0].recording = { durationSec: .2, selectionStartSec: 0, selectionEndSec: .2,
+    points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: .1, valueNormalized: 1 }, { timeSec: .2, valueNormalized: 0 }] };
+  timbre.pitchPatterns[0].pitchScaleCent = 200;
+  timbre.pitchPatterns[0].pitchMode = { kind: 'smooth' };
+  timbre.sequence.recordSpeed = 1; timbre.sequence.playSpeed = 2;
+  await page.locator('#timbre-file-1').setInputFiles({ name: 'record-speed.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
+  await page.evaluate(async () => {
+    const { AudioEngine } = await import('/src/audio/core/AudioEngine.ts');
+    window.retainedPitchCalls = 0;
+    const original = AudioEngine.prototype.setSequencePitch;
+    AudioEngine.prototype.setSequencePitch = function (...args) {
+      window.retainedPitchCalls += 1;
+      return original.apply(this, args);
+    };
+  });
+  await page.locator('#trigger-menu').click();
+  await page.locator('#record-length').fill('1');
+  await page.locator('#record-mode + .segmented-choice [data-value="gate"]').click();
+  const started = await page.evaluate(() => performance.now());
+  await page.locator('#record-toggle').click();
+  await expect(page.locator('#record-status')).toContainText('Recording · One take');
+  await expect.poll(() => page.evaluate(() => window.retainedPitchCalls)).toBeGreaterThan(0);
+  await expect(page.locator('#record-status')).toContainText('previous Gate and Pitch preserved', { timeout: 3000 });
+  const wallSec = (await page.evaluate(() => performance.now()) - started) / 1000;
+  expect(wallSec).toBeGreaterThan(.35);
+  expect(wallSec).toBeLessThan(.9);
+  expect(userRecording(await savedTimbre(page))).toBeNull();
 });
 
 test('User 1 and User 2 keep independent timelines and expose pointer and keyboard slider semantics', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await page.locator('#trigger-menu').click();
-  await expect(page.locator('#record-toggle')).toBeDisabled();
-  await expect(page.locator('#record-target')).toContainText('Select User 1 or User 2');
+  await expect(page.locator('#record-toggle')).toBeEnabled();
+  await expect(page.locator('#record-target')).toContainText('User 1');
   const timbre = await savedTimbre(page);
-  timbre.patterns[0].recording = { durationSec: 1, selectionStartSec: .1, selectionEndSec: .8, gates: [{ onSec: .1, offSec: .2 }] };
-  timbre.patterns[1].recording = { durationSec: 2, selectionStartSec: .5, selectionEndSec: 1.5, gates: [{ onSec: .6, offSec: .7 }] };
-  timbre.playbackSource = { kind: 'user', patternId: 'user-1' };
+  timbre.gatePatterns[0].recording = { durationSec: 1, selectionStartSec: .1, selectionEndSec: .8, gates: [{ onSec: .1, offSec: .2 }] };
+  timbre.gatePatterns[1].recording = { durationSec: 2, selectionStartSec: .5, selectionEndSec: 1.5, gates: [{ onSec: .6, offSec: .7 }] };
   await page.locator('#timbre-file-1').setInputFiles({ name: 'two-patterns.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
   await expect(page.locator('#source-user-1')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#record-start-value')).toHaveText('0.10 s');
@@ -316,7 +356,7 @@ test('User 1 and User 2 keep independent timelines and expose pointer and keyboa
 
 test('large Gate and both timeline handles remain reachable at tablet size', async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 1024 });
-  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeDisabled(); await page.locator('#trigger-menu').click();
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeEnabled(); await page.locator('#trigger-menu').click();
   const gate = await page.locator('#record-gate').boundingBox();
   expect(gate.width).toBeGreaterThanOrEqual(130);
   expect(gate.height).toBeGreaterThanOrEqual(76);

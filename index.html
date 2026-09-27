@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="KOROGI-Lab is a Web Audio research app for designing insect and environmental sounds with eight timbres and shared Near/Far processing." />
     <title>KOROGI-Lab Ver.0.1</title>
+    <link rel="stylesheet" href="/src/ui/colors.css" />
     <link rel="stylesheet" href="/src/ui/harness.css" />
   </head>
   <body>
@@ -53,16 +54,17 @@
         <div class="editor-column">
       <section class="signal-map" aria-label="TIMBRE and parallel Near Far signal flow">
         <div class="signal-canvas">
-          <svg class="signal-wires" aria-hidden="true"><defs><marker id="wire-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#8aafb5" /></marker></defs><g class="wire-paths"></g></svg>
+          <svg class="signal-wires" aria-hidden="true"><defs><marker id="wire-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" class="wire-arrow-head" /></marker></defs><g class="wire-paths"></g></svg>
           <div class="signal-group source-group" role="group" aria-label="Selected TIMBRE">
             <div class="voice-heading"><strong id="voice-title">TIMBRE · 1 / Standard</strong><span>Solid: audio · Dashed: control</span></div>
             <div class="voice-grid">
               <div class="osc-control-stack">
                 <button id="flow-osc1" class="flow-node" data-flow-block="osc1" data-panel-target="sources" data-focus-target="#osc1-type">OSC1</button>
-                <button id="flow-penv" class="flow-node control-node" data-flow-block="penv" data-panel-target="modulation" data-focus-target="#penv-amount">PEnv</button>
+                <button id="flow-penv" class="flow-node control-node" data-flow-block="penv" data-panel-target="modulation" data-focus-target="#penv-start">PEnv</button>
                 <button id="flow-osc2" class="flow-node" data-flow-block="osc2" data-panel-target="sources" data-focus-target="#osc2-type">OSC2</button>
               </div>
               <button id="flow-mod" class="flow-node" data-flow-block="mod" data-panel-target="modulation" data-focus-target="#mod-mode">MOD</button>
+              <button id="flow-fenv" class="flow-node control-node" data-flow-block="fenv" data-panel-target="fenv" data-focus-target="#fenv-amount">FEnv</button>
               <button id="flow-filter1" class="flow-node" data-flow-block="filter1" data-panel-target="filters" data-focus-target="#filter1-type">FILTER1</button>
               <div class="aenv-control-stack">
                 <button id="flow-aenv" class="flow-node" data-flow-block="aenv" data-panel-target="amp" data-focus-target="#attack">AEnv</button>
@@ -174,7 +176,7 @@
 
           <section class="function-panel" data-panel="modulation">
             <div class="panel-heading">
-              <div><strong>PITCH / MODULATION</strong><span>PEnv is common to OSC1/OSC2 and runs in log-frequency space. AM and FM are exclusive.</span></div>
+              <div><strong>PITCH / MODULATION</strong><span>PEnv is common to OSC1/OSC2. ADSR points are percent offsets from each oscillator's base frequency; interpolation is linear in percent. AM and FM are exclusive.</span></div>
               <span id="mod-path-label" class="path-label">OSC2 → FILTER2 → MOD</span>
             </div>
             <div class="control-columns two mod-layout">
@@ -199,14 +201,30 @@
                   <input id="fm-depth" data-audio-control type="number" min="0" max="4800" step="1" value="100" disabled />
                 </label>
               </fieldset>
-              <fieldset>
+              <fieldset class="penv-editor">
                 <legend>PEnv</legend>
-                <label>Pitch Amount <span class="unit">%</span>
-                  <input id="penv-amount" data-audio-control type="number" min="-10" max="10" step="0.1" value="0" disabled />
-                </label>
-                <label>Transition Time <span class="unit">ms</span>
-                  <input id="penv-time" data-audio-control type="number" min="1" max="5000" step="1" value="50" disabled />
-                </label>
+                <div class="penv-controls-scroll"><div class="penv-controls-inner">
+                <div class="penv-mode-scale">
+                <div class="penv-mode-switches">
+                <label class="choice-field"><span>PEnv mode</span><select id="penv-mode" data-audio-control hidden disabled><option value="gate">Gate</option><option value="one-shot">One-shot</option></select></label>
+                <label class="choice-field"><span>PEnv Release</span><select id="penv-release-timing" data-audio-control hidden disabled><option value="time">Time</option><option value="rate">Rate</option></select></label>
+                </div>
+                <label>Scale <span class="unit">0..1</span><input id="penv-scale" data-audio-control type="number" aria-label="PEnv Scale" disabled /></label>
+                </div>
+                <div class="penv-control-grid penv-points">
+                  <label>P0 <span class="unit">%</span><input id="penv-start" data-audio-control type="number" aria-label="P0 / Start (%)" disabled /></label>
+                  <label>Pa <span class="unit">%</span><input id="penv-attack-level" data-audio-control type="number" aria-label="Pa / Attack level (%)" disabled /></label>
+                  <label>Ps <span class="unit">%</span><input id="penv-sustain-level" data-audio-control type="number" aria-label="Ps / Sustain level (%)" disabled /></label>
+                  <label>Pr <span class="unit">%</span><input id="penv-release-level" data-audio-control type="number" aria-label="Pr / Release end (%)" disabled /></label>
+                </div>
+                <div class="penv-control-grid penv-times">
+                  <label>Ta <span class="unit">ms</span><input id="penv-attack-time" data-audio-control type="number" aria-label="Ta / Attack (ms)" disabled /></label>
+                  <label>Td <span class="unit">ms</span><input id="penv-decay-time" data-audio-control type="number" aria-label="Td / Decay (ms)" disabled /></label>
+                  <label>Tr <span class="unit">ms</span><input id="penv-release-time" data-audio-control type="number" aria-label="Tr / Release reference (ms)" disabled /></label>
+                </div>
+                </div></div>
+                <output id="penv-floor-status" aria-live="polite" hidden>Frequency floor active: PEnv is limited to 0.1 Hz before other cent modulation.</output>
+                <div id="penv-shape-guide"></div>
               </fieldset>
             </div>
           </section>
@@ -283,32 +301,12 @@
               <div><strong>AMPLITUDE ENVELOPE</strong><span>Curve applies to Attack, Decay and Release. Gate releases on OFF; One-shot releases after Decay.</span></div>
               <span class="path-label">FILTER1 → AEnv → Channel Gain</span>
             </div>
-            <fieldset class="wide-fieldset">
-              <legend>AEnv / ADSR</legend>
-              <div class="inline-grid four">
-                <label>Attack <span class="unit">ms</span>
-                  <input id="attack" data-audio-control type="number" min="1" max="5000" step="1" value="5" disabled />
-                </label>
-                <label>Decay <span class="unit">ms</span>
-                  <input id="decay" data-audio-control type="number" min="1" max="5000" step="1" value="20" disabled />
-                </label>
-                <label>Sustain <span class="unit">0..1</span>
-                  <input id="sustain" data-audio-control type="number" min="0" max="1" step="0.01" value="0.8" disabled />
-                </label>
-                <label>Release <span class="unit">ms</span>
-                  <input id="release" data-audio-control type="number" min="1" max="5000" step="1" value="30" disabled />
-                </label>
-              </div>
-              <div class="aenv-mode-row">
-                <div class="aenv-curve-control">
-                  <label class="choice-field"><span>A/D/R curve</span><select id="aenv-curve" data-audio-control hidden disabled><option value="exponential">Exponential</option><option value="linear">Linear</option></select></label>
-                  <output id="aenv-curve-status" aria-live="polite" hidden>Mixed A/D/R curves</output>
-                </div>
-                <div class="aenv-mode-control">
-                  <label class="choice-field"><span>Envelope mode</span><select id="aenv-mode" data-audio-control hidden disabled><option value="gate">Gate</option><option value="one-shot">One-shot</option></select></label>
-                </div>
-              </div>
-            </fieldset>
+            <fieldset class="wide-fieldset" data-adsr="aenv"></fieldset>
+          </section>
+
+          <section class="function-panel" data-panel="fenv">
+            <div class="panel-heading"><div><strong>FILTER ENVELOPE</strong><span>Independent signed cent envelope for Filter1.</span></div></div>
+            <fieldset class="wide-fieldset" data-adsr="fenv"></fieldset>
           </section>
 
           <section class="function-panel" data-panel="burst">
@@ -344,43 +342,58 @@
 
           <section class="function-panel" data-panel="triggering">
             <div class="panel-heading">
-              <div><strong>SEQUENCE</strong><span>Play and record Gate gestures for the selected timbre.</span></div>
+              <div><strong>SEQUENCE</strong><span>Play and record independent Gate and Pitch gestures for the selected timbre.</span></div>
               <span class="gate-lamp trigger-gate-led" id="gate-lamp-panel" role="status" aria-label="Gate off">GATE</span>
             </div>
             <div class="trigger-editor">
-              <div class="trigger-top-row">
-                <div class="trigger-settings trigger-group" role="group" aria-label="Auto timing">
-                  <strong class="trigger-group-title">AUTO</strong>
-                  <div class="timing-controls"><label>Ton <span class="unit">ms</span>
-                    <input id="ton" data-audio-control type="number" min="50" max="10000" step="1" value="250" disabled />
-                  </label>
-                  <span id="ton-one-shot-status" class="mode-readout" hidden>AEnv One Shot Mode</span>
-                  <label>T repeat <span class="unit">ms</span>
-                    <input id="trepeat" data-audio-control type="number" min="10" max="6000" step="1" value="500" disabled />
-                  </label></div>
+              <div class="trigger-editor-inner">
+                <div class="trigger-top-row">
+                  <div class="trigger-user-group trigger-group" role="group" aria-label="Sequence recording">
+                    <strong class="trigger-group-title">RECORD</strong>
+                    <div class="record-controls">
+                      <label class="choice-field record-mode-field"><span>Record</span><select id="record-mode" hidden><option value="gate" selected>Gate</option><option value="pitch">Pitch</option><option value="both">Both</option></select></label>
+                      <label class="record-length-label"><span class="record-length-heading">Record length <span class="unit">(s)</span></span><input id="record-length" type="text" inputmode="numeric" value="30" aria-label="Record length in seconds, 1 to 300"></label>
+                      <button id="record-toggle" type="button" disabled>Start Recording</button>
+                      <output id="record-counter" aria-live="off">00:00.00 / 00:30.00</output>
+                    </div>
+                    <output id="record-status" role="status">Ready</output>
+                    <details class="record-log-details"><summary>Record log</summary><ol id="record-log"></ol></details>
+                  </div>
+                  <div class="record-performance trigger-group" role="group" aria-label="Sequence control">
+                    <strong class="trigger-group-title">CONTROL</strong>
+                    <div class="preset-rows">
+                      <div class="source-choice" role="group" aria-label="Gate User"><span>Gate</span><button id="source-user-1" type="button">User 1 <small>Null</small></button><button id="source-user-2" type="button">User 2 <small>Null</small></button><button id="source-user-3" type="button">User 3 <small>Null</small></button></div>
+                      <div class="source-choice" role="group" aria-label="Pitch User"><span>Pitch</span><button id="pitch-user-1" type="button">User 1 <small>Null</small></button><button id="pitch-user-2" type="button">User 2 <small>Null</small></button><button id="pitch-user-3" type="button">User 3 <small>Null</small></button></div>
+                    </div>
+                    <button id="sequence-panel" type="button" disabled aria-pressed="false">▶ Play</button>
+                    <label>Play Speed<input id="sequence-play-speed" data-audio-control type="number" value="1" disabled></label>
+                  </div>
                 </div>
-                <div class="record-performance trigger-group" role="group" aria-label="Playback controls">
-                  <div class="source-choice" role="group" aria-label="Playback source"><button id="source-auto" type="button" aria-pressed="true">Auto</button><button id="source-user-1" type="button" aria-pressed="false">User 1</button><button id="source-user-2" type="button" aria-pressed="false">User 2</button></div>
-                  <button id="sequence-panel" type="button" disabled>Play</button>
-                  <button id="record-gate" type="button" disabled aria-label="Hold Trigger">Trigger</button>
-                </div>
-              </div>
-              <div class="trigger-user-group trigger-group" role="group" aria-label="User recording">
-                <strong class="trigger-group-title">USER</strong>
-                <div class="record-controls">
-                  <label class="record-length-label">Record length <span>s</span><input id="record-length" type="text" inputmode="numeric" value="30" aria-label="Record length in seconds, 1 to 300"></label>
-                  <button id="record-toggle" type="button" disabled>Start Recording</button>
-                  <output id="record-counter" aria-live="off">00:00.00 / 00:30.00</output>
-                </div>
-                <div class="record-timeline-area">
-                <div class="record-timeline-label"><strong>Gate timeline</strong><span id="record-target">Timbre 1 · No recording</span></div>
-                <div id="record-timeline" class="record-timeline" role="group" aria-label="Recorded Gate positions along time"><div id="record-selection" class="record-selection"></div><div id="record-gates" class="record-gates"></div><button id="record-start-handle" class="record-selection-handle start" type="button" role="slider" aria-label="Selection start" disabled></button><button id="record-end-handle" class="record-selection-handle end" type="button" role="slider" aria-label="Selection end" disabled></button><div id="record-playhead" class="record-playhead"></div></div>
-                <div class="record-ticks"><span>0</span><span id="record-midpoint">15 s</span><span id="record-endpoint">30 s</span></div>
-                <div class="record-selection-values">
-                  <span>Start <output id="record-start-value">0.00 s</output></span>
-                  <span>End <output id="record-end-value">30.00 s</output></span>
-                </div>
-                <div class="record-playback"><span id="record-status" role="status">Ready</span></div>
+                <div class="sequence-perform trigger-group" role="group" aria-label="Sequence performance">
+                  <strong class="trigger-group-title">PERFORM</strong>
+                  <div class="auto-perform-row"><div class="gate-mode-choice" role="group" aria-label="Gate playback source"><button id="source-auto" type="button" aria-pressed="true">Auto</button><button id="source-recorded" type="button" aria-pressed="false">Recorded Gate</button></div><div class="timing-controls"><label>Ton <span class="unit">ms</span><input id="ton" data-audio-control type="number" min="5" max="3000" step="1" value="250" disabled /></label><label>T repeat <span class="unit">ms</span><input id="trepeat" data-audio-control type="number" min="10" max="6000" step="1" value="500" disabled /></label><span id="auto-timing-warning" class="mode-readout" hidden>Ton ≥ T repeat: the next ON supersedes the earlier OFF.</span></div></div>
+                  <div class="sequence-timelines">
+                    <div class="timeline-row gate-timeline-row"><button id="gate-mute" type="button">Mute</button><div class="record-timeline-area gate-timeline-area">
+                      <div class="record-timeline-label"><strong>Gate timeline</strong><span id="record-target">Timbre 1 · No recording</span><button id="gate-clear" type="button">Clear</button></div>
+                      <div id="record-timeline" class="record-timeline" role="group" aria-label="Recorded Gate positions along time"><div id="record-selection" class="record-selection"></div><div id="record-gates" class="record-gates"></div><button id="record-start-handle" class="record-selection-handle start" type="button" role="slider" aria-label="Selection start" disabled></button><button id="record-end-handle" class="record-selection-handle end" type="button" role="slider" aria-label="Selection end" disabled></button><div id="record-playhead" class="record-playhead"></div></div>
+                      <div class="record-ticks"><span>0</span><span id="record-midpoint">15 s</span><span id="record-endpoint">30 s</span></div>
+                      <div class="record-selection-values"><span>Start <output id="record-start-value">0.00 s</output></span><span>End <output id="record-end-value">30.00 s</output></span></div>
+                    </div></div>
+                    <div class="timeline-row pitch-timeline-row"><button id="pitch-mute" type="button">Mute</button><div class="record-timeline-area pitch-timeline-area">
+                      <div class="record-timeline-label"><strong>Pitch timeline</strong><button id="sequence-link" type="button" aria-pressed="false">Link OFF</button><span id="pitch-record-target">Timbre 1 · No recording</span><button id="pitch-clear" type="button">Clear</button></div>
+                      <div id="pitch-timeline" class="record-timeline pitch-timeline" role="group" aria-label="Recorded Pitch curve along time"><div id="pitch-selection" class="record-selection"></div><svg id="pitch-curve" class="pitch-curve" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="50" x2="1000" y2="50" class="pitch-zero-line"></line><polyline id="pitch-curve-line" class="pitch-curve-line" points=""></polyline></svg><button id="pitch-start-handle" class="record-selection-handle start" type="button" role="slider" aria-label="Pitch selection start" disabled></button><button id="pitch-end-handle" class="record-selection-handle end" type="button" role="slider" aria-label="Pitch selection end" disabled></button><div id="pitch-playhead" class="record-playhead"></div></div>
+                      <div class="record-ticks"><span>0</span><span id="pitch-midpoint">15 s</span><span id="pitch-endpoint">30 s</span></div>
+                      <div class="record-selection-values"><span>Start <output id="pitch-start-value">0.00 s</output></span><span>End <output id="pitch-end-value">30.00 s</output></span></div>
+                    </div></div>
+                  </div>
+                  <div class="sequence-pitch-controls" role="group" aria-label="Pitch recording controls">
+                    <div class="pitch-mode-config"><label class="choice-field"><span>Pitch curve</span><select id="sequence-pitch-mode" data-audio-control hidden disabled><option value="smooth">Smooth</option><option value="stepped">N-step</option></select></label><label>Steps / side<input id="sequence-pitch-steps" data-audio-control type="number" value="12" disabled></label></div>
+                    <label>Portamento<input id="sequence-portamento" data-audio-control type="number" value="0" disabled></label>
+                    <label>Pitch Scale<input id="sequence-pitch-scale" data-audio-control data-numeric-stops="200,400,600,1200,2400" type="number" value="200" disabled></label><output id="sequence-scale-custom"></output>
+                    <label title="Pitch → Filter1 / Filter2 cutoff / center frequency">Filter Amount<input id="sequence-filter-amount" data-audio-control type="number" value="0" disabled></label>
+                  </div>
+                  <div class="pitch-performance"><label for="sequence-pitch-input">Pitch <output id="sequence-pitch-readout">0 cent</output></label><div class="pitch-slider-wrap"><input id="sequence-pitch-input" data-audio-control type="range" min="-1" max="1" step="0.001" value="0" disabled aria-label="Sequence pitch"><div id="sequence-pitch-ticks" class="pitch-step-ticks" aria-hidden="true"></div></div><button id="sequence-pitch-center" data-audio-control type="button" disabled>Center</button><button id="record-gate" type="button" disabled aria-label="Hold Trigger">Trigger</button></div>
+                  <div class="record-playback"><span class="space-trigger-hint">PC: Space = Trigger · Filter Amount → F1 / F2 cutoff / center</span></div>
                 </div>
               </div>
             </div>
@@ -499,7 +512,7 @@
               <fieldset>
                 <legend>Status</legend>
                 <div class="patch-status" id="patch-status">No patch operation yet.</div>
-                <div class="readout-line">Use Load and Save in TIMBRES for individual timbres. Session files include all eight slots, User patterns and COMMON SPACE. New files use timbre-v7 / session-v8; supported older files can be loaded.</div>
+                <div class="readout-line">Use Load and Save in TIMBRES for individual timbres. Session files include all eight slots, independent Gate and Pitch User presets, and COMMON SPACE. New files use timbre-v14 / session-v15; supported older files can be loaded. Legacy PEnv Amount/Time is ignored on import.</div>
               </fieldset>
             </div>
           </section>

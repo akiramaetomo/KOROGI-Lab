@@ -18,6 +18,12 @@ async function edit(page, selector, value) {
   await page.locator(selector).dispatchEvent('change');
 }
 
+test('FILES reports the current timbre and session formats', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('[data-panel-target="patch"]').first().click();
+  await expect(page.locator('[data-panel="patch"]')).toContainText('New files use timbre-v14 / session-v15');
+});
+
 test('Earlier formats and malformed session are rejected without changing settings or Auto', async ({ page }) => {
   await page.goto('/');
   await page.locator('.signal-map [data-block-toggle="osc1"]').click();
@@ -63,7 +69,7 @@ for (const width of [1440, 1024, 768]) {
     expect(grouping).toEqual({ insideSource: true, sourceAboveSpace: true, onlySpaceBlocks: true });
     await page.locator('.signal-map [data-block-toggle="osc1"]').click();
     await page.locator('#flow-fx1').click({ position: { x: 8, y: 15 } });
-    await expect(page.locator('[data-effect-slot]')).toHaveCount(3);
+    await expect(page.locator('[data-effect-slot]')).toHaveCount(5);
     await page.locator('#fx1-type').selectOption('distortion');
     await page.locator('#flow-near-fx2').click();
     await page.locator('#fx2-type').selectOption('delay');
@@ -78,16 +84,21 @@ for (const width of [1440, 1024, 768]) {
     await page.locator('#fx1-dist-drive').press('ArrowUp');
     await expect(page.locator('#fx1-dist-drive')).toHaveValue('22');
     await page.locator('#flow-near-fx2').click();
-    const outside = await page.locator('.effects-panel.active select, .effects-panel.active .flow-toggle').evaluateAll((controls) => controls.filter((control) => {
+    const outside = await page.locator('.space-card.active select, .space-card.active .flow-toggle').evaluateAll((controls) => controls.filter((control) => {
       if (control.getClientRects().length === 0) return false;
-      const rect = control.getBoundingClientRect(); return rect.left < 0 || rect.right > window.innerWidth || rect.width < 1;
+      const rect = control.getBoundingClientRect(), card = control.closest('.space-card').getBoundingClientRect(); return rect.left < card.left || rect.right > card.right + 1 || rect.width < 1;
     }).map((control) => control.id || control.textContent));
     expect(outside).toEqual([]);
-    const cards = await page.locator('.space-effects-grid > fieldset').evaluateAll((cards) => cards.map((card) => {
+    const cards = await page.locator('.space-card.active').evaluateAll((cards) => cards.map((card) => {
       const rect = card.getBoundingClientRect(); return { top: rect.top, left: rect.left, right: rect.right, overflow: card.scrollWidth > card.clientWidth };
     }));
     expect(cards.every(card => !card.overflow)).toBe(true);
-    if (width >= 1024) { expect(cards.every(card => card.top === cards[0].top)).toBe(true); expect(cards[0].right).toBeLessThanOrEqual(cards[1].left); }
+    expect(cards).toHaveLength(1); // Only the explicitly selected Near card opens.
+    const effects = await page.locator('[data-common-card="near"] > .effect-slot').evaluateAll(nodes => nodes.map(node => {
+      const rect = node.getBoundingClientRect(); return { top: rect.top, left: rect.left, right: rect.right };
+    }));
+    expect(effects).toHaveLength(2);
+    expect(effects[0].top).toBe(effects[1].top); expect(effects[0].right).toBeLessThan(effects[1].left);
     expect(await page.evaluate(() => document.documentElement.scrollHeight <= window.innerHeight && document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`viewport-${width}.png`) });
   });

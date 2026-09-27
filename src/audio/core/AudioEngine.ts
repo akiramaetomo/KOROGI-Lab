@@ -1,12 +1,14 @@
+import { normalizeEditorLayout, type EditorCardId } from '../../model/editorLayout';
 import { ChannelSynth } from './ChannelSynth';
 import { WhiteNoiseFactory } from '../dsp/WhiteNoiseFactory';
 import { EffectSlot } from '../effects/EffectSlot';
 import { LIMITS, PARAM_SMOOTH_SEC } from '../constants';
 import { clamp, dbToGain, smoothAudioParam } from '../dsp/params';
 import { defaultBus, defaultTimbre, DEFAULT_CHANNEL_MIX, normalizeSession, normalizeTimbre } from '../../model/documents';
-import { normalizeTriggerRecording, patternRecording } from '../../model/triggerRecording';
+import { normalizeTriggerRecording } from '../../model/triggerRecording';
+import { normalizePitchRecording, normalizeSequenceSettings } from '../../model/sequencePitch';
 import { PARAMETER_RANGES as P } from '../../config/parameterRanges';
-import type { BusAssignment, BusEffectSlotIndex, BusSettings, ChannelMixSettings, EffectParameter, EffectSlotSettings, EffectType, MasterInputMode, PlaybackSource, SessionChannel, SessionDocument, TimbreDocument, TriggerRecording, UserPattern, UserPatternId } from '../types';
+import type { BusAssignment, BusEffectSlotIndex, BusSettings, ChannelMixSettings, EffectParameter, EffectSlotSettings, EffectType, GatePattern, MasterInputMode, PitchPattern, PitchRecording, SequenceSelection, SequenceSettings, SessionChannel, SessionDocument, TimbreDocument, TriggerRecording, UserPatternId } from '../types';
 
 export function equalPower(position: number): [number, number] {
   const u = clamp(position, 0, 1);
@@ -53,15 +55,18 @@ class ChannelStrip {
   readonly sends: [GainNode, GainNode];
   readonly directTap: GainNode;
   name: string;
-  patterns: UserPattern[];
-  playbackSource: PlaybackSource;
+  editorLayout: EditorCardId[];
+  gatePatterns: GatePattern[];
+  pitchPatterns: PitchPattern[];
+  sequence: SequenceSelection;
   mix: ChannelMixSettings;
   private active = false;
   private directSelected = false;
   private disposed = false;
   constructor(private readonly context: AudioContext, noise: WhiteNoiseFactory, id: string, timbre: TimbreDocument, mix: ChannelMixSettings,
     buses: Record<BusAssignment, SpaceBus>, directInput: AudioNode) {
-    this.name = timbre.name; this.patterns = structuredClone(timbre.patterns); this.playbackSource = structuredClone(timbre.playbackSource);
+    this.editorLayout = [...timbre.editorLayout]; this.name = timbre.name; this.gatePatterns = structuredClone(timbre.gatePatterns);
+    this.pitchPatterns = structuredClone(timbre.pitchPatterns); this.sequence = structuredClone(timbre.sequence);
     this.mix = { gainDb: mix.gainDb, muted: mix.muted, balance: mix.balance, pan: mix.pan };
     this.synth = new ChannelSynth(context, noise, timbre.settings, timbre.detuneNormalized, id);
     this.synth.setDetuneRangeCent(timbre.detuneRangeCent);
@@ -87,7 +92,8 @@ class ChannelStrip {
     equalPower(this.mix.balance).forEach((gain, i) => smoothAudioParam(this.sends[i]!.gain, gain, now, PARAM_SMOOTH_SEC));
   }
   timbre(): TimbreDocument {
-    return { formatVersion: 'KOROGI-Lab/timbre-v7', name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(), patterns: structuredClone(this.patterns), playbackSource: structuredClone(this.playbackSource) };
+    return { formatVersion: 'KOROGI-Lab/timbre-v14', editorLayout: [...this.editorLayout], name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(),
+      gatePatterns: structuredClone(this.gatePatterns), pitchPatterns: structuredClone(this.pitchPatterns), sequence: structuredClone(this.sequence) };
   }
   fadeOut(): void {
     smoothAudioParam(this.fader.gain, 0, this.context.currentTime, PARAM_SMOOTH_SEC);
@@ -137,7 +143,7 @@ export class AudioEngine {
     this.output.threshold.value = -3; this.output.knee.value = 0; this.output.ratio.value = 20;
     this.output.attack.value = .003; this.output.release.value = .1;
     const session = normalizeSession(initial ?? {
-      formatVersion: 'KOROGI-Lab/session-v8', name: 'Untitled', savedAt: '', channels: [{ id: '1', ...DEFAULT_CHANNEL_MIX, timbre: defaultTimbre() }],
+      formatVersion: 'KOROGI-Lab/session-v15', name: 'Untitled', savedAt: '', channels: [{ id: '1', ...DEFAULT_CHANNEL_MIX, timbre: defaultTimbre() }],
       near: defaultBus(), far: defaultBus(), crossfade: P.crossfade.defaultValue / 100, masterGainDb: P['master-gain'].defaultValue, masterMuted: false
     });
     this.graph = this.prepareGraph(session);
@@ -174,21 +180,63 @@ export class AudioEngine {
   removeChannel(id: string): void { this.clearChannel(id); this.graph.slots = this.graph.slots.filter(slot => slot.id !== id); }
   setTimbreName(id: string, name: string): void { this.assertReady(); this.strip(id).name = name.trim() || 'Untitled'; }
   createTimbre(id: string): TimbreDocument { return this.strip(id).timbre(); }
-  getPlaybackSource(id: string): PlaybackSource { return structuredClone(this.strip(id).playbackSource); }
-  getRecording(id: string, patternId: UserPatternId): TriggerRecording | null { return structuredClone(patternRecording(this.strip(id).patterns, patternId)); }
-  setRecording(id: string, patternId: UserPatternId, raw: TriggerRecording | null): void {
-    this.assertReady(); const strip = this.strip(id); const pattern = strip.patterns.find(item => item.id === patternId);
-    if (!pattern) throw new Error(`Unknown User pattern: ${patternId}`);
-    pattern.recording = normalizeTriggerRecording(raw);
+  getEditorLayout(id: string): EditorCardId[] { return [...this.strip(id).editorLayout]; }
+  setEditorLayout(id: string, cards: readonly EditorCardId[]): void {
+    this.assertReady(); this.strip(id).editorLayout = normalizeEditorLayout(cards);
   }
-  setPlaybackSource(id: string, source: PlaybackSource): void { this.assertReady(); this.strip(id).playbackSource = structuredClone(source); }
+  getSequenceSelection(id: string): SequenceSelection { return structuredClone(this.strip(id).sequence); }
+  setSequenceSelection(id: string, changes: Partial<SequenceSelection>): void {
+    this.assertReady(); const strip = this.strip(id);
+    const timbre = { ...strip.timbre(), sequence: { ...strip.sequence, ...changes } };
+    strip.sequence = normalizeTimbre(timbre).sequence;
+  }
+  getGateRecording(id: string, patternId: UserPatternId): TriggerRecording | null {
+    return structuredClone(this.gatePattern(this.strip(id), patternId).recording);
+  }
+  setGateRecording(id: string, patternId: UserPatternId, raw: TriggerRecording | null): void {
+    this.assertReady(); this.gatePattern(this.strip(id), patternId).recording = normalizeTriggerRecording(raw);
+  }
+  getGateMuted(id: string, patternId: UserPatternId): boolean { return this.gatePattern(this.strip(id), patternId).muted; }
+  setGateMuted(id: string, patternId: UserPatternId, muted: boolean): void { this.assertReady(); this.gatePattern(this.strip(id), patternId).muted = muted; }
+  getPitchRecording(id: string, patternId: UserPatternId): PitchRecording | null {
+    return structuredClone(this.pitchPattern(this.strip(id), patternId).recording);
+  }
+  setPitchRecording(id: string, patternId: UserPatternId, raw: PitchRecording | null): void {
+    this.assertReady(); this.pitchPattern(this.strip(id), patternId).recording = normalizePitchRecording(raw);
+  }
+  getPitchMuted(id: string, patternId: UserPatternId): boolean { return this.pitchPattern(this.strip(id), patternId).muted; }
+  setPitchMuted(id: string, patternId: UserPatternId, muted: boolean): void { this.assertReady(); this.pitchPattern(this.strip(id), patternId).muted = muted; }
+  getSequenceSettings(id: string, patternId: UserPatternId): SequenceSettings {
+    const strip = this.strip(id), pattern = this.pitchPattern(strip, patternId);
+    return { pitchMode: structuredClone(pattern.pitchMode), pitchScaleCent: pattern.pitchScaleCent, filterAmountCent: pattern.filterAmountCent,
+      recordSpeed: strip.sequence.recordSpeed, playSpeed: strip.sequence.playSpeed };
+  }
+  setSequenceSettings(id: string, patternId: UserPatternId, raw: SequenceSettings): void {
+    this.assertReady(); const strip = this.strip(id), pattern = this.pitchPattern(strip, patternId);
+    const settings = normalizeSequenceSettings(raw);
+    pattern.pitchMode = settings.pitchMode; pattern.pitchScaleCent = settings.pitchScaleCent; pattern.filterAmountCent = settings.filterAmountCent;
+    strip.sequence.recordSpeed = settings.recordSpeed; strip.sequence.playSpeed = settings.playSpeed;
+  }
   gateOn(id: string, time = this.context.currentTime): void { this.assertReady(); const strip = this.strip(id); strip.activate(); strip.synth.gateOn(time); }
   gateOff(id: string, time = this.context.currentTime): void { if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.gateOff(time); }
   triggerGateOn(id: string): void { this.assertReady(); const strip = this.strip(id); strip.activate(); strip.synth.triggerGateOn(); }
   triggerGateOff(id: string): void { if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.triggerGateOff(); }
+  setSequencePitch(id: string, normalized: number, pitchScaleCent: number, filterAmountCent: number, time = this.context.currentTime, portamentoSec = 0): void {
+    this.assertReady(); const strip = this.strip(id); strip.activate();
+    strip.synth.setSequencePitch(normalized, pitchScaleCent, filterAmountCent, time, portamentoSec);
+  }
+  setSequencePitchCent(id: string, cents: number, time = this.context.currentTime, portamentoSec = 0): void {
+    this.assertReady(); const strip = this.strip(id); strip.activate(); strip.synth.setSequencePitchCent(cents, time, portamentoSec);
+  }
+  holdSequencePitch(id: string, time = this.context.currentTime): number { this.assertReady(); return this.strip(id).synth.holdSequencePitch(time); }
+  resetSequencePitch(id: string, time = this.context.currentTime, transitionSec = PARAM_SMOOTH_SEC): void {
+    if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.resetSequencePitch(time, transitionSec);
+  }
+  getSequencePitchCent(id: string, time = this.context.currentTime): number { this.assertReady(); return this.strip(id).synth.getSequencePitchCent(time); }
   cancelScheduledGates(id: string): void { if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.cancelScheduledGates(); }
   cancelScheduledGatesFrom(id: string, time: number): void { if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.cancelScheduledGatesFrom(time); }
-  startAuto(id: string, startAt?: number): void { this.assertReady(); const strip = this.strip(id); strip.activate(); strip.synth.startAutoTrigger(startAt); }
+  startAuto(id: string, startAt?: number, playSpeed = 1): void { this.assertReady(); const strip = this.strip(id); strip.activate(); strip.synth.startAutoTrigger(startAt, playSpeed); }
+  setAutoPlaySpeed(id: string, playSpeed: number): void { this.assertReady(); this.strip(id).synth.setAutoTriggerPlaybackSpeed(playSpeed); }
   stopAuto(id: string): void { if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.stopAutoTrigger(); }
   setCrossfade(position: number): void {
     this.assertReady(); if (!Number.isFinite(position)) throw new Error('Invalid crossfade.'); this.crossfade = clamp(position, P.crossfade.min / 100, P.crossfade.max / 100);
@@ -222,7 +270,7 @@ export class AudioEngine {
   setMasterMuted(muted: boolean): void { this.assertReady(); this.masterMuted = muted; smoothAudioParam(this.preLimiterOutput.gain, muted ? 0 : 1, this.context.currentTime, PARAM_SMOOTH_SEC); }
   isMasterMuted(): boolean { return this.masterMuted; }
   createSession(name: string): SessionDocument {
-    return { formatVersion: 'KOROGI-Lab/session-v8', name: name.trim() || 'Untitled', savedAt: new Date().toISOString(),
+    return { formatVersion: 'KOROGI-Lab/session-v15', name: name.trim() || 'Untitled', savedAt: new Date().toISOString(),
       channels: this.graph.slots.map(slot => ({ id: slot.id, ...this.getChannelMix(slot.id), timbre: this.graph.strips.get(slot.id)?.timbre() ?? null })),
       near: this.getBusSettings('near'), far: this.getBusSettings('far'), crossfade: this.crossfade, masterGainDb: this.masterGainDb, masterMuted: this.masterMuted };
   }
@@ -251,6 +299,16 @@ export class AudioEngine {
   async close(): Promise<void> { this.dispose(); await this.context.close(); }
   private slot(id: string): SessionChannel { const slot = this.graph.slots.find(slot => slot.id === id); if (!slot) throw new Error(`Unknown channel: ${id}`); return slot; }
   private strip(id: string): ChannelStrip { const strip = this.graph.strips.get(id); if (!strip) throw new Error(`Empty channel: ${id}`); return strip; }
+  private gatePattern(strip: ChannelStrip, id: UserPatternId): GatePattern {
+    const pattern = strip.gatePatterns.find(item => item.id === id);
+    if (!pattern) throw new Error(`Unknown Gate User: ${id}`);
+    return pattern;
+  }
+  private pitchPattern(strip: ChannelStrip, id: UserPatternId): PitchPattern {
+    const pattern = strip.pitchPatterns.find(item => item.id === id);
+    if (!pattern) throw new Error(`Unknown Pitch User: ${id}`);
+    return pattern;
+  }
   private effectSlot(bus: BusAssignment, slot: BusEffectSlotIndex): EffectSlot {
     if (slot !== 2 && slot !== 3) throw new Error('Bus slots are FX2 and FX3.'); return this.graph.buses[bus].effects[slot - 2]!;
   }

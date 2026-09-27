@@ -1,18 +1,19 @@
 import { test, expect } from '@playwright/test';
+import { openTimbreEditors, openCommonEditors } from './editor-helpers.mjs';
 
 async function start(page) {
   await page.goto('/');
   await expect(page.locator('#play-1')).toBeEnabled();
 }
 
-test('1024x768 shows a red Gate indicator and separates Auto playback from User recording', async ({ page }) => {
-  await page.setViewportSize({ width: 1024, height: 768 });
+test('1280x800 fits Sequence without scrolling and keeps controls aligned', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
   await start(page);
   const indicator = page.locator('#gate-lamp');
   await expect(indicator).toBeVisible();
   await expect(page.locator('#play-all')).toBeEnabled();
   await expect(page.locator('#trigger')).toHaveText('Trigger');
-  await page.locator('#trigger-menu').click();
+  await openTimbreEditors(page, ['sequence']);
   await expect(page.locator('[data-panel="triggering"]')).toHaveClass(/active/);
   const lampStyles = await page.locator('#gate-lamp, #gate-lamp-panel').evaluateAll(nodes => nodes.map(node => {
     const style = getComputedStyle(node);
@@ -33,27 +34,62 @@ test('1024x768 shows a red Gate indicator and separates Auto playback from User 
   await page.mouse.up();
   const layout = await page.locator('.trigger-editor').evaluate(editor => {
     const rect = selector => editor.querySelector(selector).getBoundingClientRect();
-    const auto = rect('.trigger-settings');
+    const record = rect('.trigger-user-group');
     const controls = rect('.record-performance');
-    const source = rect('.source-choice');
+    const perform = rect('.sequence-perform');
+    const gateUsers = rect('.source-choice');
+    const pitchUsers = rect('.source-choice:nth-child(2)');
     const play = rect('#sequence-panel');
     const trigger = rect('#record-gate');
-    const user = rect('.trigger-user-group');
+    const playSpeed = rect('[data-numeric-control="sequence-play-speed"]');
+    const modeButtons = [...editor.querySelectorAll('#record-mode + .segmented-choice button')].map(node => node.getBoundingClientRect());
     const length = rect('#record-length');
     const recording = rect('#record-toggle');
-    const timeline = rect('#record-timeline');
+    const auto = rect('.auto-perform-row');
+    const pitchMode = rect('.pitch-mode-config');
+    const portamento = rect('[data-numeric-control="sequence-portamento"]');
+    const pitchScale = rect('[data-numeric-control="sequence-pitch-scale"]');
+    const pitchPerformance = rect('.pitch-performance');
+    const gateTimeline = rect('.gate-timeline-area');
+    const pitchTimeline = rect('.pitch-timeline-area');
     const ton = rect('#ton');
     const repeat = rect('#trepeat');
-    return { auto, controls, source, play, trigger, user, length, recording, timeline, ton, repeat };
+    const inner = rect('.trigger-editor-inner');
+    return { record, controls, perform, gateUsers, pitchUsers, play, trigger, playSpeed, modeButtons,
+      length, recording, auto, pitchMode, portamento, pitchScale, pitchPerformance,
+      gateTimeline, pitchTimeline, ton, repeat, inner, scrollWidth: editor.scrollWidth, clientWidth: editor.clientWidth,
+      gateLabel: rect('.gate-timeline-area .record-timeline-label strong'), pitchLabel: rect('.pitch-timeline-area .record-timeline-label strong'),
+      gateMute: rect('#gate-mute'), pitchMute: rect('#pitch-mute'), link: rect('#sequence-link'),
+      recorded: rect('#source-recorded'), autoButton: rect('#source-auto'),
+      tonControl: rect('[data-numeric-control="ton"]'), repeatControl: rect('[data-numeric-control="trepeat"]'),
+      divider: getComputedStyle(editor.querySelector('.pitch-performance')).borderTopWidth };
   });
-  expect(layout.auto.right).toBeLessThan(layout.controls.left);
-  expect(layout.ton.top).toBeLessThan(layout.repeat.top);
-  expect(layout.source.top).toBeLessThan(layout.play.top);
-  expect(layout.source.right).toBeLessThan(layout.trigger.left);
-  expect(layout.trigger.top).toBeLessThan(layout.play.top);
-  expect(layout.user.top).toBeGreaterThan(layout.auto.bottom);
-  expect(layout.length.top).toBeLessThan(layout.timeline.top);
-  expect(layout.recording.top).toBeLessThan(layout.timeline.top);
+  expect(layout.record.right).toBeLessThan(layout.controls.left);
+  expect(layout.perform.top).toBeGreaterThan(Math.max(layout.record.bottom, layout.controls.bottom));
+  expect(layout.gateUsers.top).toBeLessThan(layout.pitchUsers.top);
+  expect(layout.play.left).toBeGreaterThan(layout.gateUsers.right);
+  expect(layout.playSpeed.top).toBeGreaterThan(layout.play.bottom);
+  expect(layout.modeButtons[0].bottom).toBeLessThanOrEqual(layout.modeButtons[1].top);
+  expect(layout.modeButtons[1].bottom).toBeLessThanOrEqual(layout.modeButtons[2].top);
+  expect(layout.modeButtons[0].right).toBeLessThan(layout.length.left);
+  expect(layout.length.right).toBeLessThan(layout.recording.left);
+  expect(layout.auto.top).toBeLessThan(layout.gateTimeline.top);
+  expect(layout.tonControl.top).toBe(layout.repeatControl.top);
+  expect(layout.tonControl.right).toBeLessThan(layout.repeatControl.left);
+  expect(layout.autoButton.bottom).toBeLessThan(layout.recorded.top);
+  expect(layout.gateTimeline.bottom).toBeLessThan(layout.pitchTimeline.top);
+  expect(layout.gateLabel.left).toBe(layout.gateTimeline.left);
+  expect(layout.pitchLabel.left).toBe(layout.pitchTimeline.left);
+  expect(layout.gateMute.right).toBeLessThan(layout.gateTimeline.left);
+  expect(layout.pitchMute.right).toBeLessThan(layout.pitchTimeline.left);
+  expect(layout.link.left).toBeGreaterThan(layout.pitchLabel.right);
+  expect(layout.pitchTimeline.bottom).toBeLessThan(layout.pitchMode.top);
+  expect(layout.pitchMode.right).toBeLessThan(layout.portamento.left);
+  expect(layout.portamento.right).toBeLessThan(layout.pitchScale.left);
+  expect(layout.pitchPerformance.top).toBeGreaterThan(layout.pitchMode.top);
+  expect(layout.trigger.left).toBeGreaterThan(layout.pitchPerformance.left);
+  expect(layout.divider).toBe('2px');
+  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
 });
 
 test('TIMBRES width resizes, scrolls below 65 percent, and collapses without stacking controls', async ({ page }, testInfo) => {
@@ -165,7 +201,7 @@ test('Fullscreen control stays hidden when the API is unavailable', async ({ pag
   await expect(page.locator('#fullscreen-toggle')).toBeHidden();
 });
 
-test('1024x768 uses equal diagram/editor heights and one shared signal-map scroll, permits dragging, and fits each editor page', async ({ page }, testInfo) => {
+test('1024x768 uses equal diagram/editor heights, permits dragging, and confines expanded Sequence scrolling to its editor', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await start(page);
   const nameRow = page.locator('[data-slot="1"] .slot-name-row');
@@ -219,11 +255,10 @@ test('1024x768 uses equal diagram/editor heights and one shared signal-map scrol
   expect((await sizes()).graph).toBeGreaterThan(initial.graph + 15);
   await page.locator('#panel-divider').press('Home');
   expect((await sizes()).graph / (await sizes()).total).toBeCloseTo(.5, 2);
-  const sourceLayout = () => page.locator('[data-panel="sources"]').evaluate(panel => {
-    const heading = panel.querySelector('.panel-heading').getBoundingClientRect();
+  const sourceLayout = () => page.locator('.function-editor').evaluate(panel => {
     const phase = panel.querySelector('.source-phase-row').getBoundingClientRect();
-    const cards = panel.querySelector('.control-columns').getBoundingClientRect();
-    return { phaseHeight: phase.height, headingGap: phase.top - heading.bottom, cardsGap: cards.top - phase.bottom };
+    const cards = panel.querySelector('.function-editor-row').getBoundingClientRect();
+    return { phaseHeight: phase.height, headingGap: 0, cardsGap: cards.top - phase.bottom };
   });
   const sourceInitial = await sourceLayout();
   for (let index = 0; index < 10; index += 1) await page.locator('#panel-divider').press('ArrowUp');
@@ -237,24 +272,30 @@ test('1024x768 uses equal diagram/editor heights and one shared signal-map scrol
   await expect(page.locator('#fx2-delay-time')).toBeEnabled();
   await page.locator('#fx3-type').selectOption('reverb');
   await expect(page.locator('#fx3-reverb-decay')).toBeEnabled();
-  for (const [leftId, rightId] of [['fx2-delay-time', 'fx2-delay-feedback'], ['fx3-reverb-decay', 'fx3-reverb-wet']]) {
-    const left = await page.locator(`#${leftId}-coarse + .slider-scale span:last-child`).boundingBox();
-    const right = await page.locator(`#${rightId}-coarse + .slider-scale span:first-child`).boundingBox();
-    expect(right.x - (left.x + left.width)).toBeGreaterThanOrEqual(6);
+  for (const [topId, bottomId] of [['fx2-delay-time', 'fx2-delay-feedback'], ['fx3-reverb-decay', 'fx3-reverb-wet']]) {
+    const top = await page.locator(`#${topId}-coarse + .slider-scale`).boundingBox();
+    const bottom = await page.locator(`#${bottomId}-coarse`).boundingBox();
+    expect(bottom.y).toBeGreaterThan(top.y + top.height);
   }
   await page.screenshot({ path: testInfo.outputPath('common-space-1024x768.png') });
   const fits = [];
   for (const node of ['osc1', 'mod', 'filter1', 'aenv', 'fx1', 'near-fx2', 'balance', 'detune']) {
-    await page.locator(`#flow-${node}`).click(node === 'fx1' ? { position: { x: 8, y: 15 } } : undefined);
-    fits.push(await page.locator('.function-panel.active').evaluate((panel, node) => ({ node, scroll: panel.scrollHeight, client: panel.clientHeight }), node));
+    if (['near-fx2', 'balance'].includes(node)) await openCommonEditors(page, [node === 'near-fx2' ? 'near' : 'balance']);
+    else await openTimbreEditors(page, [node]);
+    fits.push(await page.locator('.function-panel.active:visible').evaluate((panel, node) => ({ node, scroll: panel.scrollHeight, client: panel.clientHeight }), node));
   }
   for (const node of ['trigger-menu', 'files-menu']) {
-    await page.locator(`#${node}`).click();
+    if (node === 'trigger-menu') await openTimbreEditors(page, ['sequence']);
+    else await page.locator(`#${node}`).click();
     if (node === 'trigger-menu') await page.screenshot({ path: testInfo.outputPath('trigger-1024x768.png') });
-    fits.push(await page.locator('.function-panel.active').evaluate((panel, node) => ({ node, scroll: panel.scrollHeight, client: panel.clientHeight }), node));
+    const scrollArea = node === 'trigger-menu' ? page.locator('.function-editor') : page.locator('.function-panel.active:visible');
+    fits.push(await scrollArea.evaluate((panel, node) => ({ node, scroll: panel.scrollHeight, client: panel.clientHeight }), node));
   }
-  expect(fits.filter(({ scroll, client }) => scroll > client + 1)).toEqual([]);
-  await expect(page.locator('#wire-arrow path')).toHaveAttribute('fill', '#8aafb5');
+  expect(fits.filter(({ node, scroll, client }) => !['trigger-menu', 'mod'].includes(node) && scroll > client + 1)).toEqual([]);
+  const sequenceFit = fits.find(({ node }) => node === 'trigger-menu');
+  expect(sequenceFit.scroll).toBeGreaterThan(sequenceFit.client);
+  expect(await page.locator('.function-editor').evaluate(panel => getComputedStyle(panel).overflowY)).toBe('auto');
+  await expect(page.locator('#wire-arrow path')).toHaveCSS('fill', 'rgb(138, 175, 181)');
 });
 
 test('TIMBRE nodes use compact equal geometry and distinguish enabled from editing state', async ({ page }) => {
@@ -299,8 +340,8 @@ test('FILTER Type and Order sit above Frequency and Q at the standard width', as
   await page.setViewportSize({ width: 1024, height: 768 });
   await start(page);
   await expect(page.locator('#filter1-type')).toBeEnabled();
-  await page.locator('#flow-filter1').click({ position: { x: 8, y: 10 } });
-  await expect(page.locator('[data-panel="filters"]')).toBeVisible();
+  await openTimbreEditors(page, ['filter1', 'filter2']);
+  await expect(page.locator('[data-editor-card="filter1"]')).toBeVisible();
   for (const index of [1, 2]) {
     const type = await page.locator(`#filter${index}-type + .segmented-choice`).boundingBox();
     const order = await page.locator(`#filter${index}-order + .segmented-choice`).boundingBox();
@@ -318,7 +359,7 @@ test('FILTER Type and Order sit above Frequency and Q at the standard width', as
 test('invalid author range appears in the header before the audio graph starts', async ({ page }) => {
   await page.route('**/src/config/parameterRanges.ts*', route => route.fulfill({
     contentType: 'application/javascript',
-    body: 'export const PARAMETER_RANGES = { "osc1-frequency": { min: NaN } };'
+    body: 'export const PARAMETER_RANGES = { "osc1-frequency": { min: NaN } }; export const parameterValueBounds = r => ({ min: r.min, max: r.max });'
   }));
   await page.goto('/');
   await expect(page.locator('#audio-error')).toContainText('src/config/parameterRanges.ts: osc1-frequency.min');
@@ -365,6 +406,7 @@ test('Double-click restores the declared initial values through the normal param
   await page.locator('#master-gain').fill('-30'); await page.locator('#master-gain').dispatchEvent('change');
   await page.locator('#master-gain-coarse').dblclick();
   await expect(page.locator('#master-gain')).toHaveValue('-18');
+  await page.locator('#flow-balance').click();
   await page.locator('#crossfade').fill('10'); await page.locator('#crossfade').dispatchEvent('change');
   await page.locator('#crossfade-coarse').dblclick();
   await expect(page.locator('#crossfade')).toHaveValue('50');
@@ -450,10 +492,10 @@ test('Audio resume failure is visible and the next Auto gesture retries', async 
 test('Touching diagram blocks never opens an editor input or native select', async ({ browser }) => {
   const context = await browser.newContext({ viewport: { width: 1024, height: 768 }, hasTouch: true, isMobile: true });
   try {
-    const page = await context.newPage(); await page.goto('/');
+    const page = await context.newPage(); await start(page);
     for (const [node, panel] of [['detune', 'output'], ['aenv', 'amp'], ['osc1', 'sources'], ['filter1', 'filters']]) {
       await page.locator(`#flow-${node}`).tap();
-      await expect(page.locator(`[data-panel="${panel}"]`)).toHaveClass(/active/);
+      await expect(page.locator(`[data-editor-card="${node}"]`)).toHaveClass(/active/);
       expect(await page.evaluate(() => document.activeElement?.tagName)).not.toMatch(/INPUT|SELECT/);
     }
   } finally { await context.close(); }

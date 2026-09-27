@@ -9,7 +9,7 @@ async function start(page, width = 1024, height = 768) {
 async function chooseDemo(page, name) {
   await page.locator('#demo-menu-button').click();
   await page.getByRole('menuitem', { name, exact: true }).click();
-  await expect(page.locator('#patch-status')).toHaveText(`Loaded demo: ${name}`);
+  await expect(page.locator('#patch-status')).toHaveText(`Loaded demo: ${name} · Legacy PEnv Amount/Time was ignored; new PEnv is neutral.`);
   await expect(page.locator('#patch-name')).toHaveValue(name);
   await expect(page.locator('#demo-menu')).toBeHidden();
 }

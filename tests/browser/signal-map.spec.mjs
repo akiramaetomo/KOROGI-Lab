@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { openTimbreEditors, openCommonEditors } from './editor-helpers.mjs';
 
 async function start(page) {
   await page.goto('/');
@@ -14,21 +15,22 @@ test('Graph opens settings without focusing an input or select, including SEQUEN
   const errors = []; page.on('pageerror', error => errors.push(error.message));
   await start(page);
   await expect(page.locator('.function-nav, #channel-gain, [data-flow-block="channelGain"], .common-mix')).toHaveCount(0);
+  await openTimbreEditors(page, []);
   for (const [node, panel, focus] of [
     ['osc1', 'sources', 'osc1-type'], ['osc2', 'sources', 'osc2-type'], ['mod', 'modulation', 'mod-mode'],
     ['filter1', 'filters', 'filter1-type'], ['filter2', 'filters', 'filter2-type'], ['aenv', 'amp', 'attack'],
-    ['penv', 'modulation', 'penv-amount'], ['fx1', 'voice-effects', 'fx1-type'], ['detune', 'output', 'detune-range']
+    ['penv', 'modulation', 'penv-start'], ['fx1', 'voice-effects', 'fx1-type'], ['detune', 'output', 'detune-range']
   ]) {
-    await page.locator(`#flow-${node}`).click(node === 'fx1' ? { position: { x: 8, y: 15 } } : undefined); await expect(page.locator(`[data-panel="${panel}"]`)).toHaveClass(/active/);
+    await page.locator(`#flow-${node}`).click(node === 'fx1' ? { position: { x: 8, y: 15 } } : undefined); await expect(page.locator(`[data-editor-card="${node}"]`)).toHaveClass(/active/);
     await expect(page.locator(`#${focus}`)).not.toBeFocused();
   }
   await expect(page.locator('#trigger-menu')).toHaveText('SEQUENCE');
-  await page.locator('#trigger-menu').focus(); await page.keyboard.press('Enter'); await expect(page.locator('[data-panel="triggering"] .panel-heading')).toBeFocused();
-  await expect(page.locator('[data-panel="triggering"] .panel-heading strong')).toHaveText('SEQUENCE');
+  await page.locator('#trigger-menu').focus(); await page.keyboard.press('Enter'); await expect(page.locator('[data-panel="triggering"] .editor-card-handle')).toBeFocused();
+  await expect(page.locator('[data-panel="triggering"] .editor-card-handle')).toHaveText('SEQUENCE');
   await expect(page.locator('#active-path')).toHaveText('Viewing: SEQUENCE');
   await page.locator('#files-menu').click(); await expect(page.locator('[data-panel="patch"]')).toHaveClass(/active/);
   const value = await save(page);
-  expect(value.formatVersion).toBe('KOROGI-Lab/session-v8'); expect(value.channels[0].timbre.formatVersion).toBe('KOROGI-Lab/timbre-v7');
+  expect(value.formatVersion).toBe('KOROGI-Lab/session-v15'); expect(value.channels[0].timbre.formatVersion).toBe('KOROGI-Lab/timbre-v14');
   expect(value.channels[0].timbre.settings).not.toHaveProperty('channelGainDb'); expect(value.channels[0].timbre.settings.blocksEnabled).not.toHaveProperty('channelGain');
   expect(errors).toEqual([]);
 });
@@ -36,15 +38,16 @@ test('Graph opens settings without focusing an input or select, including SEQUEN
 test('Parallel buses have independent switches and click targets; v2 restore synchronizes every graph switch', async ({ page }) => {
   await start(page);
   const toggle = (bus, block) => block === 'mixGain'
-    ? page.locator(`#${bus}-gain`).locator('..').locator('[data-block-toggle="mixGain"]')
+    ? page.locator(`[data-common-card="${bus}-gain"] [data-block-toggle="mixGain"]`)
     : page.locator(`[data-space="${bus}"] [data-block-toggle="${block}"]`);
   await toggle('near', 'fx2').click(); await toggle('far', 'fx3').click();
   await page.locator('#flow-far-gain').click(); await toggle('far', 'mixGain').click();
   await expect(toggle('far', 'fx2')).toHaveAttribute('aria-pressed', 'false'); await expect(toggle('near', 'fx3')).toHaveAttribute('aria-pressed', 'false');
   for (const bus of ['near', 'far']) {
-    await page.locator(`#flow-${bus}-fx2`).click(); await expect(page.locator(`#effects-${bus}`)).toHaveAttribute('aria-pressed', 'true');
-    await expect(page.locator('#fx2-type')).not.toBeFocused();
-    await page.locator('#fx2-type').selectOption(bus === 'near' ? 'delay' : 'chorus');
+    await page.locator(`#flow-${bus}-fx2`).click();
+    const type = page.locator(bus === 'near' ? '#fx2-type' : '#far-fx2-type');
+    await expect(type).not.toBeFocused();
+    await type.selectOption(bus === 'near' ? 'delay' : 'chorus');
   }
   await page.locator('.source-group [data-block-toggle="aenv"]').click();
   const saved = await save(page); expect(saved.near.effects[0].enabled).toBe(true); expect(saved.far.effects[1].enabled).toBe(true); expect(saved.far.gainEnabled).toBe(false);
@@ -82,26 +85,28 @@ test('Every block in the current editor is illuminated, including bypassed block
     ['penv', ['flow-mod', 'flow-penv']], ['aenv', ['flow-aenv']], ['detune', ['flow-detune']],
     ['far-fx2', ['flow-far-fx2', 'flow-far-fx3', 'flow-far-gain']]
   ]) {
-    await page.locator(`#flow-${clicked}`).click(); await expect.poll(active).toEqual(ids.sort());
+    if (clicked === 'far-fx2') await openCommonEditors(page, ['far', 'far-gain']);
+    else await openTimbreEditors(page, ids.map(id => id.replace('flow-', '')));
+    await expect.poll(active).toEqual(ids.sort());
   }
-  await page.locator('#effects-near').click();
+  await openCommonEditors(page, ['near', 'near-gain']);
   await expect.poll(active).toEqual(['flow-near-fx2', 'flow-near-fx3', 'flow-near-gain']);
   await expect(page.locator('#flow-near-gain')).toHaveCSS('background-color', 'rgb(52, 71, 80)');
-  await page.locator('#flow-master').click();
+  await openCommonEditors(page, ['balance', 'master']);
   await expect.poll(active).toEqual(['flow-balance', 'flow-master']);
   for (const id of ['balance', 'master']) await expect(page.locator(`#flow-${id}`)).toHaveCSS('background-color', 'rgb(52, 71, 80)');
-  await page.locator('#flow-filter2').click();
+  await openTimbreEditors(page, ['filter1', 'filter2']);
   await expect(page.locator('#flow-filter1')).toHaveClass(/active/);
   await expect(page.locator('#flow-filter1')).toHaveClass(/bypassed/);
   await expect(page.locator('#flow-filter1')).toHaveCSS('opacity', '1');
   await page.locator('.source-group [data-block-toggle="filter1"]').click();
   await expect(page.locator('#flow-filter1')).not.toHaveClass(/bypassed/);
-  await page.locator('#trigger-menu').click(); await expect.poll(active).toEqual(['trigger-menu']);
+  await openTimbreEditors(page, ['sequence']); await expect.poll(active).toEqual(['trigger-menu']);
   await page.locator('#files-menu').click(); await expect.poll(active).toEqual([]);
 });
 
-for (const [width, height] of [[1024, 768], [768, 768]]) {
-  test(`FX1 common and FILTER2 cutoff routes stay clear at ${width}x${height}`, async ({ page }) => {
+for (const [width, height] of [[1024, 768], [1194, 834], [768, 768]]) {
+  test(`FX1 common and FILTER2 cutoff routes stay clear at ${width}x${height}`, async ({ page }, info) => {
     await page.setViewportSize({ width, height }); await start(page);
     await expect(page.locator('#flow-fx1-common')).toHaveText('COMMON SPACE');
     const commonLength = await page.locator('path[data-from="fx1"][data-to="fx1-common"]').evaluate(path => path.getTotalLength());
@@ -128,30 +133,31 @@ for (const [width, height] of [[1024, 768], [768, 768]]) {
         start: { x: start.x + origin.left, y: start.y + origin.top },
         end: { x: end.x + origin.left, y: end.y + origin.top },
         expectedStart: { x: filter2.right, y: filter2.top + filter2.height / 2 },
-        expectedEnd: { x: filter1.left + filter1.width / 2, y: filter1.bottom },
+        expectedEnd: { x: filter1.left, y: filter1.bottom },
         crossesMod: points.some(point => point.x > mod.left && point.x < mod.right && point.y > mod.top && point.y < mod.bottom)
       };
     });
-    expect(route.d).toMatch(/^M [\d.]+ [\d.]+ H [\d.]+ V [\d.]+$/);
+    expect(route.d).toMatch(/^M [\d.]+ [\d.]+ L [\d.]+ [\d.]+$/);
     expect(Math.hypot(route.start.x - route.expectedStart.x, route.start.y - route.expectedStart.y)).toBeLessThan(1);
     expect(Math.hypot(route.end.x - route.expectedEnd.x, route.end.y - route.expectedEnd.y)).toBeLessThan(1);
     expect(route.crossesMod).toBe(false);
+    await page.screenshot({ path: info.outputPath('filter-cutoff-layout.png') });
   });
 }
 
 test('Bus gains and separate OUTPUT editor use horizontal controls and survive save/restore', async ({ page }) => {
   await page.setViewportSize({ width: 1366, height: 768 }); await start(page);
   await page.locator('#flow-near-gain').click();
-  await expect(page.locator('[data-panel="space-effects"]')).toHaveClass(/active/);
+  await expect(page.locator('[data-common-card="near-gain"]')).toHaveClass(/active/);
   await expect(page.locator('#near-gain')).not.toBeFocused();
   for (const bus of ['near', 'far']) {
-    await page.locator(`#effects-${bus}`).click();
+    if (await page.locator(`[data-common-card="${bus}-gain"]`).isHidden()) await page.locator(`#flow-${bus}-gain`).click();
     await page.locator(`#${bus}-gain`).fill('-17.7');
     await page.locator(`#${bus}-gain`).dispatchEvent('change');
     await expect(page.locator(`#${bus}-gain-readout`)).toHaveText('-17.7 dB');
   }
-  await page.locator('#flow-balance').click();
-  await expect(page.locator('[data-panel="space-output"]')).toHaveClass(/active/);
+  await openCommonEditors(page, ['balance', 'master']);
+  await expect(page.locator('[data-common-card="balance"]')).toHaveClass(/active/);
   for (const id of ['crossfade-coarse', 'master-gain-coarse']) {
     const rect = await page.locator(`#${id}`).boundingBox();
     expect(rect.width).toBeGreaterThan(rect.height);
@@ -249,12 +255,12 @@ for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080], [1024, 90
         const p = path.getPointAtLength(path.getTotalLength());
         const end = path.dataset.end;
         const lane = path.dataset.from.startsWith('input-') ? Number(path.dataset.from.slice(-1)) : null;
-        const x = end === 'left' ? rect.left : end === 'right' ? rect.right : rect.left + rect.width / 2;
+        const x = end === 'left' || end === 'bottom-left' ? rect.left : end === 'right' ? rect.right : rect.left + rect.width / 2;
         if (lane !== null) {
           const absoluteY = p.y + origin.top;
           return Math.abs(p.x + origin.left - x) + Math.max(rect.top - absoluteY, absoluteY - rect.bottom, 0);
         }
-        const y = end === 'top' ? rect.top : end === 'bottom' ? rect.bottom : rect.top + rect.height / 2;
+        const y = end === 'top' ? rect.top : end === 'bottom' || end === 'bottom-left' ? rect.bottom : rect.top + rect.height / 2;
         return Math.hypot(p.x + origin.left - x, p.y + origin.top - y);
       });
     });
@@ -305,13 +311,13 @@ for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080], [1024, 90
     const backgrounds = await page.locator('.source-group, .common-space').evaluateAll(nodes => nodes.map(node => getComputedStyle(node).backgroundColor));
     expect(backgrounds[0]).not.toBe(backgrounds[1]); expect(backgrounds.every(color => color.startsWith('rgba('))).toBe(true);
     if (width >= 1366) expect(await page.locator('#flow-osc1').evaluate(node => node.getBoundingClientRect().width)).toBeLessThanOrEqual(121);
-    await page.locator('#flow-balance').click();
+    await openCommonEditors(page, ['balance', 'master']);
     for (const id of ['crossfade', 'master-gain', 'master-mute']) {
       await page.locator(`#${id}`).scrollIntoViewIfNeeded(); await expect(page.locator(`#${id}`)).toBeInViewport();
     }
     await page.locator('#flow-near-gain').click();
     await page.locator('#near-gain').scrollIntoViewIfNeeded(); await expect(page.locator('#near-gain')).toBeInViewport();
-    await page.locator('#effects-far').click();
+    await page.locator('#flow-far-gain').click();
     await page.locator('#far-gain').scrollIntoViewIfNeeded(); await expect(page.locator('#far-gain')).toBeInViewport();
     await expect.poll(async () => (await ports()).every(error => error < 1)).toBe(true);
     if (width === 768 && height === 768) {
@@ -327,7 +333,7 @@ for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080], [1024, 90
     await expect(page.locator('path[data-from="filter2"][data-to="mod"]')).toHaveClass('control-wire');
     expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight && document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: testInfo.outputPath(`voice-${width}x${height}.png`) });
-    await page.locator('#flow-master').click();
+    await openCommonEditors(page, ['master']);
     await page.locator('#master-mute').scrollIntoViewIfNeeded(); await page.screenshot({ path: testInfo.outputPath(`space-${width}x${height}.png`) });
   });
 }

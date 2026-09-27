@@ -1,0 +1,647 @@
+/* GUI配色の正本。色コードだけを編集してください。寸法・レイアウトはharness.cssが担当します。
+ * #RRGGBB または rgb()/rgba() 等のCSS色を指定できます。半透明色は透明度も調整できます。
+ * 通常・ホバー・選択・無効・フォーカスは別用途です。同じ初期色でも独立して変更できます。
+ * 開発サーバーでは保存で反映。公開版は再ビルド・公開が必要です。
+ * 用途: background=背景、text=文字、border=枠、focus=フォーカス枠、shadow=影、
+ *       accent=スライダ、fill=SVGの塗り、stroke=SVGの線。
+ * 最初に調整する候補（名前を検索してください）:
+ *   全体: --color-app-background / --color-app-text / --color-html-background
+ *   カード: --color-card-background / --color-card-heading-background / --color-card-content-background
+ *   枠・文字: --color-card-border / --color-card-heading-border / --color-card-heading-text
+ *   操作: --color-button-background / --color-button-hover-background / --color-button-border
+ *   グリップ: --color-grip-dot
+ *   選択: --color-segmented-choice-checked-background / --color-segmented-choice-checked-text
+ *   信号線: --color-signal-wires-audio-wire-stroke / --color-signal-wires-control-wire-stroke
+ * 個別指定のある文字や操作部品は、各用途の変数で調整してください。 */
+:root {
+
+  /* === 基本・ページ・操作部品 === */
+  /* 対象: :root / background */
+  --color-app-background: #101214;
+  /* 対象: :root / color */
+  --color-app-text: #e6e8ea;
+  /* 対象: html,
+body / background */
+  --color-html-background: #101214;
+  /* 対象: button / border */
+  --color-button-border: #4c535b;
+  /* 対象: button / background */
+  --color-button-background: #22272c;
+  /* 対象: button:hover:not(:disabled) / background */
+  --color-button-hover-background: #30373e;
+  /* 対象: button:disabled / color */
+  --color-button-disabled-text: #737980;
+  /* 対象: button.primary / border-color */
+  --color-button-primary-border: #7e8b97;
+  /* 対象: button.primary / background */
+  --color-button-primary-background: #343b42;
+  /* 対象: .topbar / border-bottom */
+  --color-topbar-border: #343a40;
+  /* 対象: .topbar / background */
+  --color-topbar-background: #171a1d;
+  /* 対象: .demo-menu / border */
+  --color-demo-menu-border: #59656e;
+  /* 対象: .demo-menu / background */
+  --color-demo-menu-background: #1b2024;
+  /* 対象: .demo-menu / box-shadow */
+  --color-demo-menu-shadow: rgba(0, 0, 0, .4);
+  /* 対象: .display-error / border */
+  --color-display-error-border: #8a625f;
+  /* 対象: .display-error / background */
+  --color-display-error-background: #382523;
+  /* 対象: .display-error / color */
+  --color-display-error-text: #f0c5bf;
+  /* 対象: .workspace / background */
+  --color-workspace-background: #101214;
+  /* 対象: .function-nav / border-right */
+  --color-function-nav-border: #343a40;
+  /* 対象: .function-nav / background */
+  --color-function-nav-background: #15181b;
+  /* 対象: .function-tab.active / border-color */
+  --color-function-tab-active-border: #9aa7b2;
+  /* 対象: .function-tab.active / background */
+  --color-function-tab-active-background: #384047;
+  /* 対象: .panel-heading / border-bottom */
+  --color-panel-heading-border: #30363c;
+  /* 対象: .panel-heading span / color */
+  --color-panel-heading-text: #8e98a1;
+  /* 対象: .path-label / color */
+  --color-path-label-text: #717d87;
+  /* 対象: fieldset / border */
+  --color-fieldset-border: #3b4249;
+  /* 対象: fieldset / background */
+  --color-fieldset-background: #15191d;
+  /* 対象: legend / color */
+  --color-legend-text: #b9c1c8;
+  /* 対象: label / color */
+  --color-label-text: #b9c0c6;
+  /* 対象: input,
+select / border */
+  --color-input-border: #454d55;
+  /* 対象: input,
+select / background */
+  --color-input-background: #0f1214;
+  /* 対象: input:disabled,
+select:disabled / color */
+  --color-button-disabled-text-2: #7b8289;
+  /* 対象: .mode-readout,
+.safety-note / color */
+  --color-mode-readout-text: #89939c;
+  /* 対象: .mode-readout,
+.safety-note / border-top */
+  --color-mode-readout-border: #333b42;
+  /* 対象: .footer-strip / border-top */
+  --color-footer-strip-border: #343a40;
+  /* 対象: .footer-strip / color */
+  --color-footer-strip-text: #7f8992;
+  /* 対象: .footer-strip / background */
+  --color-footer-strip-background: #15181b;
+  /* 対象: .readout-line / color */
+  --color-readout-line-text: #89939c;
+  /* 対象: .readout-line / border-top */
+  --color-readout-line-border: #333b42;
+  /* 対象: input:focus,
+select:focus,
+button:focus-visible / outline */
+  --color-input-focus-focus: #9aa7b2;
+  /* 対象: .fx1-common-output / color */
+  --color-fx1-common-output-text: #9fb0b8;
+  /* 対象: .common-heading / color */
+  --color-common-heading-text: #d0c3aa;
+  /* 対象: .diagram-gain / border */
+  --color-diagram-gain-border: #49545d;
+  /* 対象: .diagram-gain / background */
+  --color-diagram-gain-background: #1a2228;
+  /* 対象: #master-mute[aria-pressed="true"] / border-color */
+  --color-master-mute-pressed-border: #c9a577;
+  /* 対象: #master-mute[aria-pressed="true"] / color */
+  --color-master-mute-pressed-text: #c9a577;
+  /* 対象: fieldset:focus-within / border-color */
+  --color-fieldset-focus-within-border: #91a9b3;
+  /* 対象: .topbar / border-bottom */
+  --color-topbar-border-2: #505b64;
+  /* 対象: .footer-strip / border-top */
+  --color-footer-strip-border-2: #505b64;
+  /* 対象: .workspace / border-top */
+  --color-workspace-border: #3c4851;
+  /* 対象: .diagram-gain / color */
+  --color-diagram-gain-text: #dbe4e8;
+  /* 対象: .diagram-gain output / color */
+  --color-diagram-gain-text-2: #a9c4aa;
+  /* 対象: .play-hint / color */
+  --color-play-hint-text: #a9bbac;
+  /* 対象: .input-page-switch button[aria-pressed="true"] / border-color */
+  --color-input-page-switch-pressed-border: #d4ba83;
+  /* 対象: .input-page-switch button[aria-pressed="true"] / background */
+  --color-input-page-switch-pressed-background: #4b3d27;
+  /* 対象: .input-page-switch button[aria-pressed="true"] / color */
+  --color-input-page-switch-pressed-text: #f3dfb2;
+  /* 対象: .input-page-switch button[data-has-selected="true"]::after / background */
+  --color-input-page-switch-background: #a8d3e5;
+  /* 対象: .input-page-switch button[data-has-selected="true"]::after / box-shadow */
+  --color-input-page-switch-shadow: #a8d3e5;
+
+  /* === ヘッダー・音声状態 === */
+  /* 対象: .brand span / color */
+  --color-brand-text: #98a0a8;
+  /* 対象: .audio-state / color */
+  --color-audio-state-text: #aeb5bc;
+  /* 対象: .state-dot / background */
+  --color-state-dot-background: #6c7278;
+  /* 対象: .state-dot.running / background */
+  --color-state-dot-running-background: #9bb79b;
+  /* 対象: .state-dot.running / box-shadow */
+  --color-state-dot-running-shadow: #9bb79b;
+  /* 対象: .audio-status:not(:disabled) / border-color */
+  --color-audio-status-disabled-border: #71808a;
+  /* 対象: .audio-status:not(:disabled) / background */
+  --color-audio-status-disabled-background: #283139;
+  /* 対象: .audio-status:not(:disabled) / color */
+  --color-audio-status-disabled-text: #dce6ec;
+  /* 対象: .fullscreen-toggle[aria-pressed="true"] / border-color */
+  --color-fullscreen-toggle-pressed-border: #a9c4aa;
+  /* 対象: .fullscreen-toggle[aria-pressed="true"] / color */
+  --color-fullscreen-toggle-pressed-text: #d7ebd7;
+  /* 対象: .fullscreen-toggle[aria-pressed="true"] / background */
+  --color-fullscreen-toggle-pressed-background: #344750;
+  /* 対象: .patch-status / border */
+  --color-patch-status-border: #3a4249;
+  /* 対象: .patch-status / background */
+  --color-patch-status-background: #0f1214;
+  /* 対象: .patch-status / color */
+  --color-patch-status-text: #aab2b9;
+  /* 対象: .audio-error / color */
+  --color-audio-error-text: #d7a38d;
+  /* 対象: .audio-running .play-hint / color */
+  --color-audio-running-play-hint-text: #87949a;
+
+  /* === TIMBRES・ミキサー === */
+  /* 対象: .mixer-panel / background */
+  --color-mixer-panel-background: #15191d;
+  /* 対象: .mixer-heading / color */
+  --color-mixer-heading-text: #b9c1c8;
+  /* 対象: .mixer-slot / border */
+  --color-mixer-slot-border: #3b4249;
+  /* 対象: .mixer-slot.selected / border-color */
+  --color-mixer-slot-selected-border: #9aa7b2;
+  /* 対象: .mixer-slot.selected / background */
+  --color-mixer-slot-selected-background: #20282e;
+  /* 対象: .slot-pan-scale / color */
+  --color-slot-pan-scale-text: #98a3ad;
+  /* 対象: .mix-range output / color */
+  --color-mix-range-text: #a9c4aa;
+  /* 対象: .mix-range input[type="range"] / accent-color */
+  --color-mix-range-accent: #9bb6c8;
+  /* 対象: .common-mix / border-top */
+  --color-common-mix-border: #454d55;
+  /* 対象: .common-mix small / color */
+  --color-common-mix-text: #89939c;
+  /* 対象: .mixer-panel button[aria-pressed="true"] / border-color */
+  --color-mixer-panel-pressed-border: #a9c4aa;
+  /* 対象: .mixer-panel button[aria-pressed="true"] / color */
+  --color-mixer-panel-pressed-text: #b7e5b7;
+  /* 対象: .mixer-panel #master-mute[aria-pressed="true"], .mixer-slot [id^="mute-"][aria-pressed="true"] / border-color */
+  --color-mixer-panel-master-mute-pressed-border: #c9a577;
+  /* 対象: .mixer-panel #master-mute[aria-pressed="true"], .mixer-slot [id^="mute-"][aria-pressed="true"] / color */
+  --color-mixer-panel-master-mute-pressed-text: #c9a577;
+  /* 対象: .slot-details / border-top */
+  --color-slot-details-border: #47535c;
+  /* 対象: .slot-muted / color */
+  --color-slot-muted-text: #d4ab79;
+
+  /* === カード・グリップ === */
+  /* 対象: .mixer-divider / border-left */
+  --color-mixer-divider-border: #59656e;
+  /* 対象: .mixer-divider / background */
+  --color-mixer-divider-background: #242c32;
+  /* 対象: .mixer-divider::after / background */
+  --color-divider-base-grip: #9aaab6;
+  /* 対象: .mixer-divider:focus-visible / outline */
+  --color-mixer-divider-focus-visible-focus: #b0d2df;
+  /* 対象: .panel-divider / border-top */
+  --color-panel-divider-border: #59656e;
+  /* 対象: .panel-divider / background */
+  --color-panel-divider-background: #242c32;
+  /* 対象: .panel-divider:focus-visible / outline */
+  --color-panel-divider-focus-visible-focus: #b0d2df;
+  /* 対象: .panel-deck :is(.editor-card, .space-card).function-panel.active / border */
+  --color-card-border: #61717a;
+  /* 対象: .panel-deck :is(.editor-card, .space-card).function-panel.active / background */
+  --color-card-background: #252d33;
+  /* 対象: .editor-card-handle / background */
+  --color-card-heading-background: #35414a;
+  /* 対象: .editor-card-handle / border-color */
+  --color-card-heading-border: #71848e;
+  /* 対象: .editor-card-handle / color */
+  --color-card-heading-text: #e7eef1;
+  /* 対象: .editor-card-handle::before / background */
+  --color-grip-dot: #b3c4cd;
+  /* 対象: .editor-card-handle:hover:not(:disabled) / background-color。従来の実表示（共通ボタンhover）を維持。 */
+  --color-card-heading-hover-background: #30373e;
+  /* 対象: :is(.editor-card, .space-card) > fieldset / background */
+  --color-card-content-background: #20282e;
+  /* 対象: :is(.editor-card, .space-card) > fieldset / border-color */
+  --color-card-content-border: #596a74;
+  /* 対象: .editor-card-handle:focus-visible, .editor-card-close:focus-visible / outline */
+  --color-editor-card-handle-focus-visible-focus: #b0d2df;
+  /* 対象: :is(.editor-card, .space-card).drop-target / outline */
+  --color-editor-card-focus: #b0d2df;
+
+  /* === 編集操作・スライダ === */
+  /* 対象: .unit / color */
+  --color-unit-text: #6f7a83;
+  /* 対象: .effect-role / color */
+  --color-effect-role-text: #8e98a1;
+  /* 対象: .effect-params / border-top */
+  --color-effect-params-border: #333b42;
+  /* 対象: .numeric-heading .numeric-caption / color */
+  --color-numeric-heading-numeric-caption-text: #b9c0c6;
+  /* 対象: .numeric-slider-name / color */
+  --color-numeric-slider-name-text: #b9c0c6;
+  /* 対象: .numeric-slider-axis small / color */
+  --color-numeric-slider-axis-text: #89939c;
+  /* 対象: .numeric-slider-axis input[type="range"] / accent-color */
+  --color-numeric-slider-axis-accent: #9bb6c8;
+  /* 対象: .numeric-slider-axis input[data-numeric-slider="fine"] / accent-color */
+  --color-numeric-slider-axis-accent-2: #b4c89b;
+  /* 対象: .burst-timing-warnings / color */
+  --color-burst-timing-warnings-text: #d4b078;
+  /* 対象: .numeric-slider-axis .slider-scale / color */
+  --color-numeric-slider-axis-slider-scale-text: #9aa6ae;
+  /* 対象: .numeric-slider-guide / background */
+  --color-numeric-slider-guide-background: #e1ba72;
+  /* 対象: .numeric-slider-guide / box-shadow */
+  --color-numeric-slider-guide-shadow: rgba(36, 28, 15, .7);
+  /* 対象: .numeric-slider-guide::after / border-top */
+  --color-numeric-slider-guide-border: #e1ba72;
+  /* 対象: .segmented-choice button[aria-checked="true"] / background */
+  --color-segmented-choice-checked-background: #485e55;
+  /* 対象: .segmented-choice button[aria-checked="true"] / color */
+  --color-segmented-choice-checked-text: #eef4e8;
+  /* 対象: .segmented-choice button[aria-checked="true"] / border-color */
+  --color-segmented-choice-checked-border: #a3bb9e;
+  /* 対象: .segmented-choice button:focus-visible / outline */
+  --color-segmented-choice-focus-visible-focus: #c8d5ab;
+
+  /* === 信号図・COMMON SPACE === */
+  /* 対象: .signal-map / border-bottom */
+  --color-signal-map-border: #343a40;
+  /* 対象: .signal-map / background */
+  --color-signal-map-background: #131619;
+  /* 対象: .signal-group-label / color */
+  --color-signal-group-label-text: #aab5be;
+  /* 対象: .signal-group / border */
+  --color-signal-group-border: #343b42;
+  /* 対象: .source-group / background */
+  --color-source-group-background: #15191d;
+  /* 対象: .flow-toggle[aria-pressed="true"] / color */
+  --color-flow-toggle-pressed-text: #b7e5b7;
+  /* 対象: .flow-toggle[aria-pressed="true"] / border-color */
+  --color-flow-toggle-pressed-border: #739673;
+  /* 対象: .flow-toggle[aria-pressed="false"] / color */
+  --color-flow-toggle-pressed-text-2: #c9a577;
+  /* 対象: .flow-toggle[aria-pressed="false"] / border-color */
+  --color-flow-toggle-pressed-border-2: #806443;
+  /* 対象: .flow-node.enabled / border */
+  --color-flow-node-enabled-border: #a3bb9e;
+  /* 対象: .flow-node.enabled / background */
+  --color-flow-node-enabled-background: #485e55;
+  /* 対象: .flow-node.enabled / color */
+  --color-flow-node-enabled-text: #eef4e8;
+  /* 対象: .control-lane / color */
+  --color-control-lane-text: #9aa4ad;
+  /* 対象: .flow-node / background */
+  --color-flow-node-background: #1d2227;
+  /* 対象: .flow-node / border-color */
+  --color-flow-node-border: #49515a;
+  /* 対象: .flow-node.active / background */
+  --color-flow-node-active-background: #3a434b;
+  /* 対象: .flow-node.active / border-color */
+  --color-flow-node-active-border: #98a6b3;
+  /* 対象: .flow-node.passive / border */
+  --color-flow-node-passive-border: #343b42;
+  /* 対象: .flow-node.passive / color */
+  --color-flow-node-passive-text: #8e969e;
+  /* 対象: .arrow / color */
+  --color-arrow-text: #727d87;
+  /* 対象: .lane-note / color */
+  --color-lane-note-text: #6f7a84;
+  /* 対象: .signal-wires path.audio-wire, .signal-wires path.control-wire / stroke */
+  --color-signal-wires-audio-wire-stroke: #8aafb5;
+  /* 対象: .signal-wires path.control-wire / stroke */
+  --color-signal-wires-control-wire-stroke: #b7ad83;
+  /* 対象: .signal-canvas .source-group / background */
+  --color-signal-canvas-source-group-background: rgb(82 139 180 / 9%);
+  /* 対象: .signal-canvas .common-space / background */
+  --color-signal-canvas-common-space-background: rgb(173 137 78 / 9%);
+  /* 対象: .voice-heading span / color */
+  --color-voice-heading-text: #818f99;
+  /* 対象: .voice-grid .fx1-monitor-toggle / color */
+  --color-voice-grid-fx1-monitor-toggle-text: #9aa6ae;
+  /* 対象: .voice-grid .fx1-monitor-toggle / border-color */
+  --color-voice-grid-fx1-monitor-toggle-border: #56636b;
+  /* 対象: .voice-grid .fx1-monitor-toggle[aria-pressed="true"] / color */
+  --color-voice-grid-fx1-monitor-toggle-pressed-text: #e5f6ff;
+  /* 対象: .voice-grid .fx1-monitor-toggle[aria-pressed="true"] / border-color */
+  --color-voice-grid-fx1-monitor-toggle-pressed-border: #b0d2df;
+  /* 対象: .voice-grid .fx1-monitor-toggle[aria-pressed="true"] / background */
+  --color-voice-grid-fx1-monitor-toggle-pressed-background: #344750;
+  /* 対象: .voice-grid .fx1-monitor-toggle[aria-pressed="true"] / box-shadow */
+  --color-voice-grid-fx1-monitor-toggle-pressed-shadow: rgba(176, 210, 223, .35);
+  /* 対象: .signal-canvas .flow-node.active:not(.enabled):not(.bypassed),
+.signal-canvas .diagram-gain.active, .signal-canvas .output-node.active / background */
+  --color-signal-canvas-flow-node-active-enabled-bypassed-background: #344750;
+  /* 対象: .signal-canvas .flow-node.enabled.active / border-color */
+  --color-signal-canvas-flow-node-enabled-active-border: #a3bb9e;
+  /* 対象: .signal-canvas .flow-node.enabled.active / background */
+  --color-signal-canvas-flow-node-enabled-active-background: #485e55;
+  /* 対象: .signal-canvas .flow-node.enabled.active / color */
+  --color-signal-canvas-flow-node-enabled-active-text: #eef4e8;
+  /* 対象: .signal-canvas .flow-node.active.bypassed / color */
+  --color-signal-canvas-flow-node-active-bypassed-text: #99a5ad;
+  /* 対象: .signal-canvas .flow-node.active.bypassed / background */
+  --color-signal-canvas-flow-node-active-bypassed-background: #24323a;
+  /* 対象: .channel-inputs small / color */
+  --color-channel-inputs-text: #a89e8d;
+  /* 対象: .channel-input / border */
+  --color-channel-input-border: #716856;
+  /* 対象: .channel-input / background */
+  --color-channel-input-background: #25231e;
+  /* 対象: .channel-input.selected / border-color */
+  --color-channel-input-selected-border: #a8d3e5;
+  /* 対象: .channel-input.selected / background */
+  --color-channel-input-selected-background: #3b5965;
+  /* 対象: .channel-input.selected / color */
+  --color-channel-input-selected-text: #f5fbff;
+  /* 対象: .channel-input.selected / box-shadow */
+  --color-channel-input-selected-shadow: rgba(145, 205, 229, .35);
+  /* 対象: .channel-input.selected / box-shadow */
+  --color-channel-input-selected-shadow-2: rgba(145, 205, 229, .65);
+  /* 対象: .bus-input / background */
+  --color-bus-input-background: #24231f;
+  /* 対象: .output-node / border */
+  --color-output-node-border: #48555e;
+  /* 対象: .output-node / background */
+  --color-output-node-background: #1a2228;
+  /* 対象: .output-node small / color */
+  --color-output-node-text: #8b9da6;
+  /* 対象: .source-group, .common-space / border-color */
+  --color-source-group-border: #56636b;
+  /* 対象: .bus-group::before / border */
+  --color-bus-group-border: #887b61;
+  /* 対象: .bus-group::before / background */
+  --color-bus-group-background: #39352c;
+  /* 対象: .bus-group::before / color */
+  --color-bus-group-text: #dfc99f;
+  /* 対象: .bus-group / border */
+  --color-bus-group-border-2: #675e4d;
+  /* 対象: .bus-group / background */
+  --color-bus-group-background-2: rgb(132 104 62 / 11%);
+  /* 対象: .output-node output / color */
+  --color-output-node-text-2: #a9c4aa;
+  /* 対象: #flow-limiter / color */
+  --color-flow-limiter-text: #819099;
+  /* 対象: .numeric-slider-guide[data-overflow="low"], .numeric-slider-guide[data-overflow="high"] / background */
+  --color-numeric-slider-guide-background-2: #d78572;
+  /* 対象: .numeric-slider-guide[data-overflow="low"]::after,
+.numeric-slider-guide[data-overflow="high"]::after / border-top-color */
+  --color-numeric-slider-guide-border-2: #d78572;
+  /* 対象: .space-bus-editor / border */
+  --color-space-bus-editor-border: #675e4d;
+  /* 対象: .space-bus-editor / background */
+  --color-space-bus-editor-background: rgb(132 104 62 / 8%);
+  /* 対象: .bus-segment / border */
+  --color-bus-segment-border: #887b61;
+  /* 対象: .bus-segment button[aria-pressed="true"] / background */
+  --color-bus-segment-pressed-background: #60513d;
+  /* 対象: .bus-segment button[aria-pressed="true"] / color */
+  --color-bus-segment-pressed-text: #f0ddb8;
+  /* 対象: #flow-master small / color */
+  --color-flow-master-text: #b8c7cd;
+  /* 対象: .bus-group::before / background */
+  --color-bus-group-background-3: #24231f;
+  /* 対象: #flow-master.muted output / color */
+  --color-flow-master-muted-text: #c9a577;
+  /* 対象: .signal-wires path.send-active / stroke */
+  --color-signal-wires-send-active-stroke: #e6aa69;
+  /* 対象: 信号線の矢印 / fill */
+  --color-wire-arrow-fill: #8aafb5;
+
+  /* === SEQUENCE・Trigger === */
+  /* 対象: .transport .header-trigger, #record-gate, .slot-gate / border-color */
+  --color-transport-header-trigger-border: #80966f;
+  /* 対象: .transport .header-trigger, #record-gate, .slot-gate / background */
+  --color-transport-header-trigger-background: #293f2e;
+  /* 対象: .transport .header-trigger, #record-gate, .slot-gate / color */
+  --color-transport-header-trigger-text: #dbe9d3;
+  /* 対象: .transport .header-trigger, #record-gate, .slot-gate / box-shadow */
+  --color-transport-header-trigger-shadow: rgba(205, 237, 177, .22);
+  /* 対象: .transport .header-trigger, #record-gate, .slot-gate / box-shadow */
+  --color-transport-header-trigger-shadow-2: #1c3021;
+  /* 対象: .transport .header-trigger:hover:not(:disabled), #record-gate:hover:not(:disabled), .slot-gate:hover:not(:disabled) / border-color */
+  --color-transport-header-trigger-hover-disabled-border: #b0cf94;
+  /* 対象: .transport .header-trigger:hover:not(:disabled), #record-gate:hover:not(:disabled), .slot-gate:hover:not(:disabled) / background */
+  --color-transport-header-trigger-hover-disabled-background: #35543c;
+  /* 対象: .transport .header-trigger:hover:not(:disabled), #record-gate:hover:not(:disabled), .slot-gate:hover:not(:disabled) / color */
+  --color-transport-header-trigger-hover-disabled-text: #edf8e4;
+  /* 対象: .transport .header-trigger:active:not(:disabled), #record-gate:active:not(:disabled), #record-gate[aria-pressed="true"], .slot-gate:active:not(:disabled), .slot-gate.on / border-color */
+  --color-transport-header-trigger-active-disabled-border: #b6d3b5;
+  /* 対象: .transport .header-trigger:active:not(:disabled), #record-gate:active:not(:disabled), #record-gate[aria-pressed="true"], .slot-gate:active:not(:disabled), .slot-gate.on / background */
+  --color-transport-header-trigger-active-disabled-background: #688f5b;
+  /* 対象: .transport .header-trigger:active:not(:disabled), #record-gate:active:not(:disabled), #record-gate[aria-pressed="true"], .slot-gate:active:not(:disabled), .slot-gate.on / color */
+  --color-transport-header-trigger-active-disabled-text: #101a0d;
+  /* 対象: .transport .header-trigger:active:not(:disabled), #record-gate:active:not(:disabled), #record-gate[aria-pressed="true"], .slot-gate:active:not(:disabled), .slot-gate.on / box-shadow */
+  --color-transport-header-trigger-active-disabled-shadow: rgba(12, 28, 13, .45);
+  /* 対象: .gate-lamp / border */
+  --color-gate-lamp-border: #4d555d;
+  /* 対象: .gate-lamp / background */
+  --color-gate-lamp-background: #1b1f22;
+  /* 対象: .gate-lamp / color */
+  --color-gate-lamp-text: #69727a;
+  /* 対象: .gate-lamp.on / background */
+  --color-gate-lamp-on-background: #7e9f7f;
+  /* 対象: .gate-lamp.on / border-color */
+  --color-gate-lamp-on-border: #a9c4aa;
+  /* 対象: .gate-lamp.on / color */
+  --color-gate-lamp-on-text: #0f1510;
+  /* 対象: .gate-lamp.on / box-shadow */
+  --color-gate-lamp-on-shadow: rgba(164, 199, 166, 0.72);
+  /* 対象: .signal-canvas .flow-node.active, .signal-canvas .diagram-gain.active,
+.signal-canvas .output-node.active, #trigger-menu.active / border-color */
+  --color-signal-canvas-flow-node-active-border: #b0d2df;
+  /* 対象: .signal-canvas .flow-node.active, .signal-canvas .diagram-gain.active,
+.signal-canvas .output-node.active, #trigger-menu.active / box-shadow */
+  --color-signal-canvas-flow-node-active-shadow: #b0d2df;
+  /* 対象: .voice-grid #trigger-menu / border-color */
+  --color-voice-grid-trigger-menu-border: #80966f;
+  /* 対象: .voice-grid #trigger-menu / background */
+  --color-voice-grid-trigger-menu-background: #293f2e;
+  /* 対象: .voice-grid #trigger-menu / color */
+  --color-voice-grid-trigger-menu-text: #dbe9d3;
+  /* 対象: .voice-grid #trigger-menu:hover:not(:disabled) / border-color */
+  --color-voice-grid-trigger-menu-hover-disabled-border: #b0cf94;
+  /* 対象: .voice-grid #trigger-menu:hover:not(:disabled) / background */
+  --color-voice-grid-trigger-menu-hover-disabled-background: #35543c;
+  /* 対象: .voice-grid #trigger-menu:hover:not(:disabled) / color */
+  --color-voice-grid-trigger-menu-hover-disabled-text: #edf8e4;
+  /* 対象: .voice-grid #trigger-menu.active / border-color */
+  --color-voice-grid-trigger-menu-active-border: #80966f;
+  /* 対象: .voice-grid #trigger-menu.active / background */
+  --color-voice-grid-trigger-menu-active-background: #293f2e;
+  /* 対象: .voice-grid #trigger-menu.active / color */
+  --color-voice-grid-trigger-menu-active-text: #dbe9d3;
+  /* 対象: .trigger-group / border */
+  --color-trigger-group-border: #52606a;
+  /* 対象: .trigger-settings.trigger-group, .trigger-user-group.trigger-group / border-color */
+  --color-trigger-settings-trigger-group-border: #675e4d;
+  /* 対象: .trigger-settings.trigger-group, .trigger-user-group.trigger-group / background */
+  --color-trigger-settings-trigger-group-background: rgb(132 104 62 / 11%);
+  /* 対象: .trigger-group-title / background */
+  --color-trigger-group-title-background: #24231f;
+  /* 対象: .trigger-group-title / color */
+  --color-trigger-group-title-text: #dfc99f;
+  /* 対象: .trigger-settings #ton-one-shot-status / color */
+  --color-trigger-settings-ton-one-shot-status-text: #c8b792;
+  /* 対象: .gate-lamp.trigger-gate-led / border */
+  --color-gate-lamp-trigger-gate-led-border: rgba(225, 104, 101, .55);
+  /* 対象: .gate-lamp.trigger-gate-led / background */
+  --color-gate-lamp-trigger-gate-led-background: rgba(148, 37, 43, .23);
+  /* 対象: .gate-lamp.trigger-gate-led / color */
+  --color-gate-lamp-trigger-gate-led-text: #e3a3a0;
+  /* 対象: .gate-lamp.trigger-gate-led / box-shadow */
+  --color-gate-lamp-trigger-gate-led-shadow: rgba(15, 3, 4, .8);
+  /* 対象: .gate-lamp.trigger-gate-led.on / border-color */
+  --color-gate-lamp-trigger-gate-led-on-border: #c54a4b;
+  /* 対象: .gate-lamp.trigger-gate-led.on / background */
+  --color-gate-lamp-trigger-gate-led-on-background: #a8242c;
+  /* 対象: .gate-lamp.trigger-gate-led.on / color */
+  --color-gate-lamp-trigger-gate-led-on-text: #f1b2ad;
+  /* 対象: .gate-lamp.trigger-gate-led.on / box-shadow */
+  --color-gate-lamp-trigger-gate-led-on-shadow: rgba(63, 0, 8, .55);
+  /* 対象: .gate-lamp.trigger-gate-led.on / box-shadow */
+  --color-gate-lamp-trigger-gate-led-on-shadow-2: rgba(165, 31, 42, .65);
+  /* 対象: .source-choice button[aria-pressed="true"] / border-color */
+  --color-source-choice-pressed-border: #a9c4aa;
+  /* 対象: .source-choice button[aria-pressed="true"] / background */
+  --color-source-choice-pressed-background: #344a3a;
+  /* 対象: #record-toggle[aria-pressed="true"] / border-color */
+  --color-record-toggle-pressed-border: #d2a78d;
+  /* 対象: #record-toggle[aria-pressed="true"] / background */
+  --color-record-toggle-pressed-background: #513b34;
+  /* 対象: #record-counter / color */
+  --color-record-counter-text: #b9c8cf;
+  /* 対象: .record-timeline-label span, .record-ticks, #record-status / color */
+  --color-record-timeline-label-text: #aab6bd;
+  /* 対象: .record-timeline / border */
+  --color-record-timeline-border: #52606a;
+  /* 対象: .record-timeline / background */
+  --color-record-timeline-background: #1b2228;
+  /* 対象: .record-selection / background */
+  --color-record-selection-background: rgba(127, 169, 174, .12);
+  /* 対象: .record-selection / border-inline */
+  --color-record-selection-border: #a2d1d2;
+  /* 対象: .record-gates span / background */
+  --color-record-gates-background: #a6cba6;
+  /* 対象: .record-selection-handle::after / background */
+  --color-record-selection-handle-background: #bde4e3;
+  /* 対象: .record-selection-handle::after / box-shadow */
+  --color-record-selection-handle-shadow: #24434a;
+  /* 対象: .record-selection-handle:hover:not(:disabled), .record-selection-handle:focus-visible / background */
+  --color-record-selection-handle-hover-disabled-background: rgba(162, 209, 210, .14);
+  /* 対象: .record-playhead / background */
+  --color-record-playhead-background: #d8b482;
+  /* 対象: .record-selection-values / color */
+  --color-record-selection-values-text: #aab6bd;
+  /* 対象: .record-selection-values output / color */
+  --color-record-selection-values-text-2: #d5e0e4;
+  /* 対象: .sequence-pitch-controls / border-top */
+  --color-sequence-pitch-controls-border: rgba(103, 94, 77, .78);
+  /* 対象: .pitch-performance output / color */
+  --color-pitch-performance-text: #d5e0e4;
+  /* 対象: .pitch-step-ticks span / background */
+  --color-pitch-step-ticks-background: rgba(221, 226, 229, .32);
+  /* 対象: .pitch-step-ticks span.center / background */
+  --color-pitch-step-ticks-center-background: rgba(232, 197, 135, .75);
+  /* 対象: .record-lower / border-top */
+  --color-record-lower-border: rgba(103, 94, 77, .78);
+  /* 対象: .pitch-curve-line / stroke */
+  --color-pitch-curve-line-stroke: #d6bb75;
+  /* 対象: .pitch-zero-line / stroke */
+  --color-pitch-zero-line-stroke: rgba(214, 187, 117, .25);
+  /* 対象: .pitch-timeline .record-selection / background */
+  --color-pitch-timeline-record-selection-background: rgba(214, 187, 117, .08);
+  /* 対象: .pitch-timeline .record-selection / border-color */
+  --color-pitch-timeline-record-selection-border: #d6bb75;
+  /* 対象: .space-trigger-hint / color */
+  --color-space-trigger-hint-text: #8fa0a8;
+  /* 対象: .trigger-user-group #record-status / color */
+  --color-trigger-user-group-record-status-text: #c7d3d6;
+  /* 対象: .record-log-details / color */
+  --color-record-log-details-text: #aebdc1;
+  /* 対象: .record-performance .source-choice > span / color */
+  --color-record-performance-source-choice-text: #d5e0e4;
+  /* 対象: .record-performance .source-choice button small / color */
+  --color-record-performance-source-choice-text-2: #d8c694;
+  /* 対象: .record-performance #sequence-panel[aria-pressed="true"] / background */
+  --color-record-performance-sequence-panel-pressed-background: #416451;
+  /* 対象: .record-performance #sequence-panel[aria-pressed="true"] / border */
+  --color-record-performance-sequence-panel-pressed-border: #a5deb7;
+  /* 対象: .record-performance #sequence-panel[aria-pressed="true"] / color */
+  --color-record-performance-sequence-panel-pressed-text: #f5fff7;
+  /* 対象: .record-performance #sequence-panel[aria-pressed="true"] / box-shadow */
+  --color-record-performance-sequence-panel-pressed-shadow: rgba(165, 222, 183, .25);
+  /* 対象: .gate-mode-choice button[aria-pressed="true"] / border */
+  --color-gate-mode-choice-pressed-border: #b8d6b7;
+  /* 対象: .gate-mode-choice button[aria-pressed="true"] / background */
+  --color-gate-mode-choice-pressed-background: #334b3c;
+  /* 対象: .gate-mode-choice button[aria-pressed="true"] / color */
+  --color-gate-mode-choice-pressed-text: #f0fff2;
+  /* 対象: #sequence-link[aria-pressed="true"] / border-color */
+  --color-sequence-link-pressed-border: #d6bb75;
+  /* 対象: #sequence-link[aria-pressed="true"] / background */
+  --color-sequence-link-pressed-background: #514838;
+  /* 対象: #sequence-link[aria-pressed="true"] / color */
+  --color-sequence-link-pressed-text: #ffebb6;
+  /* 対象: #gate-mute[aria-pressed="true"], #pitch-mute[aria-pressed="true"] / border-color */
+  --color-gate-mute-pressed-border: #da998d;
+  /* 対象: #gate-mute[aria-pressed="true"], #pitch-mute[aria-pressed="true"] / background */
+  --color-gate-mute-pressed-background: #57413e;
+  /* 対象: #sequence-scale-custom / color */
+  --color-sequence-scale-custom-text: #e3c582;
+  /* 対象: .sequence-perform .pitch-performance / border-top */
+  --color-sequence-perform-pitch-performance-border: rgba(103, 94, 77, .78);
+  /* 対象: .source-phase-row > span / color */
+  --color-source-phase-row-text: #aab6bd;
+
+  /* === 包絡線・説明図 === */
+  /* 対象: .aenv-curve-control output / color */
+  --color-aenv-curve-control-text: #c7ba9d;
+  /* 対象: .penv-shape-guide summary / color */
+  --color-penv-shape-guide-text: #eef4e8;
+  /* 対象: .penv-shape-guide summary:focus-visible / outline */
+  --color-penv-shape-guide-focus-visible-focus: #c8d5ab;
+  /* 対象: .penv-release-note / color */
+  --color-penv-release-note-text: #d5e0e4;
+  /* 対象: .penv-shape-guide text / fill */
+  --color-penv-shape-guide-fill: #d5e0e4;
+  /* 対象: .penv-shape-guide .axis / stroke */
+  --color-penv-shape-guide-axis-stroke: #87949c;
+  /* 対象: .penv-shape-guide .zero / stroke */
+  --color-penv-shape-guide-zero-stroke: #87949c;
+  /* 対象: .penv-shape-guide .event / stroke */
+  --color-penv-shape-guide-event-stroke: #87949c;
+  /* 対象: .penv-shape-guide .time / stroke */
+  --color-penv-shape-guide-time-stroke: #d6bb75;
+  /* 対象: .penv-shape-guide .rate / stroke */
+  --color-penv-shape-guide-rate-stroke: #8cc7da;
+  /* 対象: .penv-shape-guide .reference / stroke */
+  --color-penv-shape-guide-reference-stroke: #a7b3bc;
+  /* 対象: #penv-floor-status / color */
+  --color-penv-floor-status-text: #e0b77c;
+  /* 対象: PEnvの平行マーク背景 / fill */
+  --color-penv-parallel-mark-background: #15191d;
+  /* 対象: PEnv Timeの文字・点 / fill */
+  --color-penv-time-marker-fill: #d6bb75;
+  /* 対象: PEnv Rateの文字・点 / fill */
+  --color-penv-rate-marker-fill: #8cc7da;
+}

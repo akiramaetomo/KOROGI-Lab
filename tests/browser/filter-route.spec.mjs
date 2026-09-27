@@ -51,9 +51,9 @@ test('FILTER2 destination, depth, segmented choices, and v4 save stay synchroniz
     await engine.close();
     return { saved: saved.channels[0].timbre, migrated: migrated.channels[0].timbre, migratedVersion: migrated.formatVersion, rejected, retained };
   });
-  expect(result.saved.formatVersion).toBe('KOROGI-Lab/timbre-v7');
+  expect(result.saved.formatVersion).toBe('KOROGI-Lab/timbre-v14');
   expect(result.saved.settings.filter1CutoffDepthCent).toBe(4800);
-  expect(result.migratedVersion).toBe('KOROGI-Lab/session-v8');
+  expect(result.migratedVersion).toBe('KOROGI-Lab/session-v15');
   expect(result.migrated.settings.filter2Route).toBe('mod');
   expect(result.migrated.settings.filter1CutoffDepthCent).toBe(1200);
   expect(result.rejected && result.retained).toBe(true);
@@ -71,7 +71,7 @@ test('Repeated touch double taps reset the same slider; drag does not reset; tex
   for (let repeat = 0; repeat < 3; repeat++) {
     await input.fill('1500'); await input.dispatchEvent('change');
     await tap(100, 100); await tap(100, 100);
-    await expect(input).toHaveValue('4000');
+    await expect(input).toHaveValue(await input.evaluate(node => node.defaultValue));
   }
   await input.fill('1500'); await input.dispatchEvent('change');
   await tap(100, 100, 30); await tap(100, 100);

@@ -163,6 +163,7 @@ test('Four real sources sum independently; post-FX1 fader and sends retain sourc
       const context = new OfflineAudioContext(1, 48000, 48000); const engine = new AudioEngine(context);
       engine.preLimiterOutput.disconnect(); engine.preLimiterOutput.connect(context.destination); engine.setMasterGainDb(0);
       const channel = engine.getChannel('1'); channel.setFx1Parameter('distortionDriveDb', 16); channel.setBlockEnabled('aenv', false);
+      channel.setOsc1Frequency(4000); // Spectral fixture, independent of author-edited New defaults.
       if (sourceFx) { await channel.setFx1Type('distortion'); channel.setFx1Enabled(true); channel.setFx1Parameter('distortionWet', 1); }
       else { await engine.setBusEffectType('near', 2, 'distortion'); engine.setBusEffectEnabled('near', 2, true); engine.setBusEffectParameter('near', 2, 'distortionWet', 1); engine.setBusEffectParameter('near', 2, 'distortionDriveDb', 16); }
       engine.setChannelMix('1', { balance: 0 }); engine.setCrossfade(0); engine.gateOn('1');

@@ -1,9 +1,15 @@
+import { ADSREditor } from './ui/ADSREditor';
+import { FunctionEditor } from './ui/FunctionEditor';
+import { CommonSpaceEditor, prepareCommonSpaceCards, type CommonCardId } from './ui/CommonSpaceEditor';
+import type { EditorCardId } from './model/editorLayout';
+import { DEFAULT_EDITOR_LAYOUT } from './model/editorLayout';
 import { AudioEngine } from './audio/core/AudioEngine';
 import { defaultBus, defaultTimbre, DEFAULT_CHANNEL_MIX, LAB_SLOT_IDS, parseLabSession } from './model/documents';
 import { MixerPanel } from './ui/MixerPanel';
 import { TriggerRecorder } from './ui/TriggerRecorder';
 import { SequenceTransport } from './ui/SequenceTransport';
 import { SignalMap } from './ui/SignalMap';
+import { mountPitchEnvelopeGuide } from './ui/PitchEnvelopeGuide';
 import type {
   BusAssignment,
   BurstSettings,
@@ -13,6 +19,7 @@ import type {
   EffectSlotSettings,
   EffectType,
   EnvelopeCurve,
+  ReleaseTiming,
   FilterOrder,
   Filter2Route,
   FilterType,
@@ -22,11 +29,15 @@ import type {
 } from './audio/types';
 import { DEFAULT_EFFECT_SLOT_SETTINGS, LIMITS } from './audio/constants';
 import { NumericSliderControl } from './ui/NumericSliderControl';
-import { PARAMETER_RANGES as P, parameterForInput } from './config/parameterRanges';
+import { PARAMETER_RANGES as P, parameterForInput, parameterValueBounds } from './config/parameterRanges';
 import { validateParameterRanges } from './config/parameterSafety';
 import { DEMO_SESSIONS } from './demoSessions';
 
+const amplitudeEditor = new ADSREditor(document.querySelector<HTMLElement>('[data-adsr="aenv"]')!, 'aenv');
+const filterEnvelopeEditor = new ADSREditor(document.querySelector<HTMLElement>('[data-adsr="fenv"]')!, 'fenv');
 const numericSliders = new Map<HTMLInputElement, NumericSliderControl>();
+const commonCards = prepareCommonSpaceCards(document.querySelector<HTMLElement>('.panel-deck')!);
+mountPitchEnvelopeGuide(document.querySelector<HTMLElement>('#penv-shape-guide')!);
 
 function requireElement<T extends Element>(selector: string): T {
   const element = document.querySelector<T>(selector);
@@ -77,8 +88,9 @@ function prepareNumericInputs(): void {
   document.querySelectorAll<HTMLInputElement>('input[type="number"]').forEach((input) => {
     const range = parameterForInput(input.id);
     if (!range) throw new Error(`src/config/parameterRanges.ts: missing definition for ${input.id}`);
-    input.min = String(range.min);
-    input.max = String(range.max);
+    const bounds = parameterValueBounds(range);
+    input.min = String(bounds.min);
+    input.max = String(bounds.max);
     input.step = String(range.step);
     input.defaultValue = String(range.defaultValue);
     input.value = input.defaultValue;
@@ -202,6 +214,10 @@ const sequencePanelButton = requireElement<HTMLButtonElement>('#sequence-panel')
 const sourceAutoButton = requireElement<HTMLButtonElement>('#source-auto');
 const sourceUser1Button = requireElement<HTMLButtonElement>('#source-user-1');
 const sourceUser2Button = requireElement<HTMLButtonElement>('#source-user-2');
+const sourceUser3Button = requireElement<HTMLButtonElement>('#source-user-3');
+const pitchUserButtons = ['user-1', 'user-2', 'user-3'].map((_, index) => requireElement<HTMLButtonElement>(`#pitch-user-${index + 1}`));
+const gateUserButtons = [sourceUser1Button, sourceUser2Button, sourceUser3Button];
+const recordedGateButton = requireElement<HTMLButtonElement>('#source-recorded');
 
 function showDisplayError(message: string): void {
   displayErrorElement.textContent = message;
@@ -268,18 +284,18 @@ function ensureAudioRunning(forceAttempt = false): Promise<void> {
 }
 statusElement.addEventListener('click', () => { void ensureAudioRunning(true).catch(() => {}); });
 const transport = new SequenceTransport(() => engine, ensureAudioRunning,
-  () => { mixer.refresh(); recorder.refresh(); syncTransportControls(); },
+  () => { mixer.refresh(); recorder.refresh(); numericSliders.forEach(slider => slider.sync()); syncTransportControls(); },
   message => { patchStatus.textContent = message; }, id => mixer.manual.forgetSource(id));
 const mixer = new MixerPanel(requireElement('#mixer-slots'), () => engine, ensureAudioRunning, syncSelectedSource,
   message => { patchStatus.textContent = message; }, saveTimbre,
   id => { transport.beforeReplace(id); if (recorder.lockedId() === id) recorder.cancel(); }, () => transport);
 const recorder = new TriggerRecorder(() => engine, () => mixer.selectedId, ensureAudioRunning,
   id => {
-    transport.stop(id); mixer.manual.forgetSource(id);
+    mixer.manual.forgetSource(id);
     engine?.cancelScheduledGates(id);
     mixer.refresh();
-  }, id => {
-    transport.setRecordingTarget(id);
+  }, (id, lane) => {
+    transport.setRecordingTarget(id, lane);
     mixer.protectSource(id);
     if (id) applyRecordingLock();
     else setAudioControlsEnabled(engine !== null && !loadingSession);
@@ -296,6 +312,8 @@ function setGateIndicator(on: boolean): void {
 
 function animateGate(): void {
   if (engine) setGateIndicator(mixer.animate(engine.context.currentTime + 0.002));
+  const floor = selectedChannel()?.isPitchFloorLimitedNow() ?? false;
+  requireElement<HTMLOutputElement>('#penv-floor-status').hidden = !floor;
   recorder.refreshClock();
   syncTransportControls();
   window.requestAnimationFrame(animateGate);
@@ -303,12 +321,23 @@ function animateGate(): void {
 function syncTransportControls(): void {
   const id = mixer.selectedId;
   const running = transport.isPlaying(id);
-  sequencePanelButton.textContent = running ? 'Stop' : 'Play';
+  sequencePanelButton.textContent = running ? '■ Stop' : '▶ Play';
   sequencePanelButton.setAttribute('aria-pressed', String(running));
   const source = transport.source(id);
-  sourceAutoButton.setAttribute('aria-pressed', String(source.kind === 'auto'));
-  sourceUser1Button.setAttribute('aria-pressed', String(source.kind === 'user' && source.patternId === 'user-1'));
-  sourceUser2Button.setAttribute('aria-pressed', String(source.kind === 'user' && source.patternId === 'user-2'));
+  sourceAutoButton.setAttribute('aria-pressed', String(source.gateMode === 'auto'));
+  recordedGateButton.setAttribute('aria-pressed', String(source.gateMode === 'user'));
+  gateUserButtons.forEach((button, index) => {
+    const patternId = `user-${index + 1}` as typeof source.gateUserId;
+    const gate = engine?.getChannel(id) ? engine.getGateRecording(id, patternId) : null;
+    button.setAttribute('aria-pressed', String(source.gateUserId === patternId));
+    button.querySelector('small')!.textContent = gate ? engine!.getGateMuted(id, patternId) ? '0' : '1' : 'Null';
+  });
+  pitchUserButtons.forEach((button, index) => {
+    const patternId = `user-${index + 1}` as typeof source.pitchUserId;
+    const pitch = engine?.getChannel(id) ? engine.getPitchRecording(id, patternId) : null;
+    button.setAttribute('aria-pressed', String(source.pitchUserId === patternId));
+    button.querySelector('small')!.textContent = pitch ? engine!.getPitchMuted(id, patternId) ? '0' : '1' : 'Null';
+  });
   const any = transport.anyPlaying();
   playAllButton.textContent = any ? 'Stop All' : 'Play All';
   playAllButton.setAttribute('aria-pressed', String(any));
@@ -346,6 +375,9 @@ function setAudioControlsEnabled(enabled: boolean): void {
   sourceAutoButton.disabled = !sourceEnabled;
   sourceUser1Button.disabled = !sourceEnabled;
   sourceUser2Button.disabled = !sourceEnabled;
+  sourceUser3Button.disabled = !sourceEnabled;
+  recordedGateButton.disabled = !sourceEnabled;
+  pitchUserButtons.forEach(button => { button.disabled = !sourceEnabled; });
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>(
     '.source-group [data-audio-control], [data-panel="sources"] [data-audio-control], [data-panel="modulation"] [data-audio-control], [data-panel="filters"] [data-audio-control], [data-panel="amp"] [data-audio-control], [data-panel="burst"] [data-audio-control], [data-panel="triggering"] [data-audio-control], [data-panel="output"] [data-audio-control], [data-effect-slot="fx1"] [data-audio-control]'
   ).forEach(control => { control.disabled = !sourceEnabled; });
@@ -365,6 +397,9 @@ function applyRecordingLock(): void {
   sourceAutoButton.disabled = true;
   sourceUser1Button.disabled = true;
   sourceUser2Button.disabled = true;
+  sourceUser3Button.disabled = true;
+  recordedGateButton.disabled = true;
+  pitchUserButtons.forEach(button => { button.disabled = true; });
 }
 
 function syncModAvailability(): void {
@@ -375,55 +410,51 @@ function syncModAvailability(): void {
   ).forEach(control => { control.disabled = !editable; });
 }
 
+let functionEditor: FunctionEditor | undefined;
+let commonEditor: CommonSpaceEditor | undefined;
 function refreshEditingNodes(): void {
-  const panelName = document.querySelector<HTMLElement>('[data-panel].active')?.dataset.panel;
-  document.querySelectorAll<HTMLButtonElement>('[data-panel-target]').forEach((button) => {
+  const panelName = document.querySelector<HTMLElement>('[data-panel].active:not(.editor-card):not(.space-card)')?.dataset.panel;
+  document.querySelectorAll<HTMLButtonElement>('[data-panel-target]:not([data-editor-target]):not([data-common-target])').forEach((button) => {
     const active = button.dataset.panelTarget === panelName && (!button.dataset.bus || button.dataset.bus === selectedBus());
     button.classList.toggle('active', active);
   });
+  functionEditor?.refreshNodes();
+  commonEditor?.refreshNodes();
+  if (functionEditor && !functionEditor.root.hidden) {
+    const cards = [...document.querySelectorAll<HTMLElement>('.editor-card.active')].map(card => card.dataset.editorCard!.toUpperCase());
+    activePathElement.textContent = `Viewing: ${cards.join(' / ') || 'Select a block'}`;
+  }
 }
-
-function showPanel(panelName: string): void {
-  document.querySelectorAll<HTMLElement>('[data-panel]').forEach((panel) => {
-    panel.classList.toggle('active', panel.dataset.panel === panelName);
+function showPanel(panelName: string, cardId?: EditorCardId, focus = false, commonId?: CommonCardId, activate = false): void {
+  const dedicated = panelName === 'patch';
+  const common = panelName === 'space-effects' || panelName === 'space-output';
+  document.querySelectorAll<HTMLElement>('[data-panel]:not(.editor-card):not(.space-card)').forEach(panel => {
+    panel.classList.toggle('active', dedicated && panel.dataset.panel === panelName);
   });
+  if (dedicated || common) functionEditor?.hide();
+  else if (activate && cardId) functionEditor?.activate(cardId, focus);
+  else functionEditor?.show(cardId, focus);
+  if (common && activate && commonId) commonEditor?.activate(commonId, focus);
+  else if (common) commonEditor?.show(commonId, focus);
+  else commonEditor?.hide();
   refreshEditingNodes();
-
-  const labels: Record<string, string> = {
-    sources: 'SOURCES',
-    modulation: 'PITCH / MOD',
-    filters: 'FILTERS',
-    amp: 'AMP ENV',
-    burst: 'BURST',
-    triggering: 'SEQUENCE',
-    'voice-effects': 'TIMBRE FX1',
-    'space-effects': 'COMMON SPACE FX / GAIN',
-    'space-output': 'COMMON SPACE OUTPUT',
-    output: 'TIMBRE DETUNE',
-    patch: 'FILES'
-  };
-  activePathElement.textContent = `Viewing: ${labels[panelName] ?? panelName}`;
+  const labels: Record<string, string> = { 'space-effects': 'COMMON SPACE FX / GAIN', 'space-output': 'COMMON SPACE OUTPUT', patch: 'FILES' };
+  const cards = [...document.querySelectorAll<HTMLElement>('.editor-card.active')].map(card => card.dataset.editorCard!.toUpperCase());
+  activePathElement.textContent = `Viewing: ${dedicated ? labels[panelName] : common ? 'COMMON SPACE · ' + commonEditor?.viewingLabel : cards.join(' / ') || 'Select a block'}`;
+  if (dedicated && focus) {
+    const heading = requireElement<HTMLElement>('.function-panel.active:not(.editor-card):not(.space-card) .panel-heading');
+    heading.tabIndex = -1; heading.focus({ preventScroll: true });
+  }
 }
-
-document.querySelectorAll<HTMLButtonElement>('[data-panel-target]').forEach((button) => {
-  button.addEventListener('click', (event) => {
-    const target = button.dataset.panelTarget;
+document.querySelectorAll<HTMLButtonElement>('[data-panel-target]').forEach(button => {
+  button.addEventListener('click', event => {
     if (button.dataset.bus) {
       setSelectedBus(button.dataset.bus as BusAssignment);
       refreshEffectControls(); refreshBlockSwitches();
     }
-    if (target) {
-      showPanel(target);
-      requireElement<HTMLElement>('.workspace').scrollTop = 0;
-      if (event.detail === 0) {
-        const heading = requireElement<HTMLElement>('.function-panel.active .panel-heading');
-        heading.tabIndex = -1;
-        heading.focus({ preventScroll: true });
-      }
-    }
+    if (button.dataset.panelTarget) showPanel(button.dataset.panelTarget, button.dataset.editorTarget as EditorCardId | undefined, event.detail === 0, button.dataset.commonTarget as CommonCardId | undefined, true);
   });
 });
-
 const labBody = requireElement<HTMLElement>('.lab-body');
 const mixerPanel = requireElement<HTMLElement>('.mixer-panel');
 const mixerDivider = requireElement<HTMLElement>('#mixer-divider');
@@ -504,35 +535,19 @@ panelDivider.addEventListener('keydown', event => {
 function applyAutoTrigger(): void {
   const channel = selectedChannel();
   if (!channel) return;
-  const existing = channel.getSettings().autoTrigger;
-  const settings = channel.getSettings();
-  if (settings.ampEnvelope.mode === 'one-shot' && !settings.burst.enabled) {
-    const repeatMs = Math.min(P.trepeat.max, Math.max(P.trepeat.min, numberValue('#trepeat')));
-    setValue('#trepeat', repeatMs);
-    channel.setAutoTrigger({ ...existing, oneShotRepeatSec: repeatMs / 1000 });
-    return;
-  }
-  const tonMs = numberValue('#ton');
-  const repeatMs = Math.min(P.trepeat.max, Math.max(tonMs + P.toff.min, numberValue('#trepeat')));
-  setValue('#trepeat', repeatMs);
-  channel.setAutoTrigger({ ...existing,
-    tonSec: tonMs / 1000,
-    toffSec: (repeatMs - tonMs) / 1000
-  });
+  channel.setAutoTrigger({ tonSec: numberValue('#ton') / 1000, repeatSec: numberValue('#trepeat') / 1000 });
+  refreshAutoTriggerControls();
 }
 
 function refreshAutoTriggerControls(): void {
   const settings = selectedChannel()?.getSettings();
-  const oneShot = settings?.ampEnvelope.mode === 'one-shot';
-  const phraseWindow = !!oneShot && !!settings?.burst.enabled;
   const ton = requireElement<HTMLInputElement>('#ton');
   requireElement<HTMLElement>('[data-numeric-control="ton"]').hidden = false;
-  ton.disabled = !settings || (!!oneShot && !phraseWindow) || loadingSession || recorder.isBusy();
+  ton.disabled = !settings || loadingSession || recorder.isBusy();
   numericSliders.get(ton)?.sync();
-  requireElement<HTMLElement>('#ton-one-shot-status').hidden = !oneShot || phraseWindow;
-  if (settings) setValue('#trepeat', Math.round((oneShot && !phraseWindow
-    ? settings.autoTrigger.oneShotRepeatSec ?? settings.autoTrigger.tonSec + settings.autoTrigger.toffSec
-    : settings.autoTrigger.tonSec + settings.autoTrigger.toffSec) * 1000));
+  const warning = requireElement<HTMLElement>('#auto-timing-warning');
+  warning.hidden = !settings || settings.autoTrigger.tonSec < settings.autoTrigger.repeatSec;
+  if (settings) setValue('#trepeat', Math.round(settings.autoTrigger.repeatSec * 1000));
 }
 
 function burstSettingsFromUi(enabled: boolean): BurstSettings {
@@ -629,29 +644,29 @@ function setBurstEnabled(enabled: boolean): void {
   refreshBurstControls(); refreshAutoTriggerControls(); signalMap.refresh();
 }
 
-function applyAmplitudeEnvelope(curve?: EnvelopeCurve, mode?: 'gate' | 'one-shot'): void {
+function applyAmplitudeEnvelope(curve?: EnvelopeCurve, mode?: 'gate' | 'one-shot', timing?: ReleaseTiming): void {
   const channel = selectedChannel();
   if (!channel) return;
-  const existing = channel.getSettings().ampEnvelope;
-  channel.setAmplitudeEnvelope({
-    attackSec: numberValue('#attack') / 1000,
-    decaySec: numberValue('#decay') / 1000,
-    sustain: numberValue('#sustain'),
-    releaseSec: numberValue('#release') / 1000,
-    attackCurve: curve ?? existing.attackCurve,
-    decayCurve: curve ?? existing.decayCurve,
-    releaseCurve: curve ?? existing.releaseCurve,
-    mode: mode ?? existing.mode
-  });
+  const next = amplitudeEditor.read(channel.getSettings().ampEnvelope, curve, mode, timing);
+  channel.setAmplitudeEnvelope(next);
+  amplitudeEditor.sync(next, setValue);
   refreshBurstControls();
   if (mode) { refreshAutoTriggerControls(); signalMap.refresh(); }
 }
 
 function applyPitchEnvelope(): void {
-  selectedChannel()?.setPitchEnvelope(
-    numberValue('#penv-amount') / 100,
-    numberValue('#penv-time') / 1000
-  );
+  selectedChannel()?.setPitchEnvelope({
+    mode: requireElement<HTMLSelectElement>('#penv-mode').value as 'gate' | 'one-shot',
+    start: numberValue('#penv-start') / 100,
+    attack: numberValue('#penv-attack-level') / 100,
+    sustain: numberValue('#penv-sustain-level') / 100,
+    release: numberValue('#penv-release-level') / 100,
+    attackSec: numberValue('#penv-attack-time') / 1000,
+    decaySec: numberValue('#penv-decay-time') / 1000,
+    releaseSec: numberValue('#penv-release-time') / 1000,
+    scale: numberValue('#penv-scale'),
+    releaseTiming: requireElement<HTMLSelectElement>('#penv-release-timing').value as ReleaseTiming
+  });
 }
 
 function updateModReadout(mode: ModMode): void {
@@ -703,9 +718,12 @@ function refreshDetuneReadouts(): void {
 
 mixer.manual.bind(triggerButton, () => mixer.selectedId);
 playAllButton.addEventListener('click', () => { void transport.toggleAll(); });
-sourceAutoButton.addEventListener('click', () => transport.setSource(mixer.selectedId, { kind: 'auto' }));
-sourceUser1Button.addEventListener('click', () => transport.setSource(mixer.selectedId, { kind: 'user', patternId: 'user-1' }));
-sourceUser2Button.addEventListener('click', () => transport.setSource(mixer.selectedId, { kind: 'user', patternId: 'user-2' }));
+sourceAutoButton.addEventListener('click', () => transport.setSelection(mixer.selectedId, { gateMode: 'auto' }));
+recordedGateButton.addEventListener('click', () => transport.setSelection(mixer.selectedId, { gateMode: 'user' }));
+gateUserButtons.forEach((button, index) => button.addEventListener('click', () => transport.setSelection(mixer.selectedId,
+  { gateUserId: `user-${index + 1}` as 'user-1' | 'user-2' | 'user-3' })));
+pitchUserButtons.forEach((button, index) => button.addEventListener('click', () => transport.setSelection(mixer.selectedId,
+  { pitchUserId: `user-${index + 1}` as 'user-1' | 'user-2' | 'user-3' })));
 
 requireElement<HTMLSelectElement>('#phase-mode').addEventListener('change', event => {
   selectedChannel()?.setPhaseMode((event.currentTarget as HTMLSelectElement).value as 'sync' | 'free');
@@ -734,8 +752,12 @@ requireElement<HTMLInputElement>('#osc2-duty').addEventListener('change', () => 
   selectedChannel()?.setOsc2DutyRatio(numberValue('#osc2-duty') / 100);
 });
 
-requireElement<HTMLInputElement>('#penv-amount').addEventListener('change', applyPitchEnvelope);
-requireElement<HTMLInputElement>('#penv-time').addEventListener('change', applyPitchEnvelope);
+for (const id of ['penv-start', 'penv-attack-level', 'penv-sustain-level', 'penv-release-level',
+  'penv-attack-time', 'penv-decay-time', 'penv-release-time', 'penv-scale']) {
+  requireElement<HTMLInputElement>(`#${id}`).addEventListener('change', applyPitchEnvelope);
+}
+requireElement<HTMLSelectElement>('#penv-release-timing').addEventListener('change', applyPitchEnvelope);
+requireElement<HTMLSelectElement>('#penv-mode').addEventListener('change', applyPitchEnvelope);
 
 requireElement<HTMLSelectElement>('#mod-mode').addEventListener('change', (event) => {
   const mode = (event.currentTarget as HTMLSelectElement).value as ModMode;
@@ -790,15 +812,13 @@ function wireFilter(index: 1 | 2): void {
 wireFilter(1);
 wireFilter(2);
 
-['#attack', '#decay', '#sustain', '#release'].forEach((selector) => {
-  requireElement<HTMLInputElement>(selector).addEventListener('change', () => applyAmplitudeEnvelope());
-});
-requireElement<HTMLSelectElement>('#aenv-curve').addEventListener('change', event => {
-  applyAmplitudeEnvelope((event.currentTarget as HTMLSelectElement).value as EnvelopeCurve);
-  requireElement<HTMLElement>('#aenv-curve-status').hidden = true;
-});
-requireElement<HTMLSelectElement>('#aenv-mode').addEventListener('change', event => {
-  applyAmplitudeEnvelope(undefined, (event.currentTarget as HTMLSelectElement).value as 'gate' | 'one-shot');
+amplitudeEditor.wire(applyAmplitudeEnvelope);
+filterEnvelopeEditor.wire((curve, mode, timing) => {
+  const channel = selectedChannel(); if (!channel) return;
+  const next = { ...filterEnvelopeEditor.read(channel.getSettings().filterEnvelope, curve, mode, timing),
+    amountCent: numberValue('#fenv-amount') };
+  channel.setFilterEnvelope(next);
+  filterEnvelopeEditor.sync(next, setValue);
 });
 for (const selector of ['#burst-enabled', '#burst-block-enabled']) {
   requireElement<HTMLButtonElement>(selector).addEventListener('click', () => {
@@ -849,12 +869,15 @@ function syncMasterDisplay(): void {
 interface EffectUiSlot {
   slot: EffectSlotIndex;
   prefix: string;
+  bus?: BusAssignment;
 }
 
 const effectUiSlots: EffectUiSlot[] = [
   { slot: 1, prefix: 'fx1' },
-  { slot: 2, prefix: 'fx2' },
-  { slot: 3, prefix: 'fx3' }
+  { slot: 2, prefix: 'fx2', bus: 'near' },
+  { slot: 3, prefix: 'fx3', bus: 'near' },
+  { slot: 2, prefix: 'far-fx2', bus: 'far' },
+  { slot: 3, prefix: 'far-fx3', bus: 'far' }
 ];
 
 const effectInputs: { suffix: string; parameter: EffectParameter; scale: number }[] = [
@@ -874,26 +897,26 @@ let currentBus: BusAssignment = 'near';
 function selectedBus(): BusAssignment { return currentBus; }
 function setSelectedBus(bus: BusAssignment): void {
   currentBus = bus;
-  requireElement<HTMLElement>('.space-bus-editor').dataset.selectedBus = bus;
   document.querySelectorAll<HTMLButtonElement>('[data-bus-choice]').forEach(button => {
     button.setAttribute('aria-pressed', String(button.dataset.busChoice === bus));
   });
 }
 
-function effectSettings(slot: EffectSlotIndex): EffectSlotSettings {
+function effectSettings(slot: EffectSlotIndex, bus?: BusAssignment): EffectSlotSettings {
   if (!engine || (slot === 1 && !selectedChannel())) return DEFAULT_EFFECT_SLOT_SETTINGS;
-  return slot === 1 ? selectedChannel()!.getFx1Settings() : engine.getBusEffectSettings(selectedBus(), slot);
+  return slot === 1 ? selectedChannel()!.getFx1Settings() : engine.getBusEffectSettings(bus!, slot);
 }
 
-function refreshEffectControls(): void {
+function refreshEffectControls(only?: EffectUiSlot): void {
   const bus = selectedBus();
   setSelectedBus(bus);
-  for (const uiSlot of effectUiSlots) {
-    const settings = effectSettings(uiSlot.slot);
+  for (const uiSlot of only ? [only] : effectUiSlots) {
+    const settings = effectSettings(uiSlot.slot, uiSlot.bus);
     setValue(`#${uiSlot.prefix}-type`, settings.type);
     for (const input of effectInputs) setValue(`#${uiSlot.prefix}-${input.suffix}`, settings[input.parameter] * input.scale);
-    requireElement(`[data-effect-slot="${uiSlot.prefix}"] [data-effect-label]`).textContent = uiSlot.slot === 1
-      ? 'Timbre / FX1' : `${bus === 'near' ? 'Near' : 'Far'} / FX${uiSlot.slot}`;
+    const label = document.querySelector(`[data-effect-slot="${uiSlot.prefix}"] [data-effect-label]`);
+    if (label) label.textContent = uiSlot.slot === 1
+      ? 'Timbre / FX1' : `${uiSlot.bus === 'near' ? 'Near' : 'Far'} / FX${uiSlot.slot}`;
   }
   updateAllEffectParamVisibility();
   refreshEditingNodes();
@@ -920,8 +943,8 @@ function wireEffectSlot(uiSlot: EffectUiSlot): void {
   const type = requireElement<HTMLSelectElement>(`#${prefix}-type`);
   type.addEventListener('change', async () => {
     if (slot === 1) await selectedChannel()?.setFx1Type(type.value as EffectType);
-    else await engine?.setBusEffectType(selectedBus(), slot, type.value as EffectType);
-    refreshEffectControls();
+    else await engine?.setBusEffectType(uiSlot.bus!, slot, type.value as EffectType);
+    refreshEffectControls(uiSlot);
     refreshBlockSwitches();
     signalMap.refresh();
   });
@@ -930,7 +953,7 @@ function wireEffectSlot(uiSlot: EffectUiSlot): void {
     requireElement<HTMLInputElement>(selector).addEventListener('change', () => {
       const value = numberValue(selector) / input.scale;
       if (slot === 1) selectedChannel()?.setFx1Parameter(input.parameter, value);
-      else engine?.setBusEffectParameter(selectedBus(), slot, input.parameter, value);
+      else engine?.setBusEffectParameter(uiSlot.bus!, slot, input.parameter, value);
     });
   }
 }
@@ -946,8 +969,16 @@ function syncUiFromTimbre(timbre: TimbreDocument): void {
   setValue('#osc2-frequency', ch.osc2.baseFrequencyHz);
   setValue('#osc2-duty', Number((ch.osc2.dutyRatio * 100).toFixed(1)));
   setValue('#phase-mode', ch.phaseMode);
-  setValue('#penv-amount', ch.pitchEnvelope.amount * 100);
-  setValue('#penv-time', ch.pitchEnvelope.transitionTimeSec * 1000);
+  setValue('#penv-start', ch.pitchEnvelope.start * 100);
+  setValue('#penv-attack-level', ch.pitchEnvelope.attack * 100);
+  setValue('#penv-sustain-level', ch.pitchEnvelope.sustain * 100);
+  setValue('#penv-release-level', ch.pitchEnvelope.release * 100);
+  setValue('#penv-attack-time', ch.pitchEnvelope.attackSec * 1000);
+  setValue('#penv-decay-time', ch.pitchEnvelope.decaySec * 1000);
+  setValue('#penv-release-time', ch.pitchEnvelope.releaseSec * 1000);
+  setValue('#penv-scale', ch.pitchEnvelope.scale);
+  setValue('#penv-release-timing', ch.pitchEnvelope.releaseTiming);
+  setValue('#penv-mode', ch.pitchEnvelope.mode);
   setValue('#mod-mode', ch.mod.mode);
   setValue('#am-depth', ch.mod.amDepth * 100);
   setValue('#am-offset', ch.mod.amOffset);
@@ -963,17 +994,9 @@ function syncUiFromTimbre(timbre: TimbreDocument): void {
   setValue('#filter2-route', ch.filter2Route);
   setValue('#filter1-cutoff-depth', ch.filter1CutoffDepthCent);
   requireElement<HTMLElement>('.cutoff-depth-control').hidden = ch.filter2Route !== 'filter1-cutoff';
-  setValue('#attack', ch.ampEnvelope.attackSec * 1000);
-  setValue('#decay', ch.ampEnvelope.decaySec * 1000);
-  setValue('#sustain', ch.ampEnvelope.sustain);
-  setValue('#release', ch.ampEnvelope.releaseSec * 1000);
-  const attackCurve = ch.ampEnvelope.attackCurve ?? 'exponential';
-  const decayCurve = ch.ampEnvelope.decayCurve ?? 'exponential';
-  const releaseCurve = ch.ampEnvelope.releaseCurve ?? 'exponential';
-  const mixedCurves = attackCurve !== decayCurve || attackCurve !== releaseCurve;
-  setValue('#aenv-curve', mixedCurves ? '' : attackCurve);
-  requireElement<HTMLElement>('#aenv-curve-status').hidden = !mixedCurves;
-  setValue('#aenv-mode', ch.ampEnvelope.mode ?? 'gate');
+  amplitudeEditor.sync(ch.ampEnvelope, setValue);
+  filterEnvelopeEditor.sync(ch.filterEnvelope, setValue);
+  setValue('#fenv-amount', ch.filterEnvelope.amountCent);
   setValue('#burst-count-min', ch.burst.pulseCountMin);
   setValue('#burst-count-max', ch.burst.pulseCountMax);
   setValue('#burst-pulse-interval', ch.burst.pulseIntervalSec * 1000);
@@ -1015,6 +1038,8 @@ function syncSelectedSource(): void {
   setAudioControlsEnabled(engine !== null && !loadingSession);
   recorder.refresh();
   syncTransportControls();
+  functionEditor?.restore(engine?.getChannel(mixer.selectedId) ? engine.getEditorLayout(mixer.selectedId) : DEFAULT_EDITOR_LAYOUT);
+  refreshEditingNodes();
   signalMap.showSlot(mixer.selectedId);
 }
 function syncCommonMix(): void {
@@ -1051,6 +1076,8 @@ async function loadSessionSource(source: string, loadingMessage: string, loadedP
   if (!engine || loadingSession) return;
   try {
     patchStatus.textContent = loadingMessage;
+    const raw = JSON.parse(source) as { channels?: Array<{ timbre?: { formatVersion?: string } | null }> };
+    const oldPitchEnvelope = raw.channels?.some(channel => channel.timbre && !['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14'].includes(channel.timbre.formatVersion ?? '')) ?? false;
     const session = parseLabSession(source);
     transport.stopAll();
     recorder.cancel();
@@ -1061,7 +1088,7 @@ async function loadSessionSource(source: string, loadingMessage: string, loadedP
     await engine.applySession(session);
     mixer.manual.releaseAll(); mixer.refresh();
     setValue('#patch-name', session.name); syncCommonMix(); syncSelectedSource();
-    patchStatus.textContent = `${loadedPrefix}: ${session.name}`;
+    patchStatus.textContent = `${loadedPrefix}: ${session.name}${oldPitchEnvelope ? ' · Legacy PEnv Amount/Time was ignored; new PEnv is neutral.' : ''}`;
   } catch (error) { patchStatus.textContent = `${errorPrefix}: ${error instanceof Error ? error.message : String(error)}`; }
   finally { loadingSession = false; patchFileInput.value = ''; setAudioControlsEnabled(true); }
 }
@@ -1196,7 +1223,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-flow-block]').forEach((node)
 
 const panelSwitches: Record<string, ChannelBlock> = {
   'OSC1 / Carrier': 'osc1', 'OSC2 / Modulator': 'osc2', PEnv: 'penv', 'MOD Mode / Depth': 'mod',
-  'FILTER1 / Audio Path': 'filter1', 'FILTER2 / Modulation Path': 'filter2', 'AEnv / ADSR': 'aenv'
+  'FILTER1 / Audio Path': 'filter1', 'FILTER2 / Modulation Path': 'filter2', 'AEnv / ADSR': 'aenv', 'FEnv / ADSR': 'fenv'
 };
 document.querySelectorAll<HTMLElement>('legend').forEach((legend) => {
   const label = legend.textContent?.trim() ?? '';
@@ -1205,7 +1232,7 @@ document.querySelectorAll<HTMLElement>('legend').forEach((legend) => {
 });
 for (const slot of effectUiSlots) {
   requireElement<HTMLElement>(`[data-effect-slot="${slot.prefix}"] legend`)
-    .append(makeBlockSwitch(`fx${slot.slot}`, `FX${slot.slot}`));
+    .append(makeBlockSwitch(`fx${slot.slot}`, `FX${slot.slot}`, slot.bus));
 }
 for (const bus of ['near', 'far'] as const) {
   requireElement<HTMLInputElement>(`#${bus}-gain`).parentElement?.append(makeBlockSwitch('mixGain', `${bus} Gain`, bus));
@@ -1215,6 +1242,13 @@ document.querySelectorAll<HTMLInputElement>('input[data-numeric-min]').forEach((
   numericSliders.set(input, new NumericSliderControl(input));
 });
 
+functionEditor = new FunctionEditor(requireElement('.panel-deck'), cards => {
+  if (engine?.getChannel(mixer.selectedId)) engine.setEditorLayout(mixer.selectedId, cards);
+  activePathElement.textContent = 'Viewing: ' + (cards.map(id => id.toUpperCase()).join(' / ') || 'Select a block');
+}, () => recorder.releaseScreenTrigger());
+commonEditor = new CommonSpaceEditor(requireElement('.panel-deck'), commonCards, () => {
+  activePathElement.textContent = 'Viewing: COMMON SPACE · ' + commonEditor?.viewingLabel;
+});
 setSelectedBus('near');
 setAudioControlsEnabled(false);
 refreshBlockSwitches();
@@ -1230,7 +1264,7 @@ try {
   try { validateParameterRanges(P, context.sampleRate); }
   catch (error) { void context.close(); throw error; }
   engine = new AudioEngine(context, {
-    formatVersion: 'KOROGI-Lab/session-v8', name: 'KOROGI Session', savedAt: '',
+    formatVersion: 'KOROGI-Lab/session-v15', name: 'KOROGI Session', savedAt: '',
     channels: LAB_SLOT_IDS.map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
     near: defaultBus(), far: defaultBus(), crossfade: P.crossfade.defaultValue / 100, masterGainDb: P['master-gain'].defaultValue, masterMuted: false
   });

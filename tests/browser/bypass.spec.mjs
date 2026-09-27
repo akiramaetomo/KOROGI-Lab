@@ -82,7 +82,7 @@ test('Carrier mute, PEnv/MOD bypass, fixed reference level and carrier restore',
     const settings = structuredClone(DEFAULT_CHANNEL_SETTINGS);
     settings.osc1.baseFrequencyHz = 4500;
 
-    settings.pitchEnvelope = { amount: .1, transitionTimeSec: .4 };
+    settings.pitchEnvelope = { ...settings.pitchEnvelope, attack: .1, decaySec: .4 };
     settings.mod = { mode: 'am', amDepth: 1, fmDepthCent: 400 };
     settings.blocksEnabled = { ...settings.blocksEnabled, penv: false, mod: false, aenv: false };
     const channel = new ChannelSynth(context, new WhiteNoiseFactory(context), settings, 0);
@@ -100,7 +100,7 @@ test('Carrier mute, PEnv/MOD bypass, fixed reference level and carrier restore',
     return { reference: error(.05, .18, 10 ** (-18 / 20)), mute: error(.23, .38, 0), restored: error(.43, .58, 10 ** (-18 / 20)), gain: error(.63, .9, 10 ** (-18 / 20)), settings: channel.getSettings() };
   });
   for (const key of ['reference', 'mute', 'restored', 'gain']) expect(metrics[key], key).toBeLessThan(.001);
-  expect(metrics.settings.pitchEnvelope.amount).toBe(.1);
+  expect(metrics.settings.pitchEnvelope.attack).toBe(.1);
   expect(metrics.settings.mod.amDepth).toBe(1);
   expect(metrics.settings).not.toHaveProperty('channelGainDb');
 });

@@ -7,15 +7,17 @@ interface RecordedGateEvent {
   time: number;
 }
 
-function createHarness(initial: AutoTriggerSettings = { tonSec: 3, toffSec: 2 }) {
+function createHarness(initial: AutoTriggerSettings = { tonSec: 3, repeatSec: 5 }) {
   const context = { currentTime: 0 };
   const events: RecordedGateEvent[] = [];
+  const cancellations: number[] = [];
   const target: GateTarget = {
     gateOn: (time) => events.push({ kind: 'on', time }),
-    gateOff: (time) => events.push({ kind: 'off', time })
+    gateOff: (time) => events.push({ kind: 'off', time }),
+    cancelFrom: (time) => cancellations.push(time)
   };
   const scheduler = new AutoTriggerScheduler(context as AudioContext, target, initial);
-  return { context, events, scheduler };
+  return { context, events, cancellations, scheduler };
 }
 
 afterEach(() => {
@@ -23,10 +25,9 @@ afterEach(() => {
 });
 
 describe('AutoTriggerScheduler', () => {
-  it('uses the one-shot ON interval independently of the retained Ton and Toff', () => {
+  it('uses Ton and T repeat independently of envelope modes', () => {
     vi.useFakeTimers();
-    const { context, events, scheduler } = createHarness({ tonSec: 3, toffSec: 2, oneShotRepeatSec: .1 });
-    scheduler.setMode('one-shot');
+    const { context, events, scheduler } = createHarness({ tonSec: .05, repeatSec: .1 });
     scheduler.start();
     context.currentTime = .09;
     vi.advanceTimersByTime(25);
@@ -55,12 +56,12 @@ describe('AutoTriggerScheduler', () => {
     scheduler.stop(false);
   });
 
-  it('snapshots Ton and Toff at Gate ON and applies updates to the next cycle', () => {
+  it('snapshots Ton and T repeat at Gate ON and applies updates to the next cycle', () => {
     vi.useFakeTimers();
     const { context, events, scheduler } = createHarness();
 
     scheduler.start();
-    scheduler.setSettings({ tonSec: 0.5, toffSec: 0.5 });
+    scheduler.setSettings({ tonSec: 0.5, repeatSec: 1 });
 
     context.currentTime = 2.93;
     vi.advanceTimersByTime(25);
@@ -94,9 +95,29 @@ describe('AutoTriggerScheduler', () => {
     expect(events).toHaveLength(2);
   });
 
+  it('scales Auto Gate time and preserves the active-cycle phase when speed changes', () => {
+    vi.useFakeTimers();
+    const { context, events, cancellations, scheduler } = createHarness({ tonSec: .4, repeatSec: 1 });
+    scheduler.start(.02, 2);
+    expect(events[0]).toEqual({ kind: 'on', time: .02 });
+    context.currentTime = .12;
+    scheduler.setPlaybackSpeed(1);
+    expect(cancellations).toEqual([.12]);
+    expect(events.at(-1)).toEqual({ kind: 'on', time: .12 });
+    context.currentTime = .31;
+    vi.advanceTimersByTime(25);
+    expect(events.at(-1)?.kind).toBe('off');
+    expect(events.at(-1)?.time).toBeCloseTo(.32, 9);
+    context.currentTime = .91;
+    vi.advanceTimersByTime(25);
+    expect(events.at(-1)?.kind).toBe('on');
+    expect(events.at(-1)?.time).toBeCloseTo(.92, 9);
+    scheduler.stop(false);
+  });
+
   it('orders four simultaneous 5 ms Gate cycles without a runaway queue', () => {
     vi.useFakeTimers();
-    const voices = Array.from({ length: 4 }, () => createHarness({ tonSec: .005, toffSec: .005 }));
+    const voices = Array.from({ length: 4 }, () => createHarness({ tonSec: .005, repeatSec: .01 }));
     voices.forEach(({ scheduler }) => scheduler.start());
     for (let tick = 1; tick <= 400; tick += 1) {
       voices.forEach(({ context }) => { context.currentTime = tick * .025; });

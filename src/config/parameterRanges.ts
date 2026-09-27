@@ -2,14 +2,18 @@
  * PoC tuning surface. Edit the numbers here, then ask for a range audit.
  * Values are in the displayed units. `defaultValue` is the New/reset value.
  * `scale` maps slider position, `fine` maps its anchored second slider.
+ * OSC min/max set Coarse travel; fineMin/fineMax bound Fine, numeric entry and saved values.
  * The independent safety envelope in parameterSafety.ts rejects unsafe edits.
  */
 export interface ParameterRange {
   min: number;
   max: number;
+  /** Optional value bounds for Fine/numeric entry/DSP; min/max remain Coarse bounds. */
+  fineMin?: number;
+  fineMax?: number;
   defaultValue: number;
   step: number;
-  scale: 'linear' | 'log';
+  scale: 'linear' | 'log' | 'log1p';
   fine: 'none' | 'span-1-percent' | 'ratio-10-percent' | 'ratio-30-percent' | 'ratio-50-percent' | 'cent-100';
   axis: 'horizontal' | 'vertical';
   unit: string;
@@ -23,16 +27,20 @@ const log = 'log' as const;
 
 export const PARAMETER_RANGES = {
   // Carrier Hz is intentionally integer; choose +/-10/30/50% Fine here.
-  'osc1-frequency': { min: 20, max: 20_000, defaultValue: 4_000, step: 1, coarseStep: 10, scale: linear, fine: 'ratio-50-percent', axis: horizontal, unit: 'Hz', integer: true },
-  // OSC2 modulator Hz spans two decades; log travel keeps the low end usable.
-  'osc2-frequency': { min: 1, max: 1000, defaultValue: 30, step: .1, scale: log, fine: 'ratio-50-percent', axis: horizontal, unit: 'Hz' },
+  'osc1-frequency': { min: 10, max: 10_000, fineMin: 1, fineMax: 20_000, defaultValue: 440, step: 1, coarseStep: 10, scale: log, fine: 'ratio-50-percent', axis: horizontal, unit: 'Hz', integer: true },
+  // OSC2 modulator uses log travel to keep the low end usable.
+  'osc2-frequency': { min: 1, max: 1000, fineMin: .1, fineMax: 20_000, defaultValue: 30, step: .1, scale: log, fine: 'ratio-50-percent', axis: horizontal, unit: 'Hz' },
   // Pulse duty is percent (DSP uses /100); OSC1/2 bounds must currently match.
   'osc1-duty': { min: .5, max: 99.5, defaultValue: 50, step: .5, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
   'osc2-duty': { min: .5, max: 99.5, defaultValue: 50, step: .5, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
-  // PEnv amount is signed percent; below -100% would make the pitch ratio nonpositive.
-  'penv-amount': { min: -10, max: 10, defaultValue: 0, step: .1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
-  // PEnv transition time is displayed in ms and converted to seconds for DSP.
-  'penv-time': { min: 1, max: 5_000, defaultValue: 50, step: 1, scale: log, fine: 'ratio-10-percent', axis: horizontal, unit: 'ms' },
+  'penv-start': { min: -100, max: 100, defaultValue: 0, step: .1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
+  'penv-attack-level': { min: -100, max: 100, defaultValue: 0, step: .1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
+  'penv-sustain-level': { min: -100, max: 100, defaultValue: 0, step: .1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
+  'penv-release-level': { min: -100, max: 100, defaultValue: 0, step: .1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
+  'penv-attack-time': { min: 0, max: 5_000, defaultValue: 0, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
+  'penv-decay-time': { min: 0, max: 5_000, defaultValue: 30, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
+  'penv-release-time': { min: 0, max: 5_000, defaultValue: 30, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
+  'penv-scale': { min: 0, max: 1, defaultValue: 1, step: .01, scale: linear, fine: 'none', axis: horizontal, unit: '' },
   // AM depth is gain modulation in percent; >100% can invert the waveform.
   'am-depth': { min: 0, max: 200, defaultValue: 50, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
   // AM offset is unitless gain bias; zero permits ring modulation.
@@ -46,11 +54,17 @@ export const PARAMETER_RANGES = {
   // Filter2 signal shifts Filter1 cutoff by this many cents at a unit signal.
   'filter1-cutoff-depth': { min: 0, max: 4_800, defaultValue: 1_200, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'cent' },
   // AEnv times are ms, converted to seconds in DSP. Attack/decay/release bounds currently match.
-  attack: { min: 1, max: 5_000, defaultValue: 5, step: 1, scale: log, fine: 'none', axis: horizontal, unit: 'ms' },
-  decay: { min: 1, max: 5_000, defaultValue: 20, step: 1, scale: log, fine: 'none', axis: horizontal, unit: 'ms' },
+  attack: { min: 0, max: 5_000, defaultValue: 5, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
+  decay: { min: 0, max: 5_000, defaultValue: 20, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
   // Sustain is the held gain ratio, 0 for silence and 1 for full level.
   sustain: { min: 0, max: 1, defaultValue: .8, step: .01, scale: linear, fine: 'none', axis: horizontal, unit: '' },
-  release: { min: 1, max: 5_000, defaultValue: 30, step: 1, scale: log, fine: 'none', axis: horizontal, unit: 'ms' },
+  release: { min: 0, max: 5_000, defaultValue: 30, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
+  // Independent filter envelope: signed cents and normalized ADSR.
+  'fenv-amount': { min: -4_800, max: 4_800, defaultValue: 4_800, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'cent' },
+  'fenv-attack': { min: 0, max: 5_000, defaultValue: 5, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
+  'fenv-decay': { min: 0, max: 5_000, defaultValue: 300, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
+  'fenv-sustain': { min: 0, max: 1, defaultValue: 0, step: .01, scale: linear, fine: 'none', axis: horizontal, unit: '' },
+  'fenv-release': { min: 0, max: 5_000, defaultValue: 30, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
   // The UI edits ON-to-ON period; saved documents retain Ton and Toff.
   ton: { min: 5, max: 3_000, defaultValue: 250, step: 1, scale: log, fine: 'none', axis: horizontal, unit: 'ms' },
   trepeat: { min: 10, max: 6_000, defaultValue: 500, step: 1, scale: log, fine: 'none', axis: horizontal, unit: 'ms' },
@@ -64,6 +78,16 @@ export const PARAMETER_RANGES = {
   'burst-group-jitter': { min: 0, max: 50, defaultValue: 0, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
   // Gate-recording length is an integer UI duration; file validation retains the fixed five-minute safety cap.
   'record-length': { min: 1, max: 300, defaultValue: 30, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 's', integer: true },
+  // Sequence pitch is stored normalized; Scale maps +/-1 to cents at playback.
+  'sequence-pitch-input': { min: -1, max: 1, defaultValue: 0, step: .001, scale: linear, fine: 'none', axis: horizontal, unit: '' },
+  'sequence-filter-amount': { min: -4_800, max: 4_800, defaultValue: 0, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'cent' },
+  'sequence-pitch-scale': { min: 0, max: 2_400, defaultValue: 200, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'cent' },
+  // Stepped mode has this many positions on each side of the always-present center.
+  'sequence-pitch-steps': { min: 1, max: 24, defaultValue: 12, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: '', integer: true },
+  // Zero means an immediate target change; nonzero values glide linearly in cents.
+  'sequence-portamento': { min: 0, max: 5_000, defaultValue: 0, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'ms' },
+  'sequence-record-speed': { min: .25, max: 4, defaultValue: 1, step: .01, scale: log, fine: 'none', axis: horizontal, unit: 'x' },
+  'sequence-play-speed': { min: .25, max: 4, defaultValue: 1, step: .01, scale: log, fine: 'none', axis: horizontal, unit: 'x' },
   // All FX slots use these ranges. Wet percent is divided by 100; all Wet bounds currently match.
   // Distortion Drive in dB is pre-shaping gain, not post-FX channel level.
   'fx-dist-drive': { min: 0, max: 48, defaultValue: 12, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'dB' },
@@ -95,7 +119,12 @@ export const PARAMETER_RANGES = {
 
 export type ParameterKey = keyof typeof PARAMETER_RANGES;
 
+export function parameterValueBounds(range: ParameterRange): { min: number; max: number } {
+  return { min: range.fineMin ?? range.min, max: range.fineMax ?? range.max };
+}
+
 export function parameterKeyForInput(id: string): ParameterKey | null {
+  id = id.replace(/^far-(?=fx[23]-)/, '');
   if (id === 'filter1-cutoff-depth') return id;
   const key = id.replace(/^fx[123]-/, 'fx-').replace(/^filter[12]-/, 'filter-')
     .replace(/^(near|far)-gain$/, 'bus-gain').replace(/^(level|balance|pan)-[1-4]$/, '$1');

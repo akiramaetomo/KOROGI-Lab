@@ -1,13 +1,16 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { openCommonEditors } from './editor-helpers.mjs';
 
 async function panel(page, name) {
   if (name === 'space-effects') {
-    const bus = await page.locator('.bus-segment [aria-pressed="true"]').getAttribute('data-bus-choice');
-    await page.locator(`#flow-${bus}-fx2`).click();
+    await openCommonEditors(page, ['near', 'near-gain']);
+  } else if (name === 'space-output') {
+    await openCommonEditors(page, ['balance', 'master']);
   } else {
     const target = page.locator(`[data-panel-target="${name}"]`).first();
-    await target.click(name === 'voice-effects' ? { position: { x: 8, y: 15 } } : undefined);
+    if (!await target.evaluate(node => node.dataset.editorTarget && node.classList.contains('active')))
+      await target.click(name === 'voice-effects' ? { position: { x: 8, y: 15 } } : undefined);
   }
 }
 async function edit(page, selector, value) { await page.locator(selector).fill(String(value)); await page.locator(selector).dispatchEvent('change'); }
@@ -33,16 +36,17 @@ test('Initial slots, empty-source editor, per-timbre editing and common FX selec
   await expect(page.locator('#gate-2')).toBeDisabled(); await page.locator('#select-2').click();
   await expect(page.locator('#osc1-frequency')).toBeDisabled(); await expect(page.locator('#master-gain')).toBeEnabled();
   await panel(page, 'space-effects'); await expect(page.locator('#fx1-type')).toBeDisabled(); await expect(page.locator('#fx2-type')).toBeEnabled();
-  await page.locator('#effects-far').click(); await page.locator('#fx2-type').selectOption('delay'); await edit(page, '#fx2-delay-time', 432);
+  await openCommonEditors(page, ['far']); await page.locator('#far-fx2-type').selectOption('delay'); await edit(page, '#far-fx2-delay-time', 432);
   await page.locator('#standard-2').click(); await expect(page.locator('#fx1-type')).toBeEnabled();
   await expect(page.locator('#name-2')).toBeEnabled();
   await expect(page.locator('#save-2')).toBeEnabled();
   await panel(page, 'sources'); await edit(page, '#osc1-frequency', 2100);
   await panel(page, 'output'); await edit(page, '#detune-range', 40);
   await page.locator('#select-1').click(); await expect(page.locator('#detune-range')).toHaveValue('0');
-  await panel(page, 'space-effects'); await expect(page.locator('#effects-far')).toHaveAttribute('aria-pressed', 'true'); await expect(page.locator('#fx2-delay-time')).toHaveValue('432');
+  await openCommonEditors(page, ['far']); await expect(page.locator('#far-fx2-delay-time')).toHaveValue('432');
   const value = await save(page);
-  expect(value.channels[0].timbre.settings.osc1.baseFrequencyHz).toBe(4000);
+  const initial = await page.evaluate(async () => (await import('/src/config/parameterRanges.ts')).PARAMETER_RANGES['osc1-frequency'].defaultValue);
+  expect(value.channels[0].timbre.settings.osc1.baseFrequencyHz).toBe(initial);
   expect(value.channels[1].timbre.settings.osc1.baseFrequencyHz).toBe(2100); expect(value.channels[1].timbre.detuneRangeCent).toBe(40);
   expect(value.channels[0].timbre.detuneRangeCent).toBe(0);
 });
@@ -111,7 +115,7 @@ test('Timbre and session round-trip independently; old formats are rejected with
   const timbre = await save(page, 'save-2');
   await expect(page.locator('#select-2')).toHaveAttribute('aria-pressed', 'true');
   await panel(page, 'patch'); await expect(page.locator('#timbre-name, #export-timbre')).toHaveCount(0);
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v7'); expect(timbre).not.toHaveProperty('near'); expect(timbre).not.toHaveProperty('pan');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v14'); expect(timbre).not.toHaveProperty('near'); expect(timbre).not.toHaveProperty('pan');
   await page.locator('#level-2').evaluate(input => { input.value = '-9'; input.dispatchEvent(new Event('input')); });
   await page.locator('#balance-2').evaluate(input => { input.value = '.8'; input.dispatchEvent(new Event('input')); });
   await page.locator('#pan-2').evaluate(input => { input.value = '-.65'; input.dispatchEvent(new Event('input')); });
@@ -120,7 +124,7 @@ test('Timbre and session round-trip independently; old formats are rejected with
   await panel(page, 'space-output'); await edit(page, '#master-gain', -21);
   await edit(page, '#crossfade', 70);
   await page.locator('#master-mute').click(); const saved = await save(page);
-  expect(saved.formatVersion).toBe('KOROGI-Lab/session-v8'); expect(saved.channels[1].pan).toBe(-.65);
+  expect(saved.formatVersion).toBe('KOROGI-Lab/session-v15'); expect(saved.channels[1].pan).toBe(-.65);
   await file(page, '#timbre-file-3', timbre); await expect(page.locator('#patch-status')).toContainText('Loaded timbre 3: Second');
   const afterTimbre = await save(page); expect(afterTimbre.near).toEqual(saved.near); expect(afterTimbre.crossfade).toBe(.7);
   expect(afterTimbre.channels[1].pan).toBe(-.65); expect(afterTimbre.channels[2].pan).toBe(0);

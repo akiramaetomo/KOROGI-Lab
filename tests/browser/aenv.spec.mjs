@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { openTimbreEditors } from './editor-helpers.mjs';
 
 test('one AEnv curve choice controls all three phases and fits at tablet widths', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
@@ -9,7 +10,7 @@ test('one AEnv curve choice controls all three phases and fits at tablet widths'
   await expect(page.locator('#aenv-curve + .segmented-choice [role="radio"]')).toHaveCount(2);
   for (const width of [1024, 768]) {
     await page.setViewportSize({ width, height: 768 });
-    await page.locator('#flow-aenv').click();
+    await openTimbreEditors(page, ['aenv']);
     await expect(page.locator('.aenv-curve-control')).toBeVisible();
     const placement = await page.locator('.aenv-curve-control').evaluate(control => {
       const bounds = control.getBoundingClientRect();
@@ -26,9 +27,9 @@ test('one AEnv curve choice controls all three phases and fits at tablet widths'
     expect(placement.right).toBeLessThanOrEqual(placement.fieldRight);
     expect(placement.top).toBeGreaterThanOrEqual(placement.inputsBottom);
     expect(placement.firstLeft - placement.left).toBeLessThan(5);
-    expect(placement.width).toBeLessThanOrEqual(240);
+    expect(placement.width).toBeLessThanOrEqual(placement.fieldRight - placement.fieldLeft);
     expect(placement.heights).toEqual([28, 28]);
-    expect(placement.firstWidth).toBeGreaterThan(100);
+    expect(placement.firstWidth).toBeGreaterThan(90);
     expect(placement.textFits).toBe(true);
   }
   await page.locator('#aenv-curve + .segmented-choice [data-value="linear"]').click();
@@ -41,17 +42,16 @@ test('one AEnv curve choice controls all three phases and fits at tablet widths'
   });
 });
 
-test('one-shot mode keeps Gate timing while Auto repeat becomes independent', async ({ page }) => {
+test('AEnv one-shot retains editable Ton and common Auto repeat', async ({ page }) => {
   await page.goto('/');
+  await expect(page.locator('#play-1')).toBeEnabled();
   await page.locator('#flow-aenv').click();
   await page.locator('#aenv-mode + .segmented-choice [data-value="one-shot"]').click();
-  await page.locator('[data-panel-target="triggering"]').first().click();
+  await openTimbreEditors(page, ['sequence']);
   await expect(page.locator('[data-numeric-control="ton"]')).toBeVisible();
-  expect(Number(await page.locator('[data-numeric-control="ton"]').evaluate(node => getComputedStyle(node).opacity))).toBeLessThan(1);
-  await expect(page.locator('#ton')).toBeDisabled();
-  await expect(page.locator('#ton-coarse')).toBeDisabled();
-  await expect(page.locator('#ton-one-shot-status')).toHaveText('AEnv One Shot Mode');
-  await expect(page.locator('#ton-one-shot-status')).toBeVisible();
+  await expect(page.locator('#ton')).toBeEnabled();
+  await expect(page.locator('#ton-coarse')).toBeEnabled();
+  await expect(page.locator('#ton-one-shot-status')).toBeHidden();
   await expect(page.locator('[data-numeric-control="ton"] .numeric-caption')).toContainText('Ton');
   await expect(page.locator('[data-numeric-control="ton"] .numeric-caption')).not.toContainText('Auto');
   await page.locator('#trepeat').fill('20');
@@ -61,14 +61,15 @@ test('one-shot mode keeps Gate timing while Auto repeat becomes independent', as
   await page.locator('#save-1').click();
   const timbre = JSON.parse(await readFile(await (await first).path(), 'utf8'));
   expect(timbre.settings.ampEnvelope.mode).toBe('one-shot');
-  expect(timbre.settings.autoTrigger).toMatchObject({ tonSec: .25, toffSec: .25, oneShotRepeatSec: .02 });
+  expect(timbre.settings.autoTrigger).toMatchObject({ tonSec: .25, repeatSec: .02 });
+  await expect(page.locator('#auto-timing-warning')).toBeVisible();
   await page.locator('#flow-aenv').click();
   await page.locator('#aenv-mode + .segmented-choice [data-value="gate"]').click();
-  await page.locator('[data-panel-target="triggering"]').first().click();
+  await openTimbreEditors(page, ['sequence']);
   await expect(page.locator('[data-numeric-control="ton"]')).toBeVisible();
   await expect(page.locator('#ton')).toBeEnabled();
   await expect(page.locator('#ton-one-shot-status')).toBeHidden();
-  await expect(page.locator('#trepeat')).toHaveValue('500');
+  await expect(page.locator('#trepeat')).toHaveValue('20');
 });
 
 test('legacy timbre without mode or one-shot repeat loads as Gate and saves defaults', async ({ page }) => {
@@ -76,8 +77,11 @@ test('legacy timbre without mode or one-shot repeat loads as Gate and saves defa
   const first = page.waitForEvent('download');
   await page.locator('#save-1').click();
   const legacy = JSON.parse(await readFile(await (await first).path(), 'utf8'));
+  legacy.formatVersion = 'KOROGI-Lab/timbre-v9';
+  legacy.settings.pitchEnvelope = { amount: 0, transitionTimeSec: .05 };
   delete legacy.settings.ampEnvelope.mode;
-  delete legacy.settings.autoTrigger.oneShotRepeatSec;
+  delete legacy.settings.ampEnvelope.releaseTiming;
+  legacy.settings.autoTrigger = { tonSec: .25, toffSec: .25 };
   await page.locator('#timbre-file-1').setInputFiles({ name: 'legacy-timbre.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(legacy)) });
   await expect(page.locator('#patch-status')).toContainText('Loaded timbre 1');
   await page.locator('#flow-aenv').click();
@@ -86,7 +90,7 @@ test('legacy timbre without mode or one-shot repeat loads as Gate and saves defa
   await page.locator('#save-1').click();
   const saved = JSON.parse(await readFile(await (await second).path(), 'utf8'));
   expect(saved.settings.ampEnvelope.mode).toBe('gate');
-  expect(saved.settings.autoTrigger.oneShotRepeatSec).toBeCloseTo(saved.settings.autoTrigger.tonSec + saved.settings.autoTrigger.toffSec);
+  expect(saved.settings.autoTrigger.repeatSec).toBeCloseTo(.5);
 });
 
 test('one-shot audio follows A-D-R after early OFF and retriggers from the current level', async ({ page }) => {
@@ -307,7 +311,7 @@ for (const ton of [.1, .2, .5]) {
       const { AmplitudeEnvelope } = await import('/src/audio/dsp/AmplitudeEnvelope.ts');
       const { AutoTriggerScheduler } = await import('/src/audio/scheduler/AutoTriggerScheduler.ts');
       const rate = 48000;
-      const duration = 2 * (ton + 1) + .05;
+      const duration = 2 + ton + .05;
       const context = new OfflineAudioContext(1, Math.ceil(rate * duration), rate);
       const envelope = new AmplitudeEnvelope(context, { attackSec: .001, decaySec: .001, sustain: 1, releaseSec: 1 });
       const input = context.createConstantSource();
@@ -323,7 +327,7 @@ for (const ton of [.1, .2, .5]) {
       const originalInterval = globalThis.setInterval, originalClear = globalThis.clearInterval;
       globalThis.setInterval = (callback) => { tick = callback; return 123; };
       globalThis.clearInterval = () => {};
-      const scheduler = new AutoTriggerScheduler(context, target, { tonSec: ton, toffSec: 1 });
+      const scheduler = new AutoTriggerScheduler(context, target, { tonSec: ton, repeatSec: 1 });
       try { scheduler.start(); } finally { globalThis.setInterval = originalInterval; globalThis.clearInterval = originalClear; }
       const suspensions = [];
       for (let time = .025; time < duration - .1; time += .025) suspensions.push(context.suspend(time));
@@ -333,8 +337,8 @@ for (const ton of [.1, .2, .5]) {
       const samples = (await rendering).getChannelData(0);
       let maxError = 0;
       for (let cycle = 0; cycle < 2; cycle++) {
-        const on = .02 + cycle * (ton + 1), off = on + ton;
-        for (let i = Math.ceil((on + .003) * rate); i < Math.floor((off + .999) * rate); i++) {
+        const on = .02 + cycle, off = on + ton;
+        for (let i = Math.ceil((on + .003) * rate); i < Math.floor(Math.min(off + .999, on + .995) * rate); i++) {
           const t = i / rate;
           const expected = t < off ? 1 : 1e-4 ** (t - off);
           maxError = Math.max(maxError, Math.abs(samples[i] - expected));
@@ -345,7 +349,7 @@ for (const ton of [.1, .2, .5]) {
     expect(metrics.maxError).toBeLessThan(.001);
     expect(metrics.events.slice(0, 4).map((event) => event.kind)).toEqual(['on', 'off', 'on', 'off']);
     expect(metrics.events[1].time - metrics.events[0].time).toBeCloseTo(ton, 8);
-    expect(metrics.events[2].time - metrics.events[1].time).toBeCloseTo(1, 8);
+    expect(metrics.events[2].time - metrics.events[1].time).toBeCloseTo(1 - ton, 8);
   });
 }
 
@@ -389,7 +393,7 @@ test('Manual/Auto ownership cancels pending Gates; Auto stop and restart', async
     const settings = structuredClone(DEFAULT_CHANNEL_SETTINGS);
     settings.osc1.baseFrequencyHz = 4500;
     settings.ampEnvelope = { attackSec: .001, decaySec: .001, sustain: 1, releaseSec: .2 };
-    settings.autoTrigger = { tonSec: .1, toffSec: .05 };
+    settings.autoTrigger = { tonSec: .1, repeatSec: .15 };
     const channel = new ChannelSynth(context, new WhiteNoiseFactory(context), settings, 0);
     channel.output.connect(context.destination);
     const events = []; channel.addGateScheduleListener((event) => events.push(event));

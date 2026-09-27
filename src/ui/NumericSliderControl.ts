@@ -12,7 +12,10 @@ export class NumericSliderControl {
   private readonly fine: HTMLInputElement | null;
   private readonly min: number;
   private readonly max: number;
+  private readonly valueMin: number;
+  private readonly valueMax: number;
   private readonly logarithmic: boolean;
+  private readonly zeroLogarithmic: boolean;
   private readonly fineMode: ParameterRange['fine'];
   private readonly fineRatio: number;
   private readonly fineHalfSpan: number;
@@ -28,11 +31,14 @@ export class NumericSliderControl {
   private sliderSource: 'coarse' | 'fine' | null = null;
 
   constructor(private readonly numberInput: HTMLInputElement) {
-    this.min = Number(numberInput.dataset.numericMin);
-    this.max = Number(numberInput.dataset.numericMax);
     const specification = parameterForInput(numberInput.id);
     if (!specification) throw new Error(`parameterRanges.ts: missing ${numberInput.id}`);
+    this.min = specification.min;
+    this.max = specification.max;
+    this.valueMin = Number(numberInput.dataset.numericMin);
+    this.valueMax = Number(numberInput.dataset.numericMax);
     this.logarithmic = specification.scale === 'log';
+    this.zeroLogarithmic = specification.scale === 'log1p';
     this.fineMode = specification.fine;
     this.fineRatio = this.fineMode.startsWith('ratio-') ? Number(this.fineMode.split('-')[1]) / 100 : 0;
     const step = Number(numberInput.dataset.numericStep);
@@ -66,7 +72,7 @@ export class NumericSliderControl {
     axes.className = 'numeric-slider-axes';
     this.coarse = this.makeAxis(axes, 'coarse', hasFine ? 'Coarse' : '');
     this.fine = hasFine ? this.makeAxis(axes, 'fine', 'Fine') : null;
-    if (!this.logarithmic) {
+    if (!this.logarithmic && !this.zeroLogarithmic) {
       const coarseStep = Number(numberInput.dataset.numericCoarseStep ?? step);
       this.coarse.step = String(coarseStep / (this.max - this.min) * SLIDER_MAX);
       if (this.fine && this.fineMode === 'span-1-percent') {
@@ -80,6 +86,7 @@ export class NumericSliderControl {
       const position = Number(this.coarse.value) / SLIDER_MAX;
       const value = this.logarithmic
         ? this.min * (this.max / this.min) ** position
+        : this.zeroLogarithmic ? Math.expm1(position * Math.log1p(this.max))
         : this.min + (this.max - this.min) * position;
       this.commit(value, 'coarse');
     });
@@ -102,6 +109,16 @@ export class NumericSliderControl {
     for (const range of [this.coarse, this.fine]) {
       if (!range) continue;
       range.addEventListener('keydown', (event) => {
+        if (range === this.coarse && this.logarithmic && numberInput.dataset.numericInteger === 'true'
+          && !range.disabled && ['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'].includes(event.key)) {
+          event.preventDefault();
+          const direction = event.key === 'ArrowUp' || event.key === 'ArrowRight' ? 1 : -1;
+          // A log-position step can be less than 1 Hz; ensure integer OSCs actually move.
+          const current = Number(this.numberInput.value);
+          const next = this.min * (this.max / this.min) ** ((Number(range.value) + direction) / SLIDER_MAX);
+          this.commit(direction > 0 ? Math.max(next, current + 1) : Math.min(next, current - 1), 'coarse');
+          return;
+        }
         if (range !== this.fine || numberInput.dataset.numericInteger !== 'true' || range.disabled) return;
         if (!['ArrowUp', 'ArrowRight', 'ArrowDown', 'ArrowLeft'].includes(event.key)) return;
         event.preventDefault();
@@ -116,12 +133,12 @@ export class NumericSliderControl {
           this.commit(Number(this.numberInput.value) + (delta < 0 ? 1 : -1) * (event.shiftKey ? 10 : 1), 'fine');
           return;
         }
-        if (range === this.coarse && !this.logarithmic) {
+        if (range === this.coarse && !this.logarithmic && !this.zeroLogarithmic) {
           const coarseStep = Number(numberInput.dataset.numericCoarseStep ?? numberInput.dataset.numericStep);
           this.commit(Number(this.numberInput.value) + (delta < 0 ? 1 : -1) * coarseStep * (event.shiftKey ? 10 : 1), 'coarse');
           return;
         }
-        const steps = (this.logarithmic ? 100 : 1) * (event.shiftKey ? 10 : 1);
+        const steps = (this.logarithmic || this.zeroLogarithmic ? 100 : 1) * (event.shiftKey ? 10 : 1);
         if (delta < 0) range.stepUp(steps);
         else range.stepDown(steps);
         range.dispatchEvent(new Event('input', { bubbles: true }));
@@ -133,7 +150,7 @@ export class NumericSliderControl {
 
   /** Called after programmatic updates such as patch import or Mix selection. */
   sync(recenter = Number(this.numberInput.value) !== this.lastValue): void {
-    const value = clamp(Number(this.numberInput.value), this.min, this.max);
+    const value = clamp(Number(this.numberInput.value), this.valueMin, this.valueMax);
     if (!Number.isFinite(value)) return;
     const position = this.positionFor(value);
     this.coarse.value = String(clamp(position * SLIDER_MAX, 0, SLIDER_MAX));
@@ -181,6 +198,7 @@ export class NumericSliderControl {
   private positionFor(value: number): number {
     return this.logarithmic
       ? Math.log(value / this.min) / Math.log(this.max / this.min)
+      : this.zeroLogarithmic ? Math.log1p(value) / Math.log1p(this.max)
       : (value - this.min) / (this.max - this.min);
   }
 
@@ -203,11 +221,13 @@ export class NumericSliderControl {
     const ticks = scale.querySelectorAll<HTMLElement>('span');
     if (kind === 'coarse') {
       ticks[0]!.textContent = this.formatValue(this.min);
-      ticks[1]!.textContent = this.unit === '%' && this.min === 0 && this.max === 100 ? '50%' : '';
+      ticks[1]!.textContent = this.zeroLogarithmic
+        ? this.formatValue(Math.expm1(.5 * Math.log1p(this.max)))
+        : this.unit === '%' && this.min === 0 && this.max === 100 ? '50%' : '';
       ticks[2]!.textContent = this.formatValue(this.max);
       return;
     }
-    const offsetValue = (direction: -1 | 1): number => clamp(this.fineValue(direction), this.min, this.max);
+    const offsetValue = (direction: -1 | 1): number => clamp(this.fineValue(direction), this.valueMin, this.valueMax);
     const delta = (value: number): string => {
       const frequencyCent = this.fineMode === 'cent-100';
       const relative = this.fineRatio > 0;
@@ -247,12 +267,16 @@ export class NumericSliderControl {
   }
 
   private commit(value: number, source: 'coarse' | 'fine'): void {
+    const stops = this.numberInput.dataset.numericStops?.split(',').map(Number);
+    if (stops?.length) value = stops.reduce((nearest, stop) => Math.abs(stop - value) < Math.abs(nearest - value) ? stop : nearest);
     const basePrecision = source === 'fine' ? this.finePrecision : this.precision;
     // Keep relative resolution at the low end of a logarithmic range;
     // rounding 0.1001 Hz to 0.1 would make keyboard movement stick at minimum.
     const precision = this.logarithmic ? Math.min(8, Math.max(basePrecision,
       (source === 'fine' ? 5 : 3) - Math.floor(Math.log10(Math.abs(value))))) : basePrecision;
-    this.numberInput.value = String(Number(clamp(value, this.min, this.max).toFixed(precision)));
+    const min = source === 'coarse' ? this.min : this.valueMin;
+    const max = source === 'coarse' ? this.max : this.valueMax;
+    this.numberInput.value = String(Number(clamp(value, min, max).toFixed(precision)));
     this.sliderSource = source;
     try {
       // Reuse sanitization and all existing parameter/application listeners.

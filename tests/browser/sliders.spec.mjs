@@ -1,10 +1,15 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { openTimbreEditors, openCommonEditors } from './editor-helpers.mjs';
 
 async function panel(page, name) {
+  const groups = { sources: ['osc1', 'osc2'], modulation: ['mod', 'penv'], filters: ['filter1', 'filter2'],
+    amp: ['aenv'], triggering: ['sequence'], 'voice-effects': ['fx1'], output: ['detune'] };
+  if (groups[name]) { await openTimbreEditors(page, groups[name]); return; }
   if (name === 'space-effects') {
-    const bus = await page.locator('.bus-segment [aria-pressed="true"]').getAttribute('data-bus-choice');
-    await page.locator(`#flow-${bus}-fx2`).click();
+    await openCommonEditors(page, ['near', 'near-gain']);
+  } else if (name === 'space-output') {
+    await openCommonEditors(page, ['balance', 'master']);
   } else {
     const target = page.locator(`[data-panel-target="${name}"]`).first();
     await target.click(name === 'voice-effects' ? { position: { x: 8, y: 15 } } : undefined);
@@ -28,10 +33,17 @@ async function value(page, id) {
 }
 
 async function coarseFrequency(page, id) {
-  return page.locator(`#${id}-coarse`).evaluate(range => {
-    const number = document.querySelector(`#${range.id.replace(/-coarse$/, '')}`);
-    return Number(number.min) + (Number(number.max) - Number(number.min)) * Number(range.value) / 10000;
+  return page.locator(`#${id}-coarse`).evaluate(async range => {
+    const { parameterForInput } = await import('/src/config/parameterRanges.ts');
+    const spec = parameterForInput(range.id.replace(/-coarse$/, ''));
+    const position = Number(range.value) / 10000;
+    return spec.scale === 'log' ? spec.min * (spec.max / spec.min) ** position
+      : spec.min + (spec.max - spec.min) * position;
   });
+}
+
+async function osc1Range(page) {
+  return page.evaluate(async () => (await import('/src/config/parameterRanges.ts')).PARAMETER_RANGES['osc1-frequency']);
 }
 
 async function exportPatch(page) {
@@ -44,6 +56,7 @@ async function exportPatch(page) {
 
 async function start(page) {
   await page.goto('/');
+  await expect(page.locator('#play-1')).toBeEnabled();
   await page.locator('.signal-map [data-block-toggle="osc1"]').click();
 }
 
@@ -61,7 +74,7 @@ test('Every numeric input retains its field and an immediately available slider'
   await expect(page.locator('#osc1-frequency-fine')).toBeEnabled();
   await expect(page.locator('#fx1-delay-time-coarse')).toBeDisabled();
   const patch = await exportPatch(page);
-  expect(patch.channels[0].timbre.settings.osc1.baseFrequencyHz).toBe(4000);
+  expect(patch.channels[0].timbre.settings.osc1.baseFrequencyHz).toBe((await osc1Range(page)).defaultValue);
   expect(patch.channels[0].timbre.settings.filter1.q).toBe(.707);
 });
 
@@ -163,7 +176,7 @@ test('Keyboard adjustment works at the minimum and fine windows obey both freque
 
 test('Linear zero, bipolar amount, dB and fine cent controls update the canonical settings', async ({ page }) => {
   await start(page); await panel(page, 'modulation');
-  await slide(page, 'penv-amount-coarse', 0);
+  await slide(page, 'penv-attack-level-coarse', 0);
   await page.locator('#mod-mode + .segmented-choice [data-value="am"]').click();
   await slide(page, 'am-depth-coarse', 5000);
   await page.locator('#mod-mode + .segmented-choice [data-value="fm"]').click();
@@ -181,7 +194,7 @@ test('Linear zero, bipolar amount, dB and fine cent controls update the canonica
   await page.locator('#fx1-dist-wet-coarse').press('ArrowUp');
   expect(await value(page, 'fx1-dist-wet')).toBe(1);
   const patch = await exportPatch(page);
-  expect(patch.channels[0].timbre.settings.pitchEnvelope.amount).toBe(-.1);
+  expect(patch.channels[0].timbre.settings.pitchEnvelope.attack).toBe(-1);
   expect(patch.channels[0].timbre.settings.mod.amDepth).toBe(1);
   expect(patch.channels[0].timbre.settings.mod.fmDepthCent).toBe(124);
   expect(patch.channels[0].timbre.settings).not.toHaveProperty('channelGainDb');
@@ -202,13 +215,12 @@ test('FX slider visibility, bus selection and session import synchronize every r
   await page.locator('#fx2-type').selectOption('delay');
   await edit(page, 'fx2-delay-time', 400);
   await edit(page, 'fx2-delay-time', 440);
-  await page.locator('#effects-far').click();
+  await openCommonEditors(page, ['near', 'far']);
   await expect(page.locator('#fx1-delay-time')).toHaveValue('275');
-  await expect(page.locator('#fx2-delay-time-coarse')).toBeDisabled();
-  await page.locator('#fx2-type').selectOption('delay');
-  await edit(page, 'fx2-delay-time', 800);
-  await edit(page, 'fx2-delay-time', 880);
-  await page.locator('#effects-near').click();
+  await expect(page.locator('#far-fx2-delay-time-coarse')).toBeDisabled();
+  await page.locator('#far-fx2-type').selectOption('delay');
+  await edit(page, 'far-fx2-delay-time', 800);
+  await edit(page, 'far-fx2-delay-time', 880);
   await expect(page.locator('#fx2-delay-time')).toHaveValue('440');
   await expect(page.locator('#fx2-delay-time-coarse')).toBeEnabled();
   const saved = await exportPatch(page);
@@ -220,20 +232,23 @@ test('FX slider visibility, bus selection and session import synchronize every r
   delete saved.savedAt; delete restored.savedAt;
   expect(restored).toEqual(saved);
   await panel(page, 'sources');
-  await expect(page.locator('#osc1-frequency')).toHaveValue('4000');
+  const initial = (await osc1Range(page)).defaultValue;
+  await expect(page.locator('#osc1-frequency')).toHaveValue(String(initial));
   await expect(page.locator('#osc1-frequency-fine')).toHaveValue('5000');
-  expect(await coarseFrequency(page, 'osc1-frequency')).toBeCloseTo(4000, -1);
+  expect(await coarseFrequency(page, 'osc1-frequency')).toBeCloseTo(initial, -1);
 });
 
-test('OSC1 accepts 20 kHz through numeric and coarse controls and retains it in a Session', async ({ page }) => {
+test('OSC1 accepts 20 kHz numerically while Coarse retains its own endpoint', async ({ page }) => {
   await start(page);
-  await expect(page.locator('#osc1-frequency-coarse + .slider-scale span:last-child')).toHaveText('20 kHz');
+  const spec = await osc1Range(page);
   await edit(page, 'osc1-frequency', 20_000);
   await expect(page.locator('#osc1-frequency')).toHaveValue('20000');
   await edit(page, 'osc1-frequency', 20_001);
   await expect(page.locator('#osc1-frequency')).toHaveValue('20000');
   await edit(page, 'osc1-frequency', 4_000);
   await slide(page, 'osc1-frequency-coarse', 10_000);
+  await expect(page.locator('#osc1-frequency')).toHaveValue(String(spec.max));
+  await edit(page, 'osc1-frequency', 20_000);
   await expect(page.locator('#osc1-frequency')).toHaveValue('20000');
   const saved = await exportPatch(page);
   expect(saved.channels[0].timbre.settings.osc1.baseFrequencyHz).toBe(20_000);
@@ -246,6 +261,11 @@ test('OSC1 accepts 20 kHz through numeric and coarse controls and retains it in 
 });
 
 test('Current OSC ranges, integer Hz, Duty, wheel and Shift-wheel survive multi-timbre save/load', async ({ page }) => {
+  // Fixed linear fixture verifies the 10 Hz / Shift-100 Hz wheel contract.
+  await page.route('**/src/config/parameterRanges.ts*', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, body: `${await response.text()}\nPARAMETER_RANGES["osc1-frequency"].scale = "linear";` });
+  });
   await start(page); await edit(page, 'osc1-frequency', 4000);
   await page.locator('#osc1-frequency-coarse').dispatchEvent('wheel', { deltaY: -100 });
   expect(await value(page, 'osc1-frequency')).toBe(4010);
@@ -272,6 +292,53 @@ test('Current OSC ranges, integer Hz, Duty, wheel and Shift-wheel survive multi-
   await panel(page, 'modulation'); await expect(page.locator('#am-offset')).toHaveValue('0');
 });
 
+for (const scale of ['linear', 'log']) {
+  test(`OSC Fine crosses both Coarse endpoints with ${scale} Coarse and survives reload`, async ({ page }) => {
+    await page.route('**/src/config/parameterRanges.ts*', async route => {
+      const response = await route.fetch();
+      await route.fulfill({ response, body: `${await response.text()}\nObject.assign(PARAMETER_RANGES["osc1-frequency"], { min: 10, max: 10000, scale: "${scale}" });` });
+    });
+    await start(page);
+    for (const [id, low, high] of [['osc1-frequency', 10, 10000], ['osc2-frequency', 1, 1000]]) {
+      await slide(page, `${id}-coarse`, 0);
+      expect(await value(page, id)).toBe(low);
+      await expect(page.locator(`#${id}-fine + .slider-scale span`)).toHaveText(['-50%', '0%', '+50%']);
+      await slide(page, `${id}-fine`, 0);
+      expect(await value(page, id)).toBe(low / 2);
+      await expect(page.locator(`#${id}-coarse`)).toHaveValue('0');
+      await expect(page.locator(`#${id}-fine`)).toHaveValue('0');
+      await page.locator(`#${id}-fine`).dblclick();
+      expect(await value(page, id)).toBe(low);
+      await slide(page, `${id}-coarse`, 10000);
+      await slide(page, `${id}-fine`, 10000);
+      expect(await value(page, id)).toBe(high * 1.5);
+      await expect(page.locator(`#${id}-coarse`)).toHaveValue('10000');
+    }
+    const saved = await exportPatch(page);
+    expect(saved.channels[0].timbre.settings.osc1.baseFrequencyHz).toBe(15000);
+    expect(saved.channels[0].timbre.settings.osc2.baseFrequencyHz).toBe(1500);
+    await panel(page, 'sources');
+    await edit(page, 'osc1-frequency', 440);
+    await edit(page, 'osc2-frequency', 30);
+    await panel(page, 'patch');
+    await page.locator('#patch-file').setInputFiles({ name: 'fine.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(saved)) });
+    await expect(page.locator('#patch-status')).toContainText('Loaded:');
+    await panel(page, 'sources');
+    await expect(page.locator('#osc1-frequency')).toHaveValue('15000');
+    await expect(page.locator('#osc2-frequency')).toHaveValue('1500');
+    await expect(page.locator('#osc1-frequency-fine')).toHaveValue('5000');
+    await expect(page.locator('#osc1-frequency-coarse')).toHaveValue('10000');
+    await slide(page, 'osc1-frequency-fine', 10000);
+    await expect(page.locator('#osc1-frequency')).toHaveValue('20000');
+    await expect(page.locator('#osc1-frequency-fine + .slider-scale span:last-child')).toHaveText('+33.3%');
+    await edit(page, 'osc1-frequency', 1);
+    await slide(page, 'osc1-frequency-fine', 0);
+    await expect(page.locator('#osc1-frequency')).toHaveValue('1');
+    await slide(page, 'osc1-frequency-coarse', 0);
+    await expect(page.locator('#osc1-frequency')).toHaveValue('10');
+  });
+}
+
 for (const [width, height] of [[1440, 900], [1024, 900], [768, 900], [768, 768]]) {
   test(`All numeric panels fit and operate at ${width}x${height}`, async ({ page }, testInfo) => {
     const errors = [];
@@ -285,8 +352,63 @@ for (const [width, height] of [[1440, 900], [1024, 900], [768, 900], [768, 768]]
     for (const name of ['sources', 'modulation', 'filters', 'amp', 'triggering', 'voice-effects', 'space-effects', 'space-output', 'output']) {
       await panel(page, name);
       await page.screenshot({ path: testInfo.outputPath(`${name}-${width}x${height}.png`) });
-      const outside = await page.locator('.function-panel.active input:not(:disabled), .function-panel.active select:not(:disabled), .function-panel.active button:not(:disabled)').evaluateAll((controls) => controls.filter((control) => {
+      const activeControls = page.locator('.function-panel.active:visible input:not(:disabled), .function-panel.active:visible select:not(:disabled), .function-panel.active:visible button:not(:disabled):not(.editor-card-handle):not(.editor-card-close)');
+      if (name === 'triggering') {
+        const count = await activeControls.count();
+        for (let index = 0; index < count; index += 1) {
+          const control = activeControls.nth(index);
+          if (!(await control.isVisible())) continue;
+          await control.scrollIntoViewIfNeeded();
+          const reachable = await control.evaluate(node => {
+            const rect = node.getBoundingClientRect(); const clip = node.closest('.trigger-editor').getBoundingClientRect();
+            const horizontal = rect.width > clip.width - 2
+              ? rect.right > clip.left && rect.left < clip.right
+              : rect.left >= clip.left - 1 && rect.right <= clip.right + 1;
+            return horizontal && rect.top >= clip.top - 1 && rect.bottom <= clip.bottom + 1;
+          });
+          expect(reachable, await control.getAttribute('id') ?? `trigger control ${index}`).toBe(true);
+        }
+        const triggerWidth = await page.locator('.trigger-editor').evaluate(node => ({ client: node.clientWidth, scroll: node.scrollWidth,
+          inner: node.querySelector('.trigger-editor-inner').getBoundingClientRect().width }));
+        expect(triggerWidth.scroll).toBeGreaterThanOrEqual(triggerWidth.client);
+        expect(triggerWidth.inner).toBeGreaterThanOrEqual(780);
+      }
+      if (name === 'modulation') {
+        const penv = page.locator('[data-editor-card="penv"] .penv-editor');
+        const controls = penv.locator('input:not(:disabled), button:not(:disabled)');
+        for (let index = 0; index < await controls.count(); index += 1) {
+          const control = controls.nth(index);
+          if (!(await control.isVisible())) continue;
+          await control.scrollIntoViewIfNeeded();
+          const reachable = await control.evaluate(node => {
+            const rect = node.getBoundingClientRect(); const clip = node.closest('fieldset').getBoundingClientRect();
+            return rect.left >= clip.left - 1 && rect.right <= clip.right + 1 && rect.top >= clip.top - 1 && rect.bottom <= clip.bottom + 1;
+          });
+          expect(reachable, await control.getAttribute('id') ?? `PEnv control ${index}`).toBe(true);
+        }
+      }
+      if (name === 'amp') {
+        const row = page.locator('.function-panel.active .aenv-mode-row');
+        const controls = row.locator('button:not(:disabled)');
+        for (let index = 0; index < await controls.count(); index += 1) {
+          const control = controls.nth(index);
+          await control.scrollIntoViewIfNeeded();
+          const reachable = await control.evaluate(node => {
+            const rect = node.getBoundingClientRect(); const clip = node.closest('.aenv-mode-row').getBoundingClientRect();
+            return rect.left >= clip.left - 1 && rect.right <= clip.right + 1;
+          });
+          expect(reachable, `AEnv mode control ${index}`).toBe(true);
+        }
+      }
+      const outside = name === 'triggering' ? [] : await activeControls.evaluateAll((controls) => controls.filter((control) => {
         if (control.getClientRects().length === 0) return false;
+        if (control.closest('.aenv-mode-row')) return false;
+        if (control.closest('.editor-card, .space-card')) {
+          const rect = control.getBoundingClientRect();
+          const card = control.closest('.editor-card, .space-card').getBoundingClientRect();
+          const field = control.closest('fieldset')?.getBoundingClientRect();
+          return rect.width < 1 || rect.left < card.left || rect.right > card.right || (field && rect.bottom > field.bottom);
+        }
         const rect = control.getBoundingClientRect();
         const fieldset = control.closest('fieldset')?.getBoundingClientRect();
         return rect.left < 0 || rect.right > window.innerWidth ||  rect.width < 1 || (fieldset && rect.bottom > fieldset.bottom);

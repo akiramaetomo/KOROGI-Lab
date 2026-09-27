@@ -69,7 +69,7 @@ test('Slots 5 to 8 play together, accept digit Gates and round-trip individual t
   const sessionDownload = page.waitForEvent('download');
   await page.locator('#export-patch').click();
   const session = JSON.parse(await readFile(await (await sessionDownload).path(), 'utf8'));
-  expect(session.formatVersion).toBe('KOROGI-Lab/session-v8');
+  expect(session.formatVersion).toBe('KOROGI-Lab/session-v15');
   expect(session.channels).toHaveLength(8);
   expect(session.channels[7]).toMatchObject({ id: '8', gainDb: -12, timbre: { name: 'Eighth' } });
   await page.locator('#patch-file').setInputFiles({ name: 'eight.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) });
@@ -91,7 +91,7 @@ test('Eight stereo sends add without changing the four-slot gain reference; limi
     const { defaultTimbre, defaultBus, DEFAULT_CHANNEL_MIX, LAB_SLOT_IDS } = await import('/src/model/documents.ts');
     const render = async (count, bus, limiter) => {
       const context = new OfflineAudioContext(2, 12000, 48000);
-      const engine = new AudioEngine(context, { formatVersion: 'KOROGI-Lab/session-v8', name: 'Eight', savedAt: '',
+      const engine = new AudioEngine(context, { formatVersion: 'KOROGI-Lab/session-v12', name: 'Eight', savedAt: '',
         channels: LAB_SLOT_IDS.map((id, i) => ({ id, ...DEFAULT_CHANNEL_MIX, balance: bus === 'near' ? 0 : 1, timbre: i < count ? defaultTimbre() : null })),
         near: defaultBus(), far: defaultBus(), crossfade: bus === 'near' ? 0 : 1, masterGainDb: -18, masterMuted: false });
       if (!limiter) { engine.preLimiterOutput.disconnect(); engine.preLimiterOutput.connect(context.destination); }

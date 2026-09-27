@@ -1,3 +1,4 @@
+import type { EditorCardId } from '../model/editorLayout';
 export type OscSourceType = 'sine' | 'sawtooth' | 'triangle' | 'square' | 'white-noise';
 export type PhaseMode = 'sync' | 'free';
 export type ModMode = 'off' | 'am' | 'fm';
@@ -8,7 +9,7 @@ export type BusAssignment = 'near' | 'far';
 export type EffectType = 'off' | 'distortion' | 'delay' | 'chorus' | 'reverb';
 export type EffectSlotIndex = 1 | 2 | 3;
 export type BusEffectSlotIndex = 2 | 3;
-export type ChannelBlock = 'osc1' | 'osc2' | 'penv' | 'mod' | 'filter1' | 'filter2' | 'aenv';
+export type ChannelBlock = 'osc1' | 'osc2' | 'penv' | 'mod' | 'filter1' | 'filter2' | 'aenv' | 'fenv';
 
 export interface OscillatorSettings {
   sourceType: OscSourceType;
@@ -17,9 +18,19 @@ export interface OscillatorSettings {
 }
 
 export interface PitchEnvelopeSettings {
-  amount: number; // -0.10 .. +0.10 peak frequency ratio change
-  transitionTimeSec: number; // 0.001 .. 5
+  mode: 'gate' | 'one-shot';
+  start: number; // P0, ratio relative to base frequency: -1 .. 1
+  attack: number; // Pa
+  sustain: number; // Ps
+  release: number; // Pr
+  attackSec: number;
+  decaySec: number;
+  releaseSec: number;
+  scale: number; // 0 .. 1
+  releaseTiming: ReleaseTiming;
 }
+
+export type ReleaseTiming = 'time' | 'rate';
 
 export interface ModSettings {
   mode: ModMode;
@@ -35,7 +46,7 @@ export interface FilterSettings {
   q: number;
 }
 
-export interface AmplitudeEnvelopeSettings {
+export interface ADSREnvelopeSettings {
   attackSec: number;
   decaySec: number;
   sustain: number;
@@ -43,16 +54,19 @@ export interface AmplitudeEnvelopeSettings {
   attackCurve?: EnvelopeCurve;
   decayCurve?: EnvelopeCurve;
   releaseCurve?: EnvelopeCurve;
+  releaseTiming?: ReleaseTiming;
   mode?: 'gate' | 'one-shot';
 }
+
+export interface AmplitudeEnvelopeSettings extends ADSREnvelopeSettings {}
+export interface FilterEnvelopeSettings extends ADSREnvelopeSettings { amountCent: number; }
 
 export type EnvelopeCurve = 'exponential' | 'linear';
 
 /** Auto play repeats until explicitly stopped. */
 export interface AutoTriggerSettings {
   tonSec: number;
-  toffSec: number;
-  oneShotRepeatSec?: number;
+  repeatSec: number;
 }
 
 /** Timbre articulation: repeat short AEnv One-shot pulse groups while an input Gate is held. */
@@ -78,6 +92,7 @@ export interface ChannelSettings {
   filter2Route: Filter2Route;
   filter1CutoffDepthCent: number;
   ampEnvelope: AmplitudeEnvelopeSettings;
+  filterEnvelope: FilterEnvelopeSettings;
   fx1: EffectSlotSettings;
   autoTrigger: AutoTriggerSettings;
   burst: BurstSettings;
@@ -107,18 +122,47 @@ export interface BusSettings {
 }
 
 export interface TimbreDocument {
-  formatVersion: 'KOROGI-Lab/timbre-v7';
+  editorLayout: EditorCardId[];
+  formatVersion: 'KOROGI-Lab/timbre-v14';
   name: string;
   settings: ChannelSettings;
   detuneRangeCent: number;
   detuneNormalized: number;
-  patterns: UserPattern[];
-  playbackSource: PlaybackSource;
+  gatePatterns: GatePattern[];
+  pitchPatterns: PitchPattern[];
+  sequence: SequenceSelection;
 }
 
-export type UserPatternId = 'user-1' | 'user-2';
-export interface UserPattern { id: UserPatternId; recording: TriggerRecording | null }
+export type UserPatternId = 'user-1' | 'user-2' | 'user-3';
+export type PitchMode = { kind: 'smooth' } | { kind: 'stepped'; stepsPerSide: number; portamentoSec: number };
+export interface SequenceSettings {
+  pitchScaleCent: number;
+  filterAmountCent: number;
+  pitchMode: PitchMode;
+  recordSpeed: number;
+  playSpeed: number;
+}
+export interface PitchPoint { timeSec: number; valueNormalized: number }
+export interface PitchRecording {
+  durationSec: number;
+  selectionStartSec: number;
+  selectionEndSec: number;
+  points: PitchPoint[];
+}
+export interface AutoSequence { pitchRecording: PitchRecording | null; settings: SequenceSettings }
+export interface UserPattern {
+  id: UserPatternId;
+  gateRecording: TriggerRecording | null;
+  pitchRecording: PitchRecording | null;
+  settings: SequenceSettings;
+}
 export type PlaybackSource = { kind: 'auto' } | { kind: 'user'; patternId: UserPatternId };
+export interface GatePattern { id: UserPatternId; recording: TriggerRecording | null; muted: boolean }
+export interface PitchPattern { id: UserPatternId; recording: PitchRecording | null; muted: boolean; pitchMode: PitchMode; pitchScaleCent: number; filterAmountCent: number }
+export interface SequenceSelection {
+  gateMode: 'auto' | 'user'; gateUserId: UserPatternId; pitchUserId: UserPatternId;
+  recordSpeed: number; playSpeed: number;
+}
 export type MasterInputMode = 'common-space' | 'fx1-direct';
 
 export interface TriggerGate { onSec: number; offSec: number }
@@ -143,7 +187,7 @@ export interface SessionChannel extends ChannelMixSettings {
 
 /** The engine does not impose the Lab UI's four-slot limit. */
 export interface SessionDocument {
-  formatVersion: 'KOROGI-Lab/session-v8';
+  formatVersion: 'KOROGI-Lab/session-v15';
   name: string;
   savedAt: string;
   channels: SessionChannel[];

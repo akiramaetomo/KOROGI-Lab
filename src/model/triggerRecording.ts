@@ -1,14 +1,20 @@
-import type { TriggerGate, TriggerRecording, UserPattern, UserPatternId } from '../audio/types';
+import type { GatePattern, PitchPattern, TriggerGate, TriggerRecording, UserPattern, UserPatternId } from '../audio/types';
 import { isRecord } from './patch';
+import { defaultSequenceSettings } from './sequencePitch';
+export { MAX_RECORDING_SEC } from './recordingLimits';
+import { MAX_RECORDING_SEC } from './recordingLimits';
 
-export const MAX_RECORDING_SEC = 300;
-export const USER_PATTERN_IDS = ['user-1', 'user-2'] as const satisfies readonly UserPatternId[];
+export const USER_PATTERN_IDS = ['user-1', 'user-2', 'user-3'] as const satisfies readonly UserPatternId[];
+export const LEGACY_USER_PATTERN_IDS = ['user-1', 'user-2'] as const satisfies readonly UserPatternId[];
 export function emptyUserPatterns(): UserPattern[] {
-  return USER_PATTERN_IDS.map(id => ({ id, recording: null }));
+  return LEGACY_USER_PATTERN_IDS.map(id => ({ id, gateRecording: null, pitchRecording: null, settings: defaultSequenceSettings() }));
 }
+export function emptyGatePatterns(): GatePattern[] { return USER_PATTERN_IDS.map(id => ({ id, recording: null, muted: false })); }
+export function emptyPitchPatterns(): PitchPattern[] { return USER_PATTERN_IDS.map(id => ({ id, recording: null, muted: false,
+  pitchMode: { kind: 'smooth' }, filterAmountCent: 0, pitchScaleCent: defaultSequenceSettings().pitchScaleCent })); }
 
 export function patternRecording(patterns: readonly UserPattern[], patternId: UserPatternId): TriggerRecording | null {
-  return patterns.find(pattern => pattern.id === patternId)?.recording ?? null;
+  return patterns.find(pattern => pattern.id === patternId)?.gateRecording ?? null;
 }
 const finiteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 

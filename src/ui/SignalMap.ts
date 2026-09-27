@@ -2,7 +2,7 @@ import { equalPower, type AudioEngine } from '../audio/core/AudioEngine';
 import type { MixerPanel } from './MixerPanel';
 import { LAB_SLOT_IDS } from '../model/documents';
 
-type Port = 'left' | 'right' | 'top' | 'bottom';
+type Port = 'left' | 'right' | 'top' | 'bottom' | 'bottom-left';
 interface Connection { from: string; to: string; start: Port; end: Port; control?: boolean; weight?: number; lane?: number; activeSend?: boolean; route?: 'right-down' | 'filter-cutoff' }
 
 /** HTML owns interaction; SVG only renders the current topology in content coordinates. */
@@ -57,9 +57,9 @@ export class SignalMap {
     this.root.querySelector<HTMLElement>('#flow-fx1-common')!.hidden = direct;
     this.connections = [
       c('osc1', 'mod'), c('mod', 'filter1'), c('filter1', 'aenv'), c('aenv', 'fx1'),
-      c('osc2', 'filter2'),
+      c('osc2', 'filter2'), c('fenv', 'filter1', 'top', 'bottom', true),
       current?.getSettings().filter2Route === 'filter1-cutoff'
-        ? { ...c('filter2', 'filter1', 'right', 'bottom', true), route: 'filter-cutoff' }
+        ? { ...c('filter2', 'filter1', 'right', 'bottom-left', true), route: 'filter-cutoff' }
         : c('filter2', 'mod', 'top', 'bottom', true),
       c('penv', 'osc1', 'top', 'bottom', true),
       c('penv', 'osc2', 'bottom', 'top', true),
@@ -99,8 +99,8 @@ export class SignalMap {
     this.svg.setAttribute('viewBox', `0 0 ${this.root.clientWidth} ${this.root.clientHeight}`);
     const point = (id: string, port: Port) => {
       const rect = this.root.querySelector<HTMLElement>(`#flow-${id}`)!.getBoundingClientRect();
-      return { x: (port === 'left' ? rect.left : port === 'right' ? rect.right : rect.left + rect.width / 2) - origin.left,
-        y: (port === 'top' ? rect.top : port === 'bottom' ? rect.bottom : rect.top + rect.height / 2) - origin.top };
+      return { x: (port === 'left' || port === 'bottom-left' ? rect.left : port === 'right' ? rect.right : rect.left + rect.width / 2) - origin.left,
+        y: (port === 'top' ? rect.top : port === 'bottom' || port === 'bottom-left' ? rect.bottom : rect.top + rect.height / 2) - origin.top };
     };
     const branchGap = 7.5;
     const entryStart = (bus: 'near' | 'far'): number => point(`${bus}-input`, 'left').y - 1.5 * branchGap;
@@ -109,7 +109,9 @@ export class SignalMap {
     for (const wire of this.connections) {
       const a = point(wire.from, wire.start), b = point(wire.to, wire.end);
       let d: string;
-      if (wire.route === 'right-down' || wire.route === 'filter-cutoff') {
+      if (wire.route === 'filter-cutoff') {
+        d = `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+      } else if (wire.route === 'right-down') {
         d = `M ${a.x} ${a.y} H ${b.x} V ${b.y}`;
       } else if (wire.start === 'right' && wire.end === 'left') {
         // Four arrow tips are centered on Σ; the outer sends run horizontally from their inputs.
