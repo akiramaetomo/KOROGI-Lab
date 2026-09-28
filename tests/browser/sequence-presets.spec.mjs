@@ -190,6 +190,106 @@ test('Link matches interval lengths while Pitch start remains independent', asyn
   await expect(page.locator('#record-length')).toHaveValue('1.2');
 });
 
+test('Length Lock shifts each interval, Link shifts both, and dt tracks edits', async ({ page }) => {
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  const timbre = await saveTimbre(page);
+  timbre.gatePatterns[0].recording = { durationSec: 2, selectionStartSec: .2, selectionEndSec: .7, gates: [] };
+  timbre.pitchPatterns[0].recording = { durationSec: 2, selectionStartSec: .4, selectionEndSec: 1.1,
+    points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: 2, valueNormalized: 0 }] };
+  await loadTimbre(page, timbre); await page.locator('#trigger-menu').click();
+  await expect(page.locator('#record-duration-value')).toHaveText('0.50 s');
+  await expect(page.locator('#pitch-duration-value')).toHaveText('0.70 s');
+
+  await page.locator('#record-start-handle').focus(); await page.keyboard.press('ArrowRight');
+  let saved = await saveTimbre(page);
+  expect(saved.gatePatterns[0].recording.selectionStartSec).toBeCloseTo(.21);
+  expect(saved.gatePatterns[0].recording.selectionEndSec).toBeCloseTo(.7);
+  await expect(page.locator('#record-duration-value')).toHaveText('0.49 s');
+
+  await page.locator('#sequence-length-lock').click();
+  await expect(page.locator('#sequence-length-lock')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('#record-end-handle').focus(); await page.keyboard.press('ArrowRight');
+  await page.locator('#pitch-start-handle').focus(); await page.keyboard.press('ArrowLeft');
+  saved = await saveTimbre(page);
+  expect(saved.gatePatterns[0].recording.selectionStartSec).toBeCloseTo(.22);
+  expect(saved.gatePatterns[0].recording.selectionEndSec).toBeCloseTo(.71);
+  expect(saved.pitchPatterns[0].recording.selectionStartSec).toBeCloseTo(.39);
+  expect(saved.pitchPatterns[0].recording.selectionEndSec).toBeCloseTo(1.09);
+  await expect(page.locator('#record-duration-value')).toHaveText('0.49 s');
+  await expect(page.locator('#pitch-duration-value')).toHaveText('0.70 s');
+
+  await page.locator('#sequence-link').click();
+  await page.locator('#record-toggle').click();
+  await expect(page.locator('#record-status')).toContainText('lengths differ');
+  await page.locator('#pitch-end-handle').focus(); await page.keyboard.press('ArrowRight');
+  saved = await saveTimbre(page);
+  expect(saved.gatePatterns[0].recording.selectionStartSec).toBeCloseTo(.23);
+  expect(saved.gatePatterns[0].recording.selectionEndSec).toBeCloseTo(.72);
+  expect(saved.pitchPatterns[0].recording.selectionStartSec).toBeCloseTo(.4);
+  expect(saved.pitchPatterns[0].recording.selectionEndSec).toBeCloseTo(1.1);
+
+  await page.locator('#sequence-length-lock').click();
+  await page.locator('#record-end-handle').focus(); await page.keyboard.press('ArrowRight');
+  saved = await saveTimbre(page);
+  expect(saved.gatePatterns[0].recording.selectionStartSec).toBeCloseTo(.23);
+  expect(saved.gatePatterns[0].recording.selectionEndSec).toBeCloseTo(.73);
+  expect(saved.pitchPatterns[0].recording.selectionStartSec).toBeCloseTo(.4);
+  expect(saved.pitchPatterns[0].recording.selectionEndSec).toBeCloseTo(.9);
+  await expect(page.locator('#record-duration-value')).toHaveText('0.50 s');
+  await expect(page.locator('#pitch-duration-value')).toHaveText('0.50 s');
+});
+
+test('linked locked intervals share boundary clamps and pointer movement', async ({ page }) => {
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  const timbre = await saveTimbre(page);
+  timbre.gatePatterns[0].recording = { durationSec: 2, selectionStartSec: .2, selectionEndSec: .7, gates: [] };
+  timbre.pitchPatterns[0].recording = { durationSec: 2, selectionStartSec: .4, selectionEndSec: 1.1,
+    points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: 2, valueNormalized: 0 }] };
+  await loadTimbre(page, timbre); await page.locator('#trigger-menu').click();
+  await page.locator('#sequence-link').click(); await page.locator('#sequence-length-lock').click();
+  await page.locator('#record-start-handle').focus(); await page.keyboard.press('Home');
+  let saved = await saveTimbre(page);
+  expect(saved.gatePatterns[0].recording.selectionStartSec).toBeCloseTo(0);
+  expect(saved.pitchPatterns[0].recording.selectionStartSec).toBeCloseTo(.2);
+  await page.locator('#pitch-end-handle').focus(); await page.keyboard.press('End');
+  saved = await saveTimbre(page);
+  expect(saved.gatePatterns[0].recording.selectionStartSec).toBeCloseTo(1.1);
+  expect(saved.gatePatterns[0].recording.selectionEndSec).toBeCloseTo(1.6);
+  expect(saved.pitchPatterns[0].recording.selectionStartSec).toBeCloseTo(1.3);
+  expect(saved.pitchPatterns[0].recording.selectionEndSec).toBeCloseTo(2);
+  await page.keyboard.press('ArrowRight');
+  await expect(page.locator('#pitch-end-value')).toHaveText('2.00 s');
+
+  const timeline = await page.locator('#record-timeline').boundingBox();
+  const handle = await page.locator('#record-end-handle').boundingBox();
+  const fromX = handle.x + handle.width / 2;
+  await page.mouse.move(fromX, handle.y + handle.height / 2); await page.mouse.down();
+  await page.mouse.move(timeline.x + timeline.width * .75, handle.y + handle.height / 2);
+  await page.mouse.up();
+  saved = await saveTimbre(page);
+  expect(saved.gatePatterns[0].recording.selectionEndSec).toBeCloseTo(1.5, 1);
+  expect(saved.pitchPatterns[0].recording.selectionEndSec).toBeCloseTo(1.9, 1);
+  await expect(page.locator('#record-duration-value')).toHaveText('0.50 s');
+  await expect(page.locator('#pitch-duration-value')).toHaveText('0.70 s');
+});
+
+test('Length Lock works with one recorded lane and saves its shifted selection', async ({ page }) => {
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  const timbre = await saveTimbre(page);
+  timbre.gatePatterns[0].recording = { durationSec: 2, selectionStartSec: .2, selectionEndSec: .7, gates: [] };
+  await loadTimbre(page, timbre); await page.locator('#trigger-menu').click();
+  await page.locator('#sequence-link').click(); await page.locator('#sequence-length-lock').click();
+  await page.locator('#record-start-handle').focus(); await page.keyboard.press('ArrowRight');
+  const saved = await saveTimbre(page);
+  expect(saved.gatePatterns[0].recording.selectionStartSec).toBeCloseTo(.21);
+  expect(saved.gatePatterns[0].recording.selectionEndSec).toBeCloseTo(.71);
+  expect(saved.pitchPatterns[0].recording).toBeNull();
+  await loadTimbre(page, saved);
+  await expect(page.locator('#record-start-value')).toHaveText('0.21 s');
+  await expect(page.locator('#record-duration-value')).toHaveText('0.50 s');
+  await expect(page.locator('#sequence-length-lock')).toHaveAttribute('aria-pressed', 'true');
+});
+
 test('leaving Link restores the original one-take length after timeline refresh', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   const timbre = await saveTimbre(page);

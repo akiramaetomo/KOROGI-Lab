@@ -33,6 +33,7 @@ export class TriggerRecorder {
   private recordingLane: RecordingLane = 'gate';
   private userRecordingLane: RecordingLane = 'gate';
   private linked = false;
+  private lengthLocked = false;
   private loopRecording = false;
   private loopStart = 0;
   private loopEnd = 0;
@@ -76,6 +77,7 @@ export class TriggerRecorder {
   private readonly status = this.element<HTMLElement>('#record-status');
   private readonly log = this.element<HTMLOListElement>('#record-log');
   private readonly link = this.element<HTMLButtonElement>('#sequence-link');
+  private readonly lengthLock = this.element<HTMLButtonElement>('#sequence-length-lock');
   private readonly gateMute = this.element<HTMLButtonElement>('#gate-mute');
   private readonly pitchMute = this.element<HTMLButtonElement>('#pitch-mute');
   private readonly gateClear = this.element<HTMLButtonElement>('#gate-clear');
@@ -103,8 +105,21 @@ export class TriggerRecorder {
       if (this.mode !== 'idle') return;
       this.linked = !this.linked; this.refresh();
       this.status.textContent = this.linked
-        ? 'Link ON: intervals share a length; Pitch start is independent. Recording loops until End.'
+        ? this.lengthLocked
+          ? 'Link ON: locked intervals shift together, even with different lengths. Loop recording requires equal lengths.'
+          : 'Link ON: intervals share a length; Pitch start is independent. Recording loops until End.'
         : 'Link OFF: one take with the specified Record length.';
+    });
+    this.lengthLock.addEventListener('click', () => {
+      if (this.mode !== 'idle') return;
+      this.lengthLocked = !this.lengthLocked; this.refresh();
+      this.status.textContent = this.lengthLocked
+        ? this.linked
+          ? 'Length Lock ON: either handle shifts both intervals by the same amount; loop recording requires equal lengths.'
+          : 'Length Lock ON: either handle shifts its interval without changing its length.'
+        : this.linked
+          ? 'Length Lock OFF: Link matches interval lengths while editing handles.'
+          : 'Length Lock OFF: selection handles edit the interval edges.';
     });
     this.gateMute.addEventListener('click', () => this.changeMute('gate'));
     this.pitchMute.addEventListener('click', () => this.changeMute('pitch'));
@@ -147,7 +162,8 @@ export class TriggerRecorder {
       playhead: this.element<HTMLElement>(`#${prefix}-playhead`), midpoint: this.element<HTMLElement>(`#${prefix}-midpoint`),
       endpoint: this.element<HTMLElement>(`#${prefix}-endpoint`), startHandle: this.element<HTMLButtonElement>(`#${prefix}-start-handle`),
       endHandle: this.element<HTMLButtonElement>(`#${prefix}-end-handle`), startValue: this.element<HTMLOutputElement>(`#${prefix}-start-value`),
-      endValue: this.element<HTMLOutputElement>(`#${prefix}-end-value`)
+      endValue: this.element<HTMLOutputElement>(`#${prefix}-end-value`),
+      durationValue: this.element<HTMLOutputElement>(`#${prefix}-duration-value`)
     };
   }
 
@@ -174,6 +190,7 @@ export class TriggerRecorder {
     this.syncSettings(engine?.getChannel(id) ? engine.getSequenceSettings(id, source.pitchUserId) : null);
     this.updateControls(gateRecording, pitchRecording, source); this.updateClock();
     this.link.setAttribute('aria-pressed', String(this.linked)); this.link.textContent = this.linked ? 'Link ON' : 'Link OFF';
+    this.lengthLock.setAttribute('aria-pressed', String(this.lengthLocked)); this.lengthLock.textContent = this.lengthLocked ? 'Lock ON' : 'Lock OFF';
     if (this.mode === 'idle') this.syncRecordLength(gateRecording, pitchRecording);
     if (this.mode === 'idle') {
       if (this.transport.isPlaying(id)) this.status.textContent = 'Loop playing';
@@ -501,7 +518,28 @@ export class TriggerRecorder {
     const value = Math.max(0, Math.min(recording.durationSec, ratio * recording.durationSec));
     const gate = this.linked ? engine?.getGateRecording(id, source.gateUserId) : null;
     const pitch = this.linked ? engine?.getPitchRecording(id, source.pitchUserId) : null;
-    if (gate && pitch) {
+    if (this.lengthLocked) {
+      const active = lane === 'gate' ? gate ?? recording : pitch ?? recording;
+      const current = edge === 'start' ? active.selectionStartSec : active.selectionEndSec;
+      const paired = lane === 'gate' ? pitch : gate;
+      const intervals = paired ? [active, paired] : [active];
+      const minDelta = Math.max(...intervals.map(item => -item.selectionStartSec));
+      const maxDelta = Math.min(...intervals.map(item => item.durationSec - item.selectionEndSec));
+      const delta = Math.max(minDelta, Math.min(maxDelta, value - current));
+      if (delta === 0) return;
+      for (const item of intervals) {
+        item.selectionStartSec += delta;
+        item.selectionEndSec += delta;
+      }
+      if (lane === 'gate' || paired) {
+        engine!.setGateRecording(id, source.gateUserId, (gate ?? active) as TriggerRecording);
+        this.transport.gateRecordingChanged(id, source.gateUserId);
+      }
+      if (lane === 'pitch' || paired) {
+        engine!.setPitchRecording(id, source.pitchUserId, (pitch ?? active) as PitchRecording);
+        this.transport.pitchRecordingChanged(id, source.pitchUserId);
+      }
+    } else if (gate && pitch) {
       if (lane === 'pitch' && edge === 'start') {
         const length = gate.selectionEndSec - gate.selectionStartSec;
         if (length > pitch.durationSec) { this.status.textContent = 'Link: shorten the Gate interval to fit the Pitch recording.'; return; }
@@ -580,6 +618,7 @@ export class TriggerRecorder {
     this.gateTimeline.startHandle.disabled = this.gateTimeline.endHandle.disabled = !gateRecording || this.mode !== 'idle';
     this.pitchTimeline.startHandle.disabled = this.pitchTimeline.endHandle.disabled = !pitchRecording || this.mode !== 'idle';
     this.link.disabled = this.mode !== 'idle';
+    this.lengthLock.disabled = this.mode !== 'idle';
     this.gateMute.disabled = !gateRecording || this.mode !== 'idle';
     this.pitchMute.disabled = !pitchRecording || this.mode !== 'idle';
     this.gateClear.disabled = !gateRecording || this.mode !== 'idle'; this.pitchClear.disabled = !pitchRecording || this.mode !== 'idle';
@@ -617,6 +656,7 @@ export class TriggerRecorder {
       handle.setAttribute('aria-valuetext', `${name} ${value.toFixed(2)} seconds`);
     }
     elements.startValue.textContent = `${start.toFixed(2)} s`; elements.endValue.textContent = `${end.toFixed(2)} s`;
+    elements.durationValue.textContent = `${(end - start).toFixed(2)} s`;
     elements.timeline.setAttribute('aria-label', `${description} over ${duration.toFixed(2)} seconds; selected ${start.toFixed(2)} to ${end.toFixed(2)} seconds`);
   }
 

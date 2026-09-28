@@ -663,6 +663,8 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
   --edit-share: 40fr;
   grid-template-rows: minmax(0, var(--diagram-share)) 8px minmax(0, var(--edit-share));
 }
+.editor-column[data-diagram-collapsed="true"] { grid-template-rows: 0px 8px minmax(0, 1fr); }
+.editor-column[data-diagram-collapsed="true"] .signal-map { padding: 0; border: 0; overflow: hidden; visibility: hidden; }
 .signal-map, .editor-column .signal-map {
   max-height: none;
   overflow: auto;
@@ -878,14 +880,14 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .timeline-row .record-timeline-area { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); grid-template-rows: auto 32px auto; }
 .timeline-row .record-timeline-label, .timeline-row .record-timeline { grid-column: 1 / -1; }
 .timeline-row .record-ticks { grid-column: 1; }
-.timeline-row .record-selection-values { grid-column: 2; justify-content: flex-end; }
+.timeline-row .record-selection-values { grid-column: 2; justify-content: flex-end; gap: .4rem; white-space: nowrap; }
 .sequence-perform .record-timeline-label { justify-content: flex-start; min-height: 28px; }
 .sequence-perform .record-timeline-label strong { white-space: nowrap; }
 .sequence-perform .record-timeline-label span { margin-left: auto; }
 .sequence-perform .record-timeline-label button { min-height: 27px; }
 .sequence-perform .record-timeline-label button:last-child { margin-left: .25rem; }
-#sequence-link { min-width: 80px; margin-left: .15rem; }
-#sequence-link[aria-pressed="true"] { border-color: var(--color-sequence-link-pressed-border); background: var(--color-sequence-link-pressed-background); color: var(--color-sequence-link-pressed-text); }
+#sequence-link, #sequence-length-lock { min-width: 80px; margin-left: .15rem; }
+#sequence-link[aria-pressed="true"], #sequence-length-lock[aria-pressed="true"] { border-color: var(--color-sequence-link-pressed-border); background: var(--color-sequence-link-pressed-background); color: var(--color-sequence-link-pressed-text); }
 #gate-mute[aria-pressed="true"], #pitch-mute[aria-pressed="true"] { border-color: var(--color-gate-mute-pressed-border); background: var(--color-gate-mute-pressed-background); }
 .sequence-perform .sequence-pitch-controls { grid-template-columns: minmax(280px, 1.3fr) minmax(140px, .8fr) minmax(140px, .8fr) auto minmax(150px, .9fr); }
 .sequence-perform .pitch-mode-config { grid-template-columns: minmax(140px, .9fr) minmax(130px, 1fr); }
@@ -1233,9 +1235,11 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 :is(.function-editor, .common-editor) { --editor-reference-width: 908px; --card-gap: 8px; height: 100%; min-width: 0; min-height: 0; padding: 8px; overflow: auto; overscroll-behavior: contain; }
 :is(.function-editor, .common-editor)[hidden], :is(.editor-card, .space-card)[hidden], :is(.function-editor, .common-editor) .source-phase-row[hidden], .editor-empty[hidden] { display: none !important; }
 .function-editor-row { display: flex; align-items: flex-start; gap: var(--card-gap); width: var(--editor-reference-width); }
-:is(.function-editor, .common-editor) .source-phase-row { width: var(--editor-reference-width); margin-bottom: 8px; flex-wrap: wrap; }
+.editor-card-column { flex: 0 0 auto; display: flex; flex-direction: column; align-items: stretch; gap: var(--card-gap); min-width: 0; }
+:is(.function-editor, .common-editor) .source-phase-row { width: 100%; margin-bottom: 0; flex-wrap: wrap; }
+:is(.function-editor, .common-editor) .source-phase-row .choice-field { min-width: 0; width: 100%; }
 :is(.function-editor, .common-editor) .source-phase-row .path-label { font-size: .8rem; }
-.panel-deck :is(.editor-card, .space-card).function-panel.active { flex: 0 0 var(--card-width); display: grid; grid-template-rows: auto max-content; align-content: start; gap: 8px; height: auto; min-height: 0; min-width: 0; padding: 4px 8px 8px; border: 1px solid var(--color-card-border); border-radius: 5px; background: var(--color-card-background); overflow: visible; }
+.panel-deck :is(.editor-card, .space-card).function-panel.active { width: 100%; display: grid; grid-template-rows: auto max-content; align-content: start; gap: 8px; height: auto; min-height: 0; min-width: 0; padding: 4px 8px 8px; border: 1px solid var(--color-card-border); border-radius: 5px; background: var(--color-card-background); overflow: visible; }
 :is(.editor-card, .space-card) .editor-card-heading { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; min-width: 0; min-height: 24px; margin: 0; padding: 0; }
 .editor-card-handle { position: relative; flex: 1; min-width: 0; height: 24px; padding-block: 0; padding-left: 28px; text-align: left; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; font-weight: 700; background: var(--color-card-heading-background); border-color: var(--color-card-heading-border); color: var(--color-card-heading-text); }
 .editor-card-handle::before { content: ''; position: absolute; left: 9px; top: 50%; transform: translateY(-50%); width: 10px; height: 18px; background: radial-gradient(circle, var(--color-grip-dot) 1px, transparent 1.2px) 0 0 / 4px 4px; pointer-events: none; }
@@ -1248,6 +1252,8 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .editor-card-handle:focus-visible, .editor-card-close:focus-visible { outline: 2px solid var(--color-editor-card-handle-focus-visible-focus); outline-offset: 2px; }
 :is(.editor-card, .space-card).dragging { opacity: .65; }
 :is(.editor-card, .space-card).drop-target { outline: 2px solid var(--color-editor-card-focus); outline-offset: -2px; }
+:is(.editor-card, .space-card).drop-target[data-drop-placement="above"] { box-shadow: inset 0 4px var(--color-editor-card-focus); }
+:is(.editor-card, .space-card).drop-target[data-drop-placement="below"] { box-shadow: inset 0 -4px var(--color-editor-card-focus); }
 :is(.editor-card, .space-card) fieldset { min-width: 0; margin: 0; }
 :is(.editor-card, .space-card) > fieldset { width: 100%; }
 :is(.editor-card, .space-card) > .control-columns, :is(.editor-card, .space-card) .voice-effects-grid { width: 100%; grid-template-columns: minmax(0, 1fr); }

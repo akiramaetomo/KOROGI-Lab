@@ -34,7 +34,8 @@ test('edits independent cards, keeps switches intact, and applies capacity repla
   await select(page, 'filter1'); expect(await layout(page)).toEqual(['osc1']);
   await select(page, 'filter1'); expect(await layout(page)).toEqual(['osc1', 'filter1']);
   await select(page, 'mod'); await select(page, 'burst');
-  expect(await layout(page)).toEqual(['osc1', 'filter1', 'burst']);
+  expect(await layout(page)).toEqual(['osc1', 'filter1', 'mod', 'burst']);
+  expect(await page.locator('.function-editor-row > .editor-card-column').count()).toBe(3);
   await select(page, 'sequence'); expect(await layout(page)).toEqual(['sequence']);
   await select(page, 'filter1'); expect(await layout(page)).toEqual(['sequence', 'filter1']);
 });
@@ -49,7 +50,7 @@ test('reorders by keyboard and mouse without replacing controls or their values'
   await expect(page.locator('#osc1-frequency')).toHaveValue('4100');
   const from = await handle.boundingBox(), to = await card(page, 'filter1').locator('.editor-card-handle').boundingBox();
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2); await page.mouse.down();
-  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 8 }); await page.mouse.up();
+  await page.mouse.move(to.x + 4, to.y + to.height / 2, { steps: 8 }); await page.mouse.up();
   expect(await layout(page)).toEqual(['osc1', 'filter1']);
   await expect(page.locator('#osc1-frequency')).toHaveValue('4100');
 });
@@ -57,11 +58,11 @@ test('reorders by keyboard and mouse without replacing controls or their values'
 test('retains unsaved layouts per timbre, exports both formats and restores files including empty layouts', async ({ page }) => {
   await start(page); await closeAll(page); await select(page, 'filter1'); await select(page, 'osc1');
   const timbre = await saved(page, '#save-1');
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v14'); expect(timbre.editorLayout).toEqual(['filter1', 'osc1']);
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v15'); expect(timbre.editorLayout).toEqual([['filter1'], ['osc1']]);
   await page.locator('#select-2').click(); await page.locator('#standard-2').click(); await closeAll(page);
   await page.locator('#select-1').click(); expect(await layout(page)).toEqual(['filter1', 'osc1']);
   await page.locator('#files-menu').click(); const session = await saved(page, '#export-patch');
-  expect(session.formatVersion).toBe('KOROGI-Lab/session-v15'); expect(session.channels[1].timbre.editorLayout).toEqual([]);
+  expect(session.formatVersion).toBe('KOROGI-Lab/session-v16'); expect(session.channels[1].timbre.editorLayout).toEqual([]);
   await page.locator('#patch-file').setInputFiles({ name: 'session.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) });
   await expect(page.locator('#patch-status')).toContainText('Loaded');
   await select(page, 'filter1'); expect(await layout(page)).toEqual(['filter1', 'osc1']);
@@ -69,6 +70,39 @@ test('retains unsaved layouts per timbre, exports both formats and restores file
   await page.locator('#timbre-file-2').setInputFiles({ name: 'timbre.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
   await expect(page.locator('#patch-status')).toContainText('Loaded timbre 2'); expect(await layout(page)).toEqual(['filter1', 'osc1']);
   await page.locator('#standard-2').click(); expect(await layout(page)).toEqual(['osc1', 'osc2']);
+});
+
+test('Sequence stays left while OSC1 and Filter1 stack, then save and reload preserve the columns', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
+  await openTimbreEditors(page, ['sequence', 'osc1']);
+  await select(page, 'filter1');
+  const columns = page.locator('.function-editor-row > .editor-card-column');
+  await expect(columns).toHaveCount(2);
+  expect(await columns.nth(0).locator('.editor-card.active').evaluateAll(nodes => nodes.map(node => node.dataset.editorCard))).toEqual(['sequence']);
+  expect(await columns.nth(1).locator('.editor-card.active').evaluateAll(nodes => nodes.map(node => node.dataset.editorCard))).toEqual(['osc1', 'filter1']);
+  const top = await card(page, 'osc1').boundingBox(), bottom = await card(page, 'filter1').boundingBox();
+  expect(bottom.y).toBeGreaterThanOrEqual(top.y + top.height);
+  const timbre = await saved(page, '#save-1');
+  expect(timbre.editorLayout).toEqual([['sequence'], ['osc1', 'filter1']]);
+  await page.locator('#timbre-file-2').setInputFiles({ name: 'stacked.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
+  await page.locator('#select-2').click();
+  expect(await columns.evaluateAll(nodes => nodes.map(column => [...column.querySelectorAll('.editor-card.active')].map(card => card.dataset.editorCard)))).toEqual([['sequence'], ['osc1', 'filter1']]);
+  await card(page, 'filter1').locator('.editor-card-handle').press('Shift+ArrowDown');
+  expect(await columns.evaluateAll(nodes => nodes.map(column => [...column.querySelectorAll('.editor-card.active')].map(card => card.dataset.editorCard)))).toEqual([['sequence'], ['osc1'], ['filter1']]);
+  await card(page, 'filter1').locator('.editor-card-handle').press('Shift+ArrowLeft');
+  expect(await columns.evaluateAll(nodes => nodes.map(column => [...column.querySelectorAll('.editor-card.active')].map(card => card.dataset.editorCard)))).toEqual([['sequence'], ['osc1', 'filter1']]);
+});
+
+test('dragging a Small card onto another makes a two-card column', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
+  const source = card(page, 'osc2').locator('.editor-card-handle');
+  const from = await source.boundingBox(), target = await card(page, 'osc1').locator('.editor-card-handle').boundingBox();
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2); await page.mouse.down();
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height - 2, { steps: 8 }); await page.mouse.up();
+  const columns = page.locator('.function-editor-row > .editor-card-column');
+  await expect(columns).toHaveCount(1);
+  expect(await columns.first().locator('.editor-card.active').evaluateAll(nodes => nodes.map(node => node.dataset.editorCard))).toEqual(['osc1', 'osc2']);
+  expect((await saved(page, '#save-1')).editorLayout).toEqual([['osc1', 'osc2']]);
 });
 
 test('dedicated COMMON SPACE and FILES preserve the selected timbre layout', async ({ page }) => {
@@ -89,11 +123,13 @@ test('touch dragging reorders and pointer cancellation preserves order', async (
     const to = await card(page, 'osc2').locator('.editor-card-handle').boundingBox();
     const point = rect => ({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2, id: 1 });
     await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(from)] });
-    await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point(to)] });
+    await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: to.x + to.width - 4, y: to.y + to.height / 2, id: 1 }] });
     await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     expect(await layout(page)).toEqual(['osc2', 'osc1']);
-    await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(to)] });
-    await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point(from)] });
+    const nextFrom = await card(page, 'osc2').locator('.editor-card-handle').boundingBox();
+    const nextTo = await card(page, 'osc1').locator('.editor-card-handle').boundingBox();
+    await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point(nextFrom)] });
+    await client.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [point(nextTo)] });
     await client.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
     expect(await layout(page)).toEqual(['osc2', 'osc1']);
     expect(await page.evaluate(() => getSelection()?.toString())).toBe('');

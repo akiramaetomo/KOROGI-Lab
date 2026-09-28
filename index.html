@@ -117,16 +117,17 @@
           </section>
         </div>
       </section>
-      <div id="panel-divider" class="panel-divider" role="separator" aria-label="Signal map and editor height" aria-orientation="horizontal" tabindex="0" aria-valuemin="25" aria-valuemax="75" aria-valuenow="50"></div>
+      <div id="panel-divider" class="panel-divider" role="separator" aria-label="Signal map and editor height" aria-orientation="horizontal" tabindex="0" aria-valuemin="0" aria-valuemax="75" aria-valuenow="50"></div>
       <section class="workspace">
 
         <div class="panel-deck">
           <section class="function-panel active" data-panel="sources">
             <div class="panel-heading">
               <div><strong>SOURCES</strong><span>OSC1 = carrier / OSC2 = modulation source</span></div>
-              <span id="source-path-label" class="path-label">OSC1 → MOD　　OSC2 → FILTER2 → MOD</span>
+              <span class="path-label">OSC1 / OSC2 source controls</span>
             </div>
-            <div class="source-phase-row"><div class="choice-field"><span>Gate Phase</span><select id="phase-mode" data-audio-control hidden disabled><option value="sync">SYNC</option><option value="free">FREE</option></select></div><span>SYNC restarts periodic OSC1/2 only after AEnv reaches silence.</span></div>
+            <div class="source-phase-row" data-osc="osc1"><div class="choice-field"><span>Gate Phase · OSC1/2 linked</span><select id="phase-mode-osc1" data-audio-control hidden disabled><option value="sync">SYNC</option><option value="free">FREE</option></select></div><span id="source-path-osc1">OSC1 → MOD</span></div>
+            <div class="source-phase-row" data-osc="osc2"><div class="choice-field"><span>Gate Phase · OSC1/2 linked</span><select id="phase-mode-osc2" data-audio-control hidden disabled><option value="sync">SYNC</option><option value="free">FREE</option></select></div><span id="source-path-osc2">OSC2 → FILTER2 → MOD</span></div>
             <div class="control-columns two">
               <fieldset>
                 <legend>OSC1 / Carrier</legend>
@@ -377,13 +378,13 @@
                       <div class="record-timeline-label"><strong>Gate timeline</strong><span id="record-target">Timbre 1 · No recording</span><button id="gate-clear" type="button">Clear</button></div>
                       <div id="record-timeline" class="record-timeline" role="group" aria-label="Recorded Gate positions along time"><div id="record-selection" class="record-selection"></div><div id="record-gates" class="record-gates"></div><button id="record-start-handle" class="record-selection-handle start" type="button" role="slider" aria-label="Selection start" disabled></button><button id="record-end-handle" class="record-selection-handle end" type="button" role="slider" aria-label="Selection end" disabled></button><div id="record-playhead" class="record-playhead"></div></div>
                       <div class="record-ticks"><span>0</span><span id="record-midpoint">15 s</span><span id="record-endpoint">30 s</span></div>
-                      <div class="record-selection-values"><span>Start <output id="record-start-value">0.00 s</output></span><span>End <output id="record-end-value">30.00 s</output></span></div>
+                      <div class="record-selection-values"><span>Start <output id="record-start-value">0.00 s</output></span><span>End <output id="record-end-value">30.00 s</output></span><span>dt <output id="record-duration-value">30.00 s</output></span></div>
                     </div></div>
                     <div class="timeline-row pitch-timeline-row"><button id="pitch-mute" type="button">Mute</button><div class="record-timeline-area pitch-timeline-area">
-                      <div class="record-timeline-label"><strong>Pitch timeline</strong><button id="sequence-link" type="button" aria-pressed="false">Link OFF</button><span id="pitch-record-target">Timbre 1 · No recording</span><button id="pitch-clear" type="button">Clear</button></div>
+                      <div class="record-timeline-label"><strong>Pitch timeline</strong><button id="sequence-link" type="button" aria-pressed="false">Link OFF</button><button id="sequence-length-lock" type="button" aria-label="Length Lock" aria-pressed="false">Lock OFF</button><span id="pitch-record-target">Timbre 1 · No recording</span><button id="pitch-clear" type="button">Clear</button></div>
                       <div id="pitch-timeline" class="record-timeline pitch-timeline" role="group" aria-label="Recorded Pitch curve along time"><div id="pitch-selection" class="record-selection"></div><svg id="pitch-curve" class="pitch-curve" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="50" x2="1000" y2="50" class="pitch-zero-line"></line><polyline id="pitch-curve-line" class="pitch-curve-line" points=""></polyline></svg><button id="pitch-start-handle" class="record-selection-handle start" type="button" role="slider" aria-label="Pitch selection start" disabled></button><button id="pitch-end-handle" class="record-selection-handle end" type="button" role="slider" aria-label="Pitch selection end" disabled></button><div id="pitch-playhead" class="record-playhead"></div></div>
                       <div class="record-ticks"><span>0</span><span id="pitch-midpoint">15 s</span><span id="pitch-endpoint">30 s</span></div>
-                      <div class="record-selection-values"><span>Start <output id="pitch-start-value">0.00 s</output></span><span>End <output id="pitch-end-value">30.00 s</output></span></div>
+                      <div class="record-selection-values"><span>Start <output id="pitch-start-value">0.00 s</output></span><span>End <output id="pitch-end-value">30.00 s</output></span><span>dt <output id="pitch-duration-value">30.00 s</output></span></div>
                     </div></div>
                   </div>
                   <div class="sequence-pitch-controls" role="group" aria-label="Pitch recording controls">
@@ -512,7 +513,7 @@
               <fieldset>
                 <legend>Status</legend>
                 <div class="patch-status" id="patch-status">No patch operation yet.</div>
-                <div class="readout-line">Use Load and Save in TIMBRES for individual timbres. Session files include all eight slots, independent Gate and Pitch User presets, and COMMON SPACE. New files use timbre-v14 / session-v15; supported older files can be loaded. Legacy PEnv Amount/Time is ignored on import.</div>
+                <div class="readout-line">Use Load and Save in TIMBRES for individual timbres. Session files include all eight slots, independent Gate and Pitch User presets, and COMMON SPACE. New files use timbre-v15 / session-v16; supported older files can be loaded. Legacy PEnv Amount/Time is ignored on import.</div>
               </fieldset>
             </div>
           </section>

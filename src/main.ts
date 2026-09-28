@@ -501,9 +501,13 @@ mixerDivider.addEventListener('keydown', event => {
 const editorColumn = requireElement<HTMLElement>('.editor-column');
 const panelDivider = requireElement<HTMLElement>('#panel-divider');
 function setPanelShare(percent: number): void {
-  const share = Math.max(25, Math.min(75, percent));
+  const share = Math.max(0, Math.min(75, percent));
   editorColumn.style.setProperty('--diagram-share', `${share}fr`);
   editorColumn.style.setProperty('--edit-share', `${100 - share}fr`);
+  editorColumn.dataset.diagramCollapsed = String(share === 0);
+  const diagram = requireElement<HTMLElement>('.signal-map');
+  diagram.inert = share === 0;
+  diagram.setAttribute('aria-hidden', String(share === 0));
   panelDivider.setAttribute('aria-valuenow', String(Math.round(share)));
   window.dispatchEvent(new Event('resize'));
 }
@@ -527,9 +531,9 @@ document.addEventListener('selectstart', event => {
   if (!(target instanceof Element) || !target.closest('input[type="text"], textarea, [contenteditable="true"]')) event.preventDefault();
 });
 panelDivider.addEventListener('keydown', event => {
-  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown' && event.key !== 'Home') return;
+  if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown' && event.key !== 'Home' && event.key !== 'End') return;
   event.preventDefault();
-  setPanelShare(event.key === 'Home' ? 50 : Number(panelDivider.getAttribute('aria-valuenow')) + (event.key === 'ArrowDown' ? 2 : -2));
+  setPanelShare(event.key === 'Home' ? 50 : event.key === 'End' ? 0 : Number(panelDivider.getAttribute('aria-valuenow')) + (event.key === 'ArrowDown' ? 2 : -2));
 });
 
 function applyAutoTrigger(): void {
@@ -671,7 +675,7 @@ function applyPitchEnvelope(): void {
 
 function updateModReadout(mode: ModMode): void {
   const cutoff = requireElement<HTMLSelectElement>('#filter2-route').value === 'filter1-cutoff';
-  requireElement<HTMLElement>('#source-path-label').textContent = `OSC1 → MOD　　OSC2 → FILTER2 → ${cutoff ? 'F1 CUTOFF' : 'MOD'}`;
+  requireElement<HTMLElement>('#source-path-osc2').textContent = `OSC2 → FILTER2 → ${cutoff ? 'F1 CUTOFF' : 'MOD'}`;
   requireElement<HTMLElement>('#mod-path-label').textContent = `OSC2 → FILTER2 → ${cutoff ? 'F1 CUTOFF' : 'MOD'}`;
   if (cutoff) {
     modReadout.textContent = 'FILTER2 → F1 CUTOFF; MOD mode and depth retained';
@@ -725,9 +729,13 @@ gateUserButtons.forEach((button, index) => button.addEventListener('click', () =
 pitchUserButtons.forEach((button, index) => button.addEventListener('click', () => transport.setSelection(mixer.selectedId,
   { pitchUserId: `user-${index + 1}` as 'user-1' | 'user-2' | 'user-3' })));
 
-requireElement<HTMLSelectElement>('#phase-mode').addEventListener('change', event => {
-  selectedChannel()?.setPhaseMode((event.currentTarget as HTMLSelectElement).value as 'sync' | 'free');
-});
+for (const id of ['osc1', 'osc2'] as const) {
+  requireElement<HTMLSelectElement>(`#phase-mode-${id}`).addEventListener('change', event => {
+    const mode = (event.currentTarget as HTMLSelectElement).value as 'sync' | 'free';
+    selectedChannel()?.setPhaseMode(mode);
+    setValue(`#phase-mode-${id === 'osc1' ? 'osc2' : 'osc1'}`, mode);
+  });
+}
 
 requireElement<HTMLSelectElement>('#osc1-type').addEventListener('change', async (event) => {
   await selectedChannel()?.setOsc1Type((event.currentTarget as HTMLSelectElement).value as OscSourceType);
@@ -968,7 +976,8 @@ function syncUiFromTimbre(timbre: TimbreDocument): void {
   setValue('#osc2-type', ch.osc2.sourceType);
   setValue('#osc2-frequency', ch.osc2.baseFrequencyHz);
   setValue('#osc2-duty', Number((ch.osc2.dutyRatio * 100).toFixed(1)));
-  setValue('#phase-mode', ch.phaseMode);
+  setValue('#phase-mode-osc1', ch.phaseMode);
+  setValue('#phase-mode-osc2', ch.phaseMode);
   setValue('#penv-start', ch.pitchEnvelope.start * 100);
   setValue('#penv-attack-level', ch.pitchEnvelope.attack * 100);
   setValue('#penv-sustain-level', ch.pitchEnvelope.sustain * 100);
@@ -1077,7 +1086,7 @@ async function loadSessionSource(source: string, loadingMessage: string, loadedP
   try {
     patchStatus.textContent = loadingMessage;
     const raw = JSON.parse(source) as { channels?: Array<{ timbre?: { formatVersion?: string } | null }> };
-    const oldPitchEnvelope = raw.channels?.some(channel => channel.timbre && !['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14'].includes(channel.timbre.formatVersion ?? '')) ?? false;
+    const oldPitchEnvelope = raw.channels?.some(channel => channel.timbre && !['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15'].includes(channel.timbre.formatVersion ?? '')) ?? false;
     const session = parseLabSession(source);
     transport.stopAll();
     recorder.cancel();
@@ -1242,9 +1251,9 @@ document.querySelectorAll<HTMLInputElement>('input[data-numeric-min]').forEach((
   numericSliders.set(input, new NumericSliderControl(input));
 });
 
-functionEditor = new FunctionEditor(requireElement('.panel-deck'), cards => {
-  if (engine?.getChannel(mixer.selectedId)) engine.setEditorLayout(mixer.selectedId, cards);
-  activePathElement.textContent = 'Viewing: ' + (cards.map(id => id.toUpperCase()).join(' / ') || 'Select a block');
+functionEditor = new FunctionEditor(requireElement('.panel-deck'), layout => {
+  if (engine?.getChannel(mixer.selectedId)) engine.setEditorLayout(mixer.selectedId, layout);
+  activePathElement.textContent = 'Viewing: ' + (layout.flat().map(id => id.toUpperCase()).join(' / ') || 'Select a block');
 }, () => recorder.releaseScreenTrigger());
 commonEditor = new CommonSpaceEditor(requireElement('.panel-deck'), commonCards, () => {
   activePathElement.textContent = 'Viewing: COMMON SPACE · ' + commonEditor?.viewingLabel;
@@ -1264,7 +1273,7 @@ try {
   try { validateParameterRanges(P, context.sampleRate); }
   catch (error) { void context.close(); throw error; }
   engine = new AudioEngine(context, {
-    formatVersion: 'KOROGI-Lab/session-v15', name: 'KOROGI Session', savedAt: '',
+    formatVersion: 'KOROGI-Lab/session-v16', name: 'KOROGI Session', savedAt: '',
     channels: LAB_SLOT_IDS.map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
     near: defaultBus(), far: defaultBus(), crossfade: P.crossfade.defaultValue / 100, masterGainDb: P['master-gain'].defaultValue, masterMuted: false
   });

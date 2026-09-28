@@ -54,7 +54,7 @@ test('BURST is an independent One-shot Timbre block and round-trips its settings
   await edit(page, '#burst-group-period', 100);
   await edit(page, '#burst-group-jitter', 10);
   const timbre = await saveTimbre(page);
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v14');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v15');
   expect(timbre.settings.burst).toEqual({ enabled: true, pulseCountMin: 1, pulseCountMax: 3,
     pulseIntervalSec: .025, pulseIntervalJitter: .2, groupPeriodSec: .1, groupPeriodJitter: .1 });
 

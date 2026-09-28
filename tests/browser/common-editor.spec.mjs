@@ -20,7 +20,7 @@ test('Near and Far edit both effects independently and close/reorder never chang
   const handle = page.locator('[data-common-card="near"] .editor-card-handle');
   const from = await handle.boundingBox(), to = await page.locator('[data-common-card="far"] .editor-card-handle').boundingBox();
   await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2); await page.mouse.down();
-  await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 6 }); await page.mouse.up();
+  await page.mouse.move(to.x + 4, to.y + to.height / 2, { steps: 6 }); await page.mouse.up();
   expect(await layout(page)).toEqual(['near', 'far']);
   await expect(page.locator('#fx2-delay-time')).toHaveValue('440');
   for (const id of ['flow-near-fx2', 'flow-near-fx3', 'flow-far-fx2', 'flow-far-fx3']) await expect(page.locator(`#${id}`)).toHaveClass(/active/);
@@ -41,7 +41,8 @@ test('common rank capacity, all-close guidance and every output gain card remain
   await openCommonEditors(page, ['near', 'near-gain']);
   expect((await page.locator('[data-common-card="near"]').boundingBox()).width).toBeCloseTo(602.67, 0);
   expect((await page.locator('[data-common-card="near-gain"]').boundingBox()).width).toBeCloseTo(297.33, 0);
-  await page.locator('#flow-far-gain').click(); expect(await layout(page)).toEqual(['near', 'far-gain']);
+  await page.locator('#flow-far-gain').click(); expect(await layout(page)).toEqual(['near', 'near-gain', 'far-gain']);
+  expect(await page.locator('.common-editor .editor-card-column').last().locator('.space-card.active').count()).toBe(2);
   await openCommonEditors(page, ['near-gain', 'far-gain', 'master']);
   for (const [id, value] of [['near-gain', '-6'], ['far-gain', '-12'], ['master-gain', '-9']]) {
     await page.locator(`#${id}`).fill(value); await page.locator(`#${id}`).dispatchEvent('change');
@@ -52,6 +53,17 @@ test('common rank capacity, all-close guidance and every output gain card remain
   await expect(page.locator('.common-editor .editor-empty')).toBeVisible();
   await page.locator('#flow-balance').click(); expect(await layout(page)).toEqual(['balance']);
   await expect(page.locator('#crossfade')).toHaveValue('50');
+});
+
+test('COMMON SPACE stacks two Small cards and keeps the arrangement only during the session', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 }); await start(page); await openCommonEditors(page, ['near', 'near-gain']);
+  await page.locator('#flow-far-gain').click();
+  const columns = page.locator('.common-editor .editor-card-column');
+  expect(await columns.evaluateAll(nodes => nodes.map(column => [...column.querySelectorAll('.space-card.active')].map(card => card.dataset.commonCard)))).toEqual([['near'], ['near-gain', 'far-gain']]);
+  const session = await save(page);
+  expect(session).not.toHaveProperty('commonEditorLayout');
+  await page.locator('#flow-near-fx2').click();
+  expect(await columns.evaluateAll(nodes => nodes.map(column => [...column.querySelectorAll('.space-card.active')].map(card => card.dataset.commonCard)))).toEqual([['near'], ['near-gain', 'far-gain']]);
 });
 
 for (const viewport of [{ width: 1180, height: 820 }, { width: 1024, height: 768 }, { width: 1194, height: 834 }, { width: 1440, height: 900 }, { width: 360, height: 800 }, { width: 844, height: 390 }]) {

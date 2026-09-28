@@ -3,7 +3,7 @@ import { defaultBus, defaultTimbre, normalizeSession, normalizeTimbre } from './
 
 describe('FEnv persistence boundary', () => {
   it('preserves independent settings, enabled state and card order in both formats', () => {
-    const timbre = defaultTimbre(); timbre.editorLayout = ['fenv', 'aenv'];
+    const timbre = defaultTimbre(); timbre.editorLayout = [['fenv'], ['aenv']];
     timbre.settings.blocksEnabled.fenv = true;
     Object.assign(timbre.settings.filterEnvelope, { mode: 'one-shot', amountCent: -4800, sustain: 0,
       releaseTiming: 'rate', releaseCurve: 'linear', attackSec: 0, decaySec: 0, releaseSec: 0 });
@@ -21,7 +21,7 @@ describe('FEnv persistence boundary', () => {
       legacy.editorLayout = layout; delete legacy.settings.filterEnvelope; delete legacy.settings.blocksEnabled.fenv;
       const result = normalizeTimbre(legacy);
       expect(result.settings.filterEnvelope).toEqual({ ...defaultTimbre().settings.filterEnvelope, amountCent: 0 });
-      expect(result.settings.blocksEnabled.fenv).toBe(false); expect(result.editorLayout).toEqual(layout);
+      expect(result.settings.blocksEnabled.fenv).toBe(false); expect(result.editorLayout).toEqual(layout.map(id => [id]));
     }
   });
 

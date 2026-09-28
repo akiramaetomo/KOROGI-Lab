@@ -59,7 +59,9 @@ test('1280x800 fits Sequence without scrolling and keeps controls aligned', asyn
       length, recording, auto, pitchMode, portamento, pitchScale, pitchPerformance,
       gateTimeline, pitchTimeline, ton, repeat, inner, scrollWidth: editor.scrollWidth, clientWidth: editor.clientWidth,
       gateLabel: rect('.gate-timeline-area .record-timeline-label strong'), pitchLabel: rect('.pitch-timeline-area .record-timeline-label strong'),
-      gateMute: rect('#gate-mute'), pitchMute: rect('#pitch-mute'), link: rect('#sequence-link'),
+      gateMute: rect('#gate-mute'), pitchMute: rect('#pitch-mute'), link: rect('#sequence-link'), lock: rect('#sequence-length-lock'),
+      pitchTarget: rect('#pitch-record-target'), gateValues: rect('.gate-timeline-area .record-selection-values'),
+      pitchValues: rect('.pitch-timeline-area .record-selection-values'),
       recorded: rect('#source-recorded'), autoButton: rect('#source-auto'),
       tonControl: rect('[data-numeric-control="ton"]'), repeatControl: rect('[data-numeric-control="trepeat"]'),
       divider: getComputedStyle(editor.querySelector('.pitch-performance')).borderTopWidth };
@@ -83,6 +85,10 @@ test('1280x800 fits Sequence without scrolling and keeps controls aligned', asyn
   expect(layout.gateMute.right).toBeLessThan(layout.gateTimeline.left);
   expect(layout.pitchMute.right).toBeLessThan(layout.pitchTimeline.left);
   expect(layout.link.left).toBeGreaterThan(layout.pitchLabel.right);
+  expect(layout.lock.left).toBeGreaterThanOrEqual(layout.link.right);
+  expect(layout.lock.right).toBeLessThanOrEqual(layout.pitchTarget.left);
+  expect(layout.gateValues.right).toBeLessThanOrEqual(layout.gateTimeline.right);
+  expect(layout.pitchValues.right).toBeLessThanOrEqual(layout.pitchTimeline.right);
   expect(layout.pitchTimeline.bottom).toBeLessThan(layout.pitchMode.top);
   expect(layout.pitchMode.right).toBeLessThan(layout.portamento.left);
   expect(layout.portamento.right).toBeLessThan(layout.pitchScale.left);
@@ -90,6 +96,32 @@ test('1280x800 fits Sequence without scrolling and keeps controls aligned', asyn
   expect(layout.trigger.left).toBeGreaterThan(layout.pitchPerformance.left);
   expect(layout.divider).toBe('2px');
   expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
+});
+
+test('Length Lock and dt fit the iPad reference width and narrow local scroll', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 });
+  await start(page); await openTimbreEditors(page, ['sequence']);
+  const measure = () => page.locator('.trigger-editor').evaluate(editor => {
+    const rect = selector => editor.querySelector(selector).getBoundingClientRect();
+    const label = rect('.pitch-timeline-area .record-timeline-label');
+    const values = ['.gate-timeline-area .record-selection-values', '.pitch-timeline-area .record-selection-values']
+      .map(selector => rect(selector));
+    const areas = ['.gate-timeline-area', '.pitch-timeline-area'].map(selector => rect(selector));
+    return { clientWidth: editor.clientWidth, scrollWidth: editor.scrollWidth,
+      labelRight: label.right, targetLeft: rect('#pitch-record-target').left,
+      lockRight: rect('#sequence-length-lock').right,
+      values: values.map((value, index) => ({ left: value.left, right: value.right, areaLeft: areas[index].left, areaRight: areas[index].right })) };
+  });
+  let layout = await measure();
+  expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
+  expect(layout.lockRight).toBeLessThanOrEqual(layout.targetLeft);
+  expect(layout.values.every(value => value.left >= value.areaLeft && value.right <= value.areaRight)).toBe(true);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  layout = await measure();
+  expect(layout.scrollWidth).toBeGreaterThanOrEqual(layout.clientWidth);
+  expect(layout.values.every(value => value.left >= value.areaLeft && value.right <= value.areaRight)).toBe(true);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
 });
 
 test('TIMBRES width resizes, scrolls below 65 percent, and collapses without stacking controls', async ({ page }, testInfo) => {
@@ -499,4 +531,22 @@ test('Touching diagram blocks never opens an editor input or native select', asy
       expect(await page.evaluate(() => document.activeElement?.tagName)).not.toMatch(/INPUT|SELECT/);
     }
   } finally { await context.close(); }
+});
+
+test('divider hides the diagram completely and restores it by keyboard and pointer', async ({ page }) => {
+  await page.setViewportSize({ width: 1024, height: 768 }); await start(page);
+  const divider = page.locator('#panel-divider');
+  await divider.focus(); await divider.press('End');
+  await expect(divider).toHaveAttribute('aria-valuenow', '0');
+  await expect(page.locator('.signal-map')).toHaveAttribute('aria-hidden', 'true');
+  expect((await page.locator('.signal-map').boundingBox()).height).toBeLessThan(1);
+  await divider.press('ArrowDown');
+  await expect(divider).toHaveAttribute('aria-valuenow', '2');
+  await expect(page.locator('.signal-map')).toHaveAttribute('aria-hidden', 'false');
+  await divider.press('Home');
+  await expect(divider).toHaveAttribute('aria-valuenow', '50');
+  const bar = await divider.boundingBox(), column = await page.locator('.editor-column').boundingBox();
+  await page.mouse.move(bar.x + bar.width / 2, bar.y + bar.height / 2); await page.mouse.down();
+  await page.mouse.move(bar.x + bar.width / 2, column.y + 1, { steps: 5 }); await page.mouse.up();
+  await expect(divider).toHaveAttribute('aria-valuenow', '0');
 });

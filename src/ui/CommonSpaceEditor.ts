@@ -41,7 +41,7 @@ export function prepareCommonSpaceCards(deck: HTMLElement): Map<CommonCardId, HT
 
 export class CommonSpaceEditor extends CardEditor<CommonCardId> {
   constructor(deck: HTMLElement, cards: Map<CommonCardId, HTMLElement>, changed: () => void) {
-    super(deck, COMMON_CARDS, cards, [], 'commonTarget', null, changed, () => {});
+    super(deck, COMMON_CARDS, cards, [], 'commonTarget', changed, () => {});
     this.hide();
   }
 }

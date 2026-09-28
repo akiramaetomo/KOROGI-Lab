@@ -1,4 +1,4 @@
-import type { EditorCardId } from '../model/editorLayout';
+import type { EditorLayout } from '../model/editorLayout';
 export type OscSourceType = 'sine' | 'sawtooth' | 'triangle' | 'square' | 'white-noise';
 export type PhaseMode = 'sync' | 'free';
 export type ModMode = 'off' | 'am' | 'fm';
@@ -122,8 +122,8 @@ export interface BusSettings {
 }
 
 export interface TimbreDocument {
-  editorLayout: EditorCardId[];
-  formatVersion: 'KOROGI-Lab/timbre-v14';
+  editorLayout: EditorLayout;
+  formatVersion: 'KOROGI-Lab/timbre-v15';
   name: string;
   settings: ChannelSettings;
   detuneRangeCent: number;
@@ -187,7 +187,7 @@ export interface SessionChannel extends ChannelMixSettings {
 
 /** The engine does not impose the Lab UI's four-slot limit. */
 export interface SessionDocument {
-  formatVersion: 'KOROGI-Lab/session-v15';
+  formatVersion: 'KOROGI-Lab/session-v16';
   name: string;
   savedAt: string;
   channels: SessionChannel[];

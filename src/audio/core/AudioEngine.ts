@@ -1,4 +1,4 @@
-import { normalizeEditorLayout, type EditorCardId } from '../../model/editorLayout';
+import { normalizeEditorLayout, type EditorLayout } from '../../model/editorLayout';
 import { ChannelSynth } from './ChannelSynth';
 import { WhiteNoiseFactory } from '../dsp/WhiteNoiseFactory';
 import { EffectSlot } from '../effects/EffectSlot';
@@ -55,7 +55,7 @@ class ChannelStrip {
   readonly sends: [GainNode, GainNode];
   readonly directTap: GainNode;
   name: string;
-  editorLayout: EditorCardId[];
+  editorLayout: EditorLayout;
   gatePatterns: GatePattern[];
   pitchPatterns: PitchPattern[];
   sequence: SequenceSelection;
@@ -65,7 +65,7 @@ class ChannelStrip {
   private disposed = false;
   constructor(private readonly context: AudioContext, noise: WhiteNoiseFactory, id: string, timbre: TimbreDocument, mix: ChannelMixSettings,
     buses: Record<BusAssignment, SpaceBus>, directInput: AudioNode) {
-    this.editorLayout = [...timbre.editorLayout]; this.name = timbre.name; this.gatePatterns = structuredClone(timbre.gatePatterns);
+    this.editorLayout = structuredClone(timbre.editorLayout); this.name = timbre.name; this.gatePatterns = structuredClone(timbre.gatePatterns);
     this.pitchPatterns = structuredClone(timbre.pitchPatterns); this.sequence = structuredClone(timbre.sequence);
     this.mix = { gainDb: mix.gainDb, muted: mix.muted, balance: mix.balance, pan: mix.pan };
     this.synth = new ChannelSynth(context, noise, timbre.settings, timbre.detuneNormalized, id);
@@ -92,7 +92,7 @@ class ChannelStrip {
     equalPower(this.mix.balance).forEach((gain, i) => smoothAudioParam(this.sends[i]!.gain, gain, now, PARAM_SMOOTH_SEC));
   }
   timbre(): TimbreDocument {
-    return { formatVersion: 'KOROGI-Lab/timbre-v14', editorLayout: [...this.editorLayout], name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(),
+    return { formatVersion: 'KOROGI-Lab/timbre-v15', editorLayout: structuredClone(this.editorLayout), name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(),
       gatePatterns: structuredClone(this.gatePatterns), pitchPatterns: structuredClone(this.pitchPatterns), sequence: structuredClone(this.sequence) };
   }
   fadeOut(): void {
@@ -143,7 +143,7 @@ export class AudioEngine {
     this.output.threshold.value = -3; this.output.knee.value = 0; this.output.ratio.value = 20;
     this.output.attack.value = .003; this.output.release.value = .1;
     const session = normalizeSession(initial ?? {
-      formatVersion: 'KOROGI-Lab/session-v15', name: 'Untitled', savedAt: '', channels: [{ id: '1', ...DEFAULT_CHANNEL_MIX, timbre: defaultTimbre() }],
+      formatVersion: 'KOROGI-Lab/session-v16', name: 'Untitled', savedAt: '', channels: [{ id: '1', ...DEFAULT_CHANNEL_MIX, timbre: defaultTimbre() }],
       near: defaultBus(), far: defaultBus(), crossfade: P.crossfade.defaultValue / 100, masterGainDb: P['master-gain'].defaultValue, masterMuted: false
     });
     this.graph = this.prepareGraph(session);
@@ -180,9 +180,9 @@ export class AudioEngine {
   removeChannel(id: string): void { this.clearChannel(id); this.graph.slots = this.graph.slots.filter(slot => slot.id !== id); }
   setTimbreName(id: string, name: string): void { this.assertReady(); this.strip(id).name = name.trim() || 'Untitled'; }
   createTimbre(id: string): TimbreDocument { return this.strip(id).timbre(); }
-  getEditorLayout(id: string): EditorCardId[] { return [...this.strip(id).editorLayout]; }
-  setEditorLayout(id: string, cards: readonly EditorCardId[]): void {
-    this.assertReady(); this.strip(id).editorLayout = normalizeEditorLayout(cards);
+  getEditorLayout(id: string): EditorLayout { return structuredClone(this.strip(id).editorLayout); }
+  setEditorLayout(id: string, layout: readonly (readonly string[])[]): void {
+    this.assertReady(); this.strip(id).editorLayout = normalizeEditorLayout(layout);
   }
   getSequenceSelection(id: string): SequenceSelection { return structuredClone(this.strip(id).sequence); }
   setSequenceSelection(id: string, changes: Partial<SequenceSelection>): void {
@@ -270,7 +270,7 @@ export class AudioEngine {
   setMasterMuted(muted: boolean): void { this.assertReady(); this.masterMuted = muted; smoothAudioParam(this.preLimiterOutput.gain, muted ? 0 : 1, this.context.currentTime, PARAM_SMOOTH_SEC); }
   isMasterMuted(): boolean { return this.masterMuted; }
   createSession(name: string): SessionDocument {
-    return { formatVersion: 'KOROGI-Lab/session-v15', name: name.trim() || 'Untitled', savedAt: new Date().toISOString(),
+    return { formatVersion: 'KOROGI-Lab/session-v16', name: name.trim() || 'Untitled', savedAt: new Date().toISOString(),
       channels: this.graph.slots.map(slot => ({ id: slot.id, ...this.getChannelMix(slot.id), timbre: this.graph.strips.get(slot.id)?.timbre() ?? null })),
       near: this.getBusSettings('near'), far: this.getBusSettings('far'), crossfade: this.crossfade, masterGainDb: this.masterGainDb, masterMuted: this.masterMuted };
   }

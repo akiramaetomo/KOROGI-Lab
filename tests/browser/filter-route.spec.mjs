@@ -13,7 +13,6 @@ test('FILTER2 destination, depth, segmented choices, and v4 save stay synchroniz
   await page.locator('#flow-mod').click();
   await expect(page.locator('#mod-mode + .segmented-choice [role="radio"]').first()).toBeDisabled();
   await expect(page.locator('#mod-readout')).toContainText('MOD mode and depth retained');
-  await page.locator('#flow-filter2').click();
   await expect(page.locator('#filter1-cutoff-depth-coarse')).toBeVisible();
   await page.locator('#filter1-cutoff-depth').fill('4800');
   await page.locator('#filter1-cutoff-depth').dispatchEvent('change');
@@ -51,9 +50,9 @@ test('FILTER2 destination, depth, segmented choices, and v4 save stay synchroniz
     await engine.close();
     return { saved: saved.channels[0].timbre, migrated: migrated.channels[0].timbre, migratedVersion: migrated.formatVersion, rejected, retained };
   });
-  expect(result.saved.formatVersion).toBe('KOROGI-Lab/timbre-v14');
+  expect(result.saved.formatVersion).toBe('KOROGI-Lab/timbre-v15');
   expect(result.saved.settings.filter1CutoffDepthCent).toBe(4800);
-  expect(result.migratedVersion).toBe('KOROGI-Lab/session-v15');
+  expect(result.migratedVersion).toBe('KOROGI-Lab/session-v16');
   expect(result.migrated.settings.filter2Route).toBe('mod');
   expect(result.migrated.settings.filter1CutoffDepthCent).toBe(1200);
   expect(result.rejected && result.retained).toBe(true);

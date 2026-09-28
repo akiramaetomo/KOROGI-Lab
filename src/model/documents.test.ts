@@ -4,7 +4,7 @@ import type { SessionDocument } from '../audio/types';
 import { PARAMETER_RANGES as P, parameterValueBounds } from '../config/parameterRanges';
 
 function session(): SessionDocument {
-  return { formatVersion: 'KOROGI-Lab/session-v15', name: 'Four', savedAt: '2026-09-19', channels: ['1', '2', '3', '4'].map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
+  return { formatVersion: 'KOROGI-Lab/session-v16', name: 'Four', savedAt: '2026-09-19', channels: ['1', '2', '3', '4'].map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
     near: defaultBus(), far: defaultBus(), crossfade: .5, masterGainDb: -18, masterMuted: false };
 }
 function legacy(assignment = 'mix1') {
@@ -20,6 +20,7 @@ describe('Timbre and session boundaries', () => {
     expect(parseLabSession(JSON.stringify(full)).channels[0]!.timbre!.pitchPatterns.map(item => item.filterAmountCent)).toEqual([-4800, 0, 4800]);
     const old = structuredClone(timbre) as unknown as Record<string, any>;
     old.formatVersion = 'KOROGI-Lab/timbre-v13';
+    old.editorLayout = ['osc1', 'osc2'];
     old.pitchPatterns.forEach((item: Record<string, unknown>) => { delete item.filterAmountCent; });
     expect(normalizeTimbre(old).pitchPatterns.map(item => item.filterAmountCent)).toEqual([0, 0, 0]);
     for (const invalid of [undefined, null, '1200', NaN, Infinity]) {
@@ -37,7 +38,7 @@ describe('Timbre and session boundaries', () => {
     oldSettings.autoTrigger = { tonSec: .25, toffSec: .25, oneShotRepeatSec: .5 };
     delete (oldSettings.ampEnvelope as Record<string, unknown>).releaseTiming;
     const migrated = normalizeTimbre(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v14');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v15');
     expect(migrated.settings.pitchEnvelope).toEqual(defaultTimbre().settings.pitchEnvelope);
     expect(migrated.settings.ampEnvelope.releaseTiming).toBe('time');
     const newTimbre = defaultTimbre();
@@ -190,9 +191,9 @@ describe('Timbre and session boundaries', () => {
     (settings.osc2 as Record<string, unknown>).baseFrequencyHz = 1_000_000;
     channels[0]!.gainDb = 6;
     const migrated = parseLabSession(JSON.stringify(old));
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v15');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v16');
     expect(migrated.channels.every(channel => channel.pan === 0)).toBe(true);
-    expect(migrated.channels[0]!.timbre?.formatVersion).toBe('KOROGI-Lab/timbre-v14');
+    expect(migrated.channels[0]!.timbre?.formatVersion).toBe('KOROGI-Lab/timbre-v15');
     expect(migrated.channels[0]!.timbre?.settings.phaseMode).toBe('free');
     expect(migrated.channels[0]!.timbre?.settings.filter2Route).toBe('mod');
     expect(migrated.channels[0]!.timbre?.settings.filter1CutoffDepthCent).toBe(1200);
@@ -231,7 +232,7 @@ describe('Timbre and session boundaries', () => {
     timbre.formatVersion = 'KOROGI-Lab/timbre-v4'; delete timbre.playbackSource;
     timbre.recording = { durationSec: 1, selectionStartSec: 0, selectionEndSec: 1, gates: [{ onSec: .1, offSec: .2 }] };
     const migrated = normalizeSession(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v15');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v16');
     expect(migrated.channels[0]!.timbre!.sequence.gateMode).toBe('auto');
     expect(migrated.channels[0]!.timbre!.gatePatterns[0]!.recording).toEqual(timbre.recording);
     expect(migrated.channels[0]!.timbre!.gatePatterns[1]!.recording).toBeNull();
@@ -257,7 +258,7 @@ describe('Timbre and session boundaries', () => {
     old.patterns = [{ id: 'user-1', recording: { durationSec: 1, selectionStartSec: 0, selectionEndSec: 1,
       gates: [{ onSec: .1, offSec: .4 }] } }, { id: 'user-2', recording: null }];
     const migrated = normalizeTimbre(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v14');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v15');
     expect(migrated.pitchPatterns[2]!.recording).toBeNull();
     expect(migrated.gatePatterns[0]!.recording).toEqual((old.patterns as Array<Record<string, unknown>>)[0]!.recording);
     expect(migrated.pitchPatterns.map(pattern => pattern.recording)).toEqual([null, null, null]);

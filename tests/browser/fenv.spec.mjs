@@ -108,7 +108,7 @@ test('UI held TRG renders the audible one-second FEnv sweep', async ({ page }, i
   patch.settings.blocksEnabled.fenv = true;
   Object.assign(patch.settings.filterEnvelope, { amountCent: 3600, attackSec: .005, decaySec: 1, sustain: 0,
     releaseSec: .1, attackCurve: 'linear', decayCurve: 'linear', releaseCurve: 'linear' });
-  patch.editorLayout = ['filter1', 'fenv'];
+  patch.editorLayout = [['filter1'], ['fenv']];
   await writeFile(info.outputPath('fenv-diagnostic.json'), JSON.stringify(patch, null, 2));
   await page.evaluate(() => {
     const meter = window.__sweepContext.createAnalyser(); meter.fftSize = 2048; meter.smoothingTimeConstant = 0;
@@ -165,8 +165,8 @@ test('FEnv shares ADSR controls, keeps independent values and round-trips cards/
   await page.locator('[data-editor-card="fenv"] .editor-card-handle').press('ArrowLeft');
   const download = page.waitForEvent('download'); await page.locator('#save-1').click();
   const value = JSON.parse(await readFile(await (await download).path(), 'utf8'));
-  expect(value.formatVersion).toBe('KOROGI-Lab/timbre-v14');
-  expect(value.editorLayout).toEqual(['fenv', 'aenv']); expect(value.settings.blocksEnabled.fenv).toBe(true);
+  expect(value.formatVersion).toBe('KOROGI-Lab/timbre-v15');
+  expect(value.editorLayout).toEqual([['fenv'], ['aenv']]); expect(value.settings.blocksEnabled.fenv).toBe(true);
   expect(value.settings.filterEnvelope).toMatchObject({ amountCent: -2400, attackSec: .045,
     mode: 'one-shot', releaseTiming: 'rate', releaseCurve: 'linear', attackCurve: 'exponential' });
   await page.locator('#timbre-file-1').setInputFiles({ name: 'fenv.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(value)) });
