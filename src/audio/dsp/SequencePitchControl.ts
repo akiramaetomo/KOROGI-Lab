@@ -29,7 +29,7 @@ export class SequencePitchControl {
     this.pruneBefore(this.context.currentTime);
     const startValue = this.valueAt(startTime);
     const target = clamp(cents, -this.maxCent, this.maxCent);
-    const duration = clamp(transitionSec, P['sequence-portamento'].min / 1000, P['sequence-portamento'].max / 1000);
+    const duration = clamp(transitionSec, 0, 5); // Preserve imported legacy glides above the new 1000 ms UI limit.
     this.truncateAt(startTime, startValue);
     this.output.offset.cancelScheduledValues(startTime);
     this.output.offset.setValueAtTime(startValue, startTime);

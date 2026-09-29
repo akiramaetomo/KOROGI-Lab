@@ -3,7 +3,7 @@ import type { PitchEnvelopeSettings } from '../types';
 import { clamp, holdAudioParam, smoothAudioParam } from './params';
 
 type SegmentKind = 'idle' | 'attack' | 'decay' | 'sustain' | 'release';
-interface Segment { kind: SegmentKind; start: number; end: number; from: number; to: number; }
+interface Segment { kind: SegmentKind; start: number; end: number; from: number; to: number; curve?: 'linear' | 'logarithmic' }
 type Event = { kind: 'on'; time: number; settings: PitchEnvelopeSettings; ownedOffTime?: number } | { kind: 'off'; time: number };
 type GateOn = Extract<Event, { kind: 'on' }>;
 
@@ -85,7 +85,11 @@ export class PitchEnvelopeControl {
     const segment = this.segmentAt(time);
     if (time >= segment.end) return segment.to;
     const progress = (time - segment.start) / (segment.end - segment.start);
-    return segment.from + (segment.to - segment.from) * progress;
+    return segment.from + (segment.to - segment.from) * this.progress(progress, segment.curve);
+  }
+
+  private progress(value: number, curve: Segment['curve']): number {
+    return curve === 'logarithmic' ? Math.log1p(9 * value) / Math.log(10) : value;
   }
 
   scaledValueAt(time: number): number {
@@ -100,7 +104,7 @@ export class PitchEnvelopeControl {
       : settings.releaseTiming === 'rate' && baseline + 16 * Number.EPSILON >= .001
         ? settings.releaseSec * difference / baseline : settings.releaseSec;
     const end = time + duration;
-    this.segments.push({ kind: 'release', start: time, end, from, to: settings.release });
+    this.segments.push({ kind: 'release', start: time, end, from, to: settings.release, curve: settings.curve });
     this.segments.push({ kind: 'idle', start: end, end, from: settings.release, to: settings.release });
   }
 
@@ -170,8 +174,8 @@ export class PitchEnvelopeControl {
         const attackEnd = event.time + settings.attackSec;
         const decayEnd = attackEnd + settings.decaySec;
         this.segments.push(
-          { kind: 'attack', start: event.time, end: attackEnd, from: settings.start, to: settings.attack },
-          { kind: 'decay', start: attackEnd, end: decayEnd, from: settings.attack, to: settings.sustain },
+          { kind: 'attack', start: event.time, end: attackEnd, from: settings.start, to: settings.attack, curve: settings.curve },
+          { kind: 'decay', start: attackEnd, end: decayEnd, from: settings.attack, to: settings.sustain, curve: settings.curve },
           { kind: 'sustain', start: decayEnd, end: decayEnd, from: settings.sustain, to: settings.sustain }
         );
         if (settings.mode === 'one-shot') this.addRelease(decayEnd, settings.sustain, settings);
@@ -202,8 +206,15 @@ export class PitchEnvelopeControl {
     for (const segment of this.segments) {
       if (segment.start === segment.end && segment.end >= time) offset.setValueAtTime(segment.to, segment.end);
       else if (segment.end > time) {
+        const start = Math.max(time, segment.start);
         if (segment.start > time) offset.setValueAtTime(segment.from, segment.start);
-        offset.linearRampToValueAtTime(segment.to, segment.end);
+        if (segment.curve === 'logarithmic' && segment.end - start >= .001) {
+          const curve = Float32Array.from({ length: 65 }, (_, index) => {
+            const progress = (start + (segment.end - start) * index / 64 - segment.start) / (segment.end - segment.start);
+            return segment.from + (segment.to - segment.from) * this.progress(progress, segment.curve);
+          });
+          offset.setValueCurveAtTime(curve, start, segment.end - start);
+        } else offset.linearRampToValueAtTime(segment.to, segment.end);
       }
     }
   }
@@ -214,6 +225,6 @@ export class PitchEnvelopeControl {
     return { start: level(value.start), attack: level(value.attack), sustain: level(value.sustain), release: level(value.release),
       attackSec: seconds(value.attackSec), decaySec: seconds(value.decaySec), releaseSec: seconds(value.releaseSec),
       scale: clamp(value.scale, LIMITS.pitchScale.min, LIMITS.pitchScale.max), releaseTiming: value.releaseTiming === 'rate' ? 'rate' : 'time',
-      mode: value.mode === 'one-shot' ? 'one-shot' : 'gate' };
+      mode: value.mode === 'one-shot' ? 'one-shot' : 'gate', curve: value.curve === 'logarithmic' ? 'logarithmic' : 'linear' };
   }
 }

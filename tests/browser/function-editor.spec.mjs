@@ -58,11 +58,11 @@ test('reorders by keyboard and mouse without replacing controls or their values'
 test('retains unsaved layouts per timbre, exports both formats and restores files including empty layouts', async ({ page }) => {
   await start(page); await closeAll(page); await select(page, 'filter1'); await select(page, 'osc1');
   const timbre = await saved(page, '#save-1');
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v15'); expect(timbre.editorLayout).toEqual([['filter1'], ['osc1']]);
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v16'); expect(timbre.editorLayout).toEqual([['filter1'], ['osc1']]);
   await page.locator('#select-2').click(); await page.locator('#standard-2').click(); await closeAll(page);
   await page.locator('#select-1').click(); expect(await layout(page)).toEqual(['filter1', 'osc1']);
   await page.locator('#files-menu').click(); const session = await saved(page, '#export-patch');
-  expect(session.formatVersion).toBe('KOROGI-Lab/session-v16'); expect(session.channels[1].timbre.editorLayout).toEqual([]);
+  expect(session.formatVersion).toBe('KOROGI-Lab/session-v17'); expect(session.channels[1].timbre.editorLayout).toEqual([]);
   await page.locator('#patch-file').setInputFiles({ name: 'session.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) });
   await expect(page.locator('#patch-status')).toContainText('Loaded');
   await select(page, 'filter1'); expect(await layout(page)).toEqual(['filter1', 'osc1']);
@@ -179,6 +179,22 @@ test(`closing Sequence by ${closeBy} releases its held screen Trigger while reco
 });
 }
 
+test('OSC Gate Phase sits directly above the source settings in both cards', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
+  await openTimbreEditors(page, ['osc1', 'osc2', 'mod']);
+  for (const id of ['osc1', 'osc2']) {
+    const geometry = await card(page, id).evaluate((root, osc) => {
+      const heading = root.querySelector('.editor-card-heading').getBoundingClientRect();
+      const phase = root.querySelector(`.source-phase-row[data-osc="${osc}"]`).getBoundingClientRect();
+      const settings = root.querySelector('fieldset').getBoundingClientRect();
+      return { heading, phase, settings, card: root.getBoundingClientRect() };
+    }, id);
+    expect(geometry.heading.bottom).toBeLessThanOrEqual(geometry.phase.top);
+    expect(geometry.phase.bottom).toBeLessThanOrEqual(geometry.settings.top);
+    expect(geometry.phase.right).toBeLessThanOrEqual(geometry.card.right);
+  }
+});
+
 test('Medium takes priority over Small and AEnv choices fit even at the Medium minimum', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
   await openTimbreEditors(page, ['aenv', 'osc1']);
@@ -222,6 +238,72 @@ test('Sequence Record title, vertical modes, unit and full timer fit the smalles
   expect(geometry.grip).toContain('radial-gradient');
   await expect(page.locator('.record-length-heading')).toHaveText('Record length (s)');
   await page.screenshot({ path: testInfo.outputPath('sequence-record-polish.png') });
+});
+
+test('Envelope and Sequence controls keep labels, buttons, and readouts aligned', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
+  const referenceHeights = [];
+  for (const [id, select] of [['mod', '#mod-mode'], ['osc1', '#phase-mode-osc1'], ['filter1', '#filter1-type']]) {
+    await openTimbreEditors(page, [id]);
+    referenceHeights.push(await page.locator(`${select} + .segmented-choice button`).first().evaluate(node => node.getBoundingClientRect().height));
+  }
+  expect(referenceHeights[1]).toBeCloseTo(referenceHeights[0], 1);
+  expect(referenceHeights[2]).toBeCloseTo(referenceHeights[0], 1);
+  for (const id of ['penv', 'aenv', 'fenv']) {
+    await openTimbreEditors(page, [id, id === 'penv' ? 'aenv' : 'penv']);
+    const geometry = await card(page, id).evaluate((root, prefix) => {
+      const switches = prefix === 'penv' ? root.querySelector('.penv-mode-switches') : root.querySelector('.adsr-mode-row');
+      const layout = switches.parentElement;
+      const columns = getComputedStyle(layout).gridTemplateColumns.split(' ').map(parseFloat);
+      const rows = [...switches.querySelectorAll('.choice-field')];
+      return { cardWidth: root.getBoundingClientRect().width, columns,
+        fits: layout.scrollWidth <= layout.clientWidth + 1,
+        rows: rows.map(row => {
+        const label = row.querySelector('span').getBoundingClientRect();
+        const buttons = [...row.querySelectorAll('.segmented-choice button')];
+        const first = buttons[0].getBoundingClientRect();
+        return { text: row.querySelector('span').textContent.trim(), gap: first.left - label.right,
+          heights: buttons.map(button => button.getBoundingClientRect().height),
+          labelsFit: buttons.every(button => button.scrollWidth <= button.clientWidth + 1) };
+      }) };
+    }, id);
+    expect(geometry.rows.map(row => row.text)).toEqual(['mode', 'curve', 'release']);
+    expect(geometry.columns[0]).toBeCloseTo(geometry.columns[1], 1);
+    expect(geometry.columns[0]).toBeLessThanOrEqual(geometry.cardWidth / 2);
+    expect(geometry.fits).toBe(true);
+    for (const row of geometry.rows) {
+      expect(row.gap).toBeGreaterThanOrEqual(0); expect(row.gap).toBeLessThan(12); expect(row.labelsFit).toBe(true);
+      for (const height of row.heights) expect(height).toBeCloseTo(referenceHeights[0], 1);
+    }
+    await card(page, id).screenshot({ path: testInfo.outputPath(`${id}-minimum-card.png`) });
+  }
+
+  await openTimbreEditors(page, ['sequence']);
+  const geometry = await card(page, 'sequence').evaluate(root => {
+    const rect = selector => root.querySelector(selector).getBoundingClientRect();
+    const counter = root.querySelector('#record-counter');
+    const button = root.querySelector('#record-toggle');
+    return { curveLabel: rect('.pitch-scale-choice > span'), curveSelect: rect('#sequence-pitch-mode'),
+      counter: counter.getBoundingClientRect(), button: button.getBoundingClientRect(),
+      counterFont: parseFloat(getComputedStyle(counter).fontSize), buttonFont: parseFloat(getComputedStyle(button).fontSize),
+      timings: ['ton', 'trepeat'].map(id => {
+        const control = root.querySelector(`[data-numeric-control="${id}"]`);
+        return { caption: control.querySelector('.numeric-caption').getBoundingClientRect(), input: control.querySelector('input').getBoundingClientRect(),
+          slider: control.querySelector('.numeric-slider-axis').getBoundingClientRect() };
+      }) };
+  });
+  expect(geometry.curveLabel.bottom).toBeLessThan(geometry.curveSelect.top);
+  expect(geometry.counter.bottom).toBeLessThanOrEqual(geometry.button.top);
+  expect(geometry.counterFont).toBeGreaterThan(geometry.buttonFont);
+  for (const row of geometry.timings) {
+    expect(row.input.left - row.caption.right).toBeGreaterThanOrEqual(0);
+    expect(row.input.left - row.caption.right).toBeLessThan(12);
+    expect(row.slider.width).toBeGreaterThanOrEqual(70);
+  }
+  await expect(page.locator('#sequence-pitch-ticks .center')).toHaveCount(1);
+  await expect(page.locator('.pitch-scale-choice > span')).toHaveText('Pitch curve');
+  await page.locator('.sequence-pitch-controls').screenshot({ path: testInfo.outputPath('sequence-pitch-controls.png') });
+  await page.locator('.pitch-performance').screenshot({ path: testInfo.outputPath('sequence-pitch-slider.png') });
 });
 
 test('live AoE width grows capacity, caps cards and retains wide layouts across resize and both file formats', async ({ page }) => {

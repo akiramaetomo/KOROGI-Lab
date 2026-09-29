@@ -2,7 +2,8 @@ import type { AudioEngine } from '../audio/core/AudioEngine';
 import type { ChannelSynth } from '../audio/core/ChannelSynth';
 import type { PitchPoint, PitchRecording, SequenceSelection, SequenceSettings, TriggerGate, TriggerRecording, UserPatternId } from '../audio/types';
 import { MAX_RECORDING_SEC } from '../model/triggerRecording';
-import { quantizePitchValue, simplifyPitchPoints } from '../model/sequencePitch';
+import { pitchPositions, quantizePitchValue, simplifyPitchPoints } from '../model/sequencePitch';
+import type { PitchScaleMode } from '../audio/types';
 import { PARAMETER_RANGES as P } from '../config/parameterRanges';
 import { spliceGateRecording, splicePitchRecording } from '../model/sequenceLoopRecording';
 import type { RecordingLane, SequenceTransport } from './SequenceTransport';
@@ -17,7 +18,22 @@ function timeText(seconds: number): string {
 }
 
 function sourceLabel(id: UserPatternId): string { return `User ${id.slice(-1)}`; }
-const SCALE_STOPS = [200, 400, 600, 1200, 2400] as const;
+const SCALE_STOPS = [0, 200, 400, 600, 1200, 2400] as const;
+const MOTION_STORAGE_KEY = 'KOROGI-Lab/sequence-slide-gate-motion-v1';
+const STOP_TIME_STORAGE_KEY = 'KOROGI-Lab/sequence-slide-gate-stop-time-v1';
+
+interface PitchGesture {
+  pointerId: number;
+  owner: string;
+  ownsGate: boolean;
+  id: string;
+  synth: ChannelSynth;
+  source: SequenceSelection;
+  startValue: number;
+  offsetX: number;
+  lastSignificantX: number;
+  lastMovedAt: number | null;
+}
 
 /** Records independent Gate and Pitch lanes while retaining the unrecorded lane. */
 export class TriggerRecorder {
@@ -53,6 +69,10 @@ export class TriggerRecorder {
   private heldSynth: ChannelSynth | null = null;
   private heldActive = false;
   private heldOnSec: number | null = null;
+  private pitchGesture: PitchGesture | null = null;
+  private pitchRequest = 0;
+  private motionEnabled = true;
+  private motionStopMs = 150;
   private gateDraft: TriggerGate[] = [];
   private pitchDraft: PitchPoint[] = [];
 
@@ -62,12 +82,17 @@ export class TriggerRecorder {
   private readonly counter = this.element<HTMLOutputElement>('#record-counter');
   private readonly recordMode = this.element<HTMLSelectElement>('#record-mode');
   private readonly pitchInput = this.element<HTMLInputElement>('#sequence-pitch-input');
+  private readonly pitchTrack = this.element<HTMLElement>('#sequence-pitch-track');
+  private readonly motion = this.element<HTMLButtonElement>('#sequence-motion');
+  private readonly motionStop = this.element<HTMLInputElement>('#sequence-motion-stop');
+  private readonly motionStopValue = this.element<HTMLOutputElement>('#sequence-motion-stop-value');
   private readonly pitchReadout = this.element<HTMLOutputElement>('#sequence-pitch-readout');
   private readonly pitchCenter = this.element<HTMLButtonElement>('#sequence-pitch-center');
   private readonly pitchMode = this.element<HTMLSelectElement>('#sequence-pitch-mode');
   private readonly pitchSteps = this.element<HTMLInputElement>('#sequence-pitch-steps');
   private readonly portamento = this.element<HTMLInputElement>('#sequence-portamento');
   private readonly filterAmount = this.element<HTMLInputElement>('#sequence-filter-amount');
+  private readonly filterWide = this.element<HTMLButtonElement>('#sequence-filter-wide');
   private readonly pitchScale = this.element<HTMLInputElement>('#sequence-pitch-scale');
   private readonly playSpeedInput = this.element<HTMLInputElement>('#sequence-play-speed');
   private readonly pitchTicks = this.element<HTMLElement>('#sequence-pitch-ticks');
@@ -90,7 +115,7 @@ export class TriggerRecorder {
   private readonly pitchCurve = this.element<SVGPolylineElement>('#pitch-curve-line');
 
   constructor(private readonly engine: () => AudioEngine | null, private readonly selectedId: () => string,
-    private readonly ensureRunning: () => Promise<void>, private readonly prepareTarget: (id: string) => void,
+    private readonly ensureRunning: (forceAttempt?: boolean) => Promise<void>, private readonly prepareTarget: (id: string) => void,
     private readonly lockTarget: (id: string | null, lane: RecordingLane) => void, private readonly transport: SequenceTransport) {
     this.length.value = String(P['record-length'].defaultValue);
     this.length.setAttribute('aria-label', `Record length in seconds, ${P['record-length'].min} to ${P['record-length'].max}`);
@@ -125,8 +150,32 @@ export class TriggerRecorder {
     this.pitchMute.addEventListener('click', () => this.changeMute('pitch'));
     this.gateClear.addEventListener('click', () => this.clearRecording('gate'));
     this.pitchClear.addEventListener('click', () => this.clearRecording('pitch'));
-    this.pitchInput.addEventListener('input', () => this.changePitch(Number(this.pitchInput.value)));
-    this.pitchCenter.addEventListener('click', () => { this.pitchInput.value = '0'; this.changePitch(0); });
+    this.loadMotionOptions();
+    this.motion.addEventListener('click', () => {
+      this.motionEnabled = !this.motionEnabled;
+      this.syncMotionOptions();
+      this.saveMotionOptions();
+    });
+    this.motionStop.addEventListener('input', () => {
+      this.motionStopMs = Number(this.motionStop.value);
+      this.syncMotionOptions();
+      this.saveMotionOptions();
+    });
+    this.pitchInput.addEventListener('input', () => {
+      this.updateGatePosition();
+      this.changePitch(Number(this.pitchInput.value));
+    });
+    this.pitchCenter.addEventListener('click', () => { this.pitchInput.value = '0'; this.updateGatePosition(); this.changePitch(0); });
+    this.filterWide.addEventListener('click', () => {
+      if (this.filterWide.disabled) return;
+      const wide = this.filterWide.getAttribute('aria-pressed') !== 'true';
+      this.filterWide.setAttribute('aria-pressed', String(wide));
+      if (!wide) this.filterAmount.value = String(Math.max(-4800, Math.min(4800, Number(this.filterAmount.value))));
+      this.filterAmount.dataset.sliderMin = String(wide ? -7200 : -4800);
+      this.filterAmount.dataset.sliderMax = String(wide ? 7200 : 4800);
+      this.filterAmount.dispatchEvent(new Event('slider-range-change'));
+      this.changeSettings();
+    });
     for (const input of [this.pitchMode, this.pitchSteps, this.portamento, this.pitchScale, this.filterAmount, this.playSpeedInput]) {
       input.addEventListener('change', () => this.changeSettings(input === this.pitchScale));
     }
@@ -135,6 +184,7 @@ export class TriggerRecorder {
     this.bindSelectionHandle(this.pitchTimeline.startHandle, 'pitch', 'start');
     this.bindSelectionHandle(this.pitchTimeline.endHandle, 'pitch', 'end');
     this.bindTrigger();
+    new ResizeObserver(() => this.updateGatePosition()).observe(this.pitchTrack);
     let lastStatus = '';
     new MutationObserver(() => {
       const message = this.status.textContent?.trim() ?? '';
@@ -145,8 +195,8 @@ export class TriggerRecorder {
       this.log.prepend(entry);
       while (this.log.children.length > 20) this.log.lastElementChild?.remove();
     }).observe(this.status, { childList: true, characterData: true, subtree: true });
-    window.addEventListener('blur', () => { if (this.mode === 'recording') this.finishRecording(); else this.cancel(); });
-    document.addEventListener('visibilitychange', () => { if (document.hidden) { if (this.mode === 'recording') this.finishRecording(); else this.cancel(); } });
+    window.addEventListener('blur', () => { this.endPitchGesture(true); if (this.mode === 'recording') this.finishRecording(); else this.cancel(); });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) { this.endPitchGesture(true); if (this.mode === 'recording') this.finishRecording(); else this.cancel(); } });
     this.refresh();
   }
 
@@ -178,6 +228,7 @@ export class TriggerRecorder {
   }
 
   refresh(): void {
+    this.updateGatePosition();
     const engine = this.engine(); const id = this.targetId ?? this.selectedId(); const source = this.currentSource();
     const gateRecording = this.mode === 'recording' && this.includes('gate') && this.gateTouched ? this.draftGateRecording()
       : engine?.getChannel(id) ? engine.getGateRecording(id, source.gateUserId) : null;
@@ -199,6 +250,7 @@ export class TriggerRecorder {
   }
 
   cancel(releaseTrigger = true): void {
+    this.endPitchGesture(true);
     ++this.request;
     if (releaseTrigger) this.endGate(Math.min(this.elapsed(), this.limitSec));
     if (this.mode === 'recording' && this.targetId) this.engine()?.cancelScheduledGates(this.targetId);
@@ -273,17 +325,124 @@ export class TriggerRecorder {
   }
 
   releaseScreenTrigger(): void {
+    this.endPitchGesture(true);
     if (this.heldOwner && this.heldOwner !== 'document-space') this.release(this.heldOwner);
   }
 
+  releaseSource(id: string): void {
+    if (this.pitchGesture?.id === id) this.endPitchGesture(true);
+    if (this.heldId === id && this.heldOwner) this.release(this.heldOwner);
+  }
+
+  private loadMotionOptions(): void {
+    try {
+      this.motionEnabled = localStorage.getItem(MOTION_STORAGE_KEY) !== 'off';
+      const stopMs = Number(localStorage.getItem(STOP_TIME_STORAGE_KEY));
+      if (stopMs >= 50 && stopMs <= 400 && stopMs % 10 === 0) this.motionStopMs = stopMs;
+    } catch { /* Storage can be unavailable in private browsing. */ }
+    this.syncMotionOptions();
+  }
+
+  private saveMotionOptions(): void {
+    try {
+      localStorage.setItem(MOTION_STORAGE_KEY, this.motionEnabled ? 'on' : 'off');
+      localStorage.setItem(STOP_TIME_STORAGE_KEY, String(this.motionStopMs));
+    } catch { /* The controls still work for this page. */ }
+  }
+
+  private syncMotionOptions(): void {
+    this.motion.setAttribute('aria-pressed', String(this.motionEnabled));
+    this.motion.textContent = this.motionEnabled ? 'Motion ON' : 'Motion OFF';
+    this.motionStop.value = String(this.motionStopMs);
+    this.motionStopValue.textContent = `${this.motionStopMs} ms`;
+    this.motionStop.disabled = !this.motionEnabled;
+  }
+
+  private updateGatePosition(): void {
+    const ratio = (Math.max(-1, Math.min(1, Number(this.pitchInput.value))) + 1) / 2;
+    this.gate.style.left = `${28 + ratio * Math.max(0, this.pitchTrack.clientWidth - 56)}px`;
+  }
+
+  private pitchAtClientX(clientX: number): number {
+    const rect = this.pitchTrack.getBoundingClientRect();
+    const position = Math.max(0, Math.min(1, (clientX - rect.left - 28) / Math.max(1, rect.width - 56)));
+    return -1 + position * 2;
+  }
+
+  private moveGesturePitch(clientX: number): void {
+    const gesture = this.pitchGesture;
+    if (!gesture) return;
+    const value = this.pitchAtClientX(clientX - gesture.offsetX);
+    if (Math.abs(Number(this.pitchInput.value) - value) < .0005) return;
+    this.pitchInput.value = String(value);
+    this.pitchInput.dispatchEvent(new Event('input', { bubbles: true }));
+  }
+
+  private recordPitchReturn(valueBefore: number, valueAfter: number): void {
+    if (this.mode !== 'recording' || !this.includes('pitch')) return;
+    if (this.loopRecording) this.advanceLaps();
+    const position = this.recordPosition('pitch');
+    const previousTime = this.pitchDraft.at(-1)?.timeSec ?? -Infinity;
+    const before = Math.max(previousTime, position - .001);
+    this.pitchTouched = true;
+    this.pitchPunchStart ??= before;
+    this.appendPitchPoint(before, this.effectivePitchValue(valueBefore));
+    this.appendPitchPoint(position, this.effectivePitchValue(valueAfter));
+    this.renderPitchTimeline(this.draftPitchRecording());
+  }
+
+  private endPitchGesture(canceled: boolean): void {
+    const gesture = this.pitchGesture;
+    if (!gesture) return;
+    const shouldReturn = canceled || this.motionEnabled && gesture.lastMovedAt !== null
+      && performance.now() - gesture.lastMovedAt < this.motionStopMs;
+    if (shouldReturn && Number(this.pitchInput.value) !== gesture.startValue) {
+      this.recordPitchReturn(Number(this.pitchInput.value), gesture.startValue);
+      this.pitchInput.value = String(gesture.startValue);
+      this.updateGatePosition();
+      this.changePitch(gesture.startValue, false);
+    }
+    this.pitchGesture = null;
+    if (gesture.ownsGate) this.release(gesture.owner);
+    if (this.pitchTrack.hasPointerCapture(gesture.pointerId)) this.pitchTrack.releasePointerCapture(gesture.pointerId);
+  }
+
   private bindTrigger(): void {
-    this.gate.addEventListener('pointerdown', event => {
-      if (event.button !== 0 || this.gate.disabled) return;
-      if (this.press(`pointer:${event.pointerId}`)) { event.preventDefault(); this.gate.setPointerCapture(event.pointerId); }
+    this.pitchTrack.addEventListener('pointerdown', event => {
+      if (event.button !== 0 || this.pitchInput.disabled || this.pitchGesture) return;
+      const id = this.targetId ?? this.selectedId();
+      const synth = this.engine()?.getChannel(id);
+      if (!synth) return;
+      event.preventDefault();
+      const thumb = this.gate.getBoundingClientRect();
+      const onThumb = event.target === this.gate;
+      const gesture: PitchGesture = {
+        pointerId: event.pointerId, owner: `pointer:${event.pointerId}`, ownsGate: false, id, synth, source: this.currentSource(),
+        startValue: Number(this.pitchInput.value), offsetX: onThumb ? event.clientX - (thumb.left + thumb.width / 2) : 0,
+        lastSignificantX: event.clientX, lastMovedAt: null
+      };
+      this.pitchGesture = gesture;
+      if (!onThumb) this.moveGesturePitch(event.clientX);
+      gesture.ownsGate = this.press(gesture.owner);
+      if (!gesture.ownsGate && !this.heldOwner) { this.pitchGesture = null; return; }
+      this.pitchTrack.setPointerCapture(event.pointerId);
     });
-    const releasePointer = (event: PointerEvent) => { this.release(`pointer:${event.pointerId}`); if (this.gate.hasPointerCapture(event.pointerId)) this.gate.releasePointerCapture(event.pointerId); };
-    this.gate.addEventListener('pointerup', releasePointer); this.gate.addEventListener('pointercancel', releasePointer);
-    this.gate.addEventListener('lostpointercapture', event => this.release(`pointer:${event.pointerId}`));
+    this.pitchTrack.addEventListener('pointermove', event => {
+      const gesture = this.pitchGesture;
+      if (!gesture || gesture.pointerId !== event.pointerId) return;
+      if (Math.abs(event.clientX - gesture.lastSignificantX) >= 3) {
+        gesture.lastSignificantX = event.clientX;
+        gesture.lastMovedAt = performance.now();
+      }
+      this.moveGesturePitch(event.clientX);
+    });
+    this.pitchTrack.addEventListener('pointerup', event => {
+      if (this.pitchGesture?.pointerId !== event.pointerId) return;
+      this.endPitchGesture(false);
+      if (event.pointerType !== 'mouse' && this.engine()?.context.state !== 'running') void this.ensureRunning(true).catch(() => {});
+    });
+    this.pitchTrack.addEventListener('pointercancel', event => { if (this.pitchGesture?.pointerId === event.pointerId) this.endPitchGesture(true); });
+    this.pitchTrack.addEventListener('lostpointercapture', event => { if (this.pitchGesture?.pointerId === event.pointerId) this.endPitchGesture(true); });
     this.gate.addEventListener('keydown', event => { if ((event.key === ' ' || event.key === 'Enter') && !event.repeat) { event.preventDefault(); this.press('button-keyboard'); } });
     this.gate.addEventListener('keyup', event => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); this.release('button-keyboard'); } });
     this.gate.addEventListener('blur', () => this.release('button-keyboard'));
@@ -337,20 +496,28 @@ export class TriggerRecorder {
     this.gate.setAttribute('aria-pressed', 'false');
   }
 
-  private changePitch(rawValue: number): void {
+  private changePitch(rawValue: number, record = true): void {
     if (this.mode === 'recording' && this.loopRecording) this.advanceLaps();
     const value = Math.max(-1, Math.min(1, rawValue)); const engine = this.engine();
-    const id = this.targetId ?? this.selectedId(); const source = this.currentSource();
+    const id = this.pitchGesture?.id ?? this.targetId ?? this.selectedId();
+    const source = this.pitchGesture?.source ?? this.currentSource();
+    if (this.pitchGesture && engine?.getChannel(id) !== this.pitchGesture.synth) return;
     const settings = engine?.getChannel(id) ? engine.getSequenceSettings(id, source.pitchUserId) : null;
-    const effective = settings?.pitchMode.kind === 'stepped' ? quantizePitchValue(value, settings.pitchMode.stepsPerSide) : value;
+    const effective = settings?.pitchMode.kind === 'stepped'
+      ? quantizePitchValue(value, settings.pitchMode.stepsPerSide, settings.pitchMode.scale, settings.pitchScaleCent) : value;
     this.pitchReadout.textContent = `${Math.round(effective * (settings?.pitchScaleCent ?? P['sequence-pitch-scale'].defaultValue))} cent`;
-    if (this.mode === 'recording' && this.includes('pitch')) {
+    if (record && this.mode === 'recording' && this.includes('pitch')) {
       const position = this.recordPosition('pitch'); this.pitchTouched = true; this.pitchPunchStart ??= position;
       this.appendPitchPoint(position, effective);
     }
     if (!engine?.getChannel(id) || !settings) return;
-    const apply = () => engine.setSequencePitch(id, effective, settings.pitchScaleCent, settings.filterAmountCent, engine.context.currentTime,
-      settings.pitchMode.kind === 'stepped' ? settings.pitchMode.portamentoSec : 0);
+    const synth = engine.getChannel(id);
+    const request = ++this.pitchRequest;
+    const apply = () => {
+      if (request !== this.pitchRequest || engine.getChannel(id) !== synth) return;
+      engine.setSequencePitch(id, effective, settings.pitchScaleCent, settings.filterAmountCent, engine.context.currentTime,
+        settings.pitchMode.kind === 'stepped' ? settings.pitchMode.portamentoSec : 0);
+    };
     if (engine.context.state === 'running') apply(); else void this.ensureRunning().then(apply).catch(() => {});
     if (this.mode === 'recording' && this.includes('pitch')) this.renderPitchTimeline(this.draftPitchRecording());
   }
@@ -358,7 +525,8 @@ export class TriggerRecorder {
   private effectivePitchValue(value: number): number {
     const engine = this.engine(); const id = this.targetId ?? this.selectedId();
     const settings = engine?.getChannel(id) ? engine.getSequenceSettings(id, this.currentSource().pitchUserId) : null;
-    return settings?.pitchMode.kind === 'stepped' ? quantizePitchValue(value, settings.pitchMode.stepsPerSide) : value;
+    return settings?.pitchMode.kind === 'stepped'
+      ? quantizePitchValue(value, settings.pitchMode.stepsPerSide, settings.pitchMode.scale, settings.pitchScaleCent) : value;
   }
 
   private appendPitchPoint(timeSec: number, valueNormalized: number): void {
@@ -372,12 +540,16 @@ export class TriggerRecorder {
     if (this.mode !== 'idle') return;
     const engine = this.engine(); const id = this.selectedId(); const source = this.transport.source(id);
     if (!engine?.getChannel(id)) return;
-    const pitchMode = this.pitchMode.value === 'stepped'
-      ? { kind: 'stepped' as const, stepsPerSide: Number(this.pitchSteps.value), portamentoSec: Number(this.portamento.value) / 1000 }
-      : { kind: 'smooth' as const };
+    const steps = Number(this.pitchSteps.value);
+    const scale = this.pitchMode.value as PitchScaleMode;
+    const portamentoSec = Number(this.portamento.value) / 1000;
+    const pitchMode = steps > 0
+      ? { kind: 'stepped' as const, stepsPerSide: steps, scale, portamentoSec }
+      : { kind: 'smooth' as const, scale, portamentoSec };
     const rawScale = Number(this.pitchScale.value);
     const pitchScaleCent = snapScale ? SCALE_STOPS.reduce((best, value) => Math.abs(value - rawScale) < Math.abs(best - rawScale) ? value : best) : rawScale;
-    engine.setSequenceSettings(id, source.pitchUserId, { pitchScaleCent, filterAmountCent: Number(this.filterAmount.value), pitchMode,
+    engine.setSequenceSettings(id, source.pitchUserId, { pitchScaleCent, filterAmountCent: Number(this.filterAmount.value),
+      filterAmountWide: this.filterWide.getAttribute('aria-pressed') === 'true', pitchMode,
       recordSpeed: engine.getSequenceSelection(id).recordSpeed, playSpeed: Number(this.playSpeedInput.value) });
     this.transport.sequenceSettingsChanged(id);
     if (!this.transport.isPlaying(id)) this.changePitch(Number(this.pitchInput.value));
@@ -387,12 +559,17 @@ export class TriggerRecorder {
   private syncSettings(settings: SequenceSettings | null): void {
     this.recordMode.value = this.userRecordingLane; this.syncSegmented(this.recordMode);
     if (!settings) return;
-    this.pitchMode.value = settings.pitchMode.kind;
-    this.pitchSteps.value = String(settings.pitchMode.kind === 'stepped' ? settings.pitchMode.stepsPerSide : P['sequence-pitch-steps'].defaultValue);
-    this.portamento.value = String(settings.pitchMode.kind === 'stepped' ? settings.pitchMode.portamentoSec * 1000 : P['sequence-portamento'].defaultValue);
+    this.pitchMode.value = settings.pitchMode.scale ?? 'equal';
+    this.pitchSteps.value = String(settings.pitchMode.kind === 'stepped' ? settings.pitchMode.stepsPerSide : 0);
+    this.portamento.value = String((settings.pitchMode.portamentoSec ?? 0) * 1000);
     this.filterAmount.value = String(settings.filterAmountCent); this.pitchScale.value = String(settings.pitchScaleCent); this.playSpeedInput.value = String(settings.playSpeed);
+    this.filterWide.setAttribute('aria-pressed', String(settings.filterAmountWide));
+    this.filterAmount.dataset.sliderMin = String(settings.filterAmountWide ? -7200 : -4800);
+    this.filterAmount.dataset.sliderMax = String(settings.filterAmountWide ? 7200 : 4800);
+    this.filterAmount.dispatchEvent(new Event('slider-range-change'));
+    for (const input of [this.pitchSteps, this.portamento, this.pitchScale, this.filterAmount]) input.dispatchEvent(new Event('slider-range-change'));
     this.scaleCustom.textContent = SCALE_STOPS.includes(settings.pitchScaleCent as typeof SCALE_STOPS[number]) ? '' : `Custom ${settings.pitchScaleCent} cent`;
-    this.syncSegmented(this.pitchMode); this.renderPitchTicks(settings);
+    this.renderPitchTicks(settings);
     this.pitchReadout.textContent = `${Math.round(this.effectivePitchValue(Number(this.pitchInput.value)) * settings.pitchScaleCent)} cent`;
   }
 
@@ -404,14 +581,15 @@ export class TriggerRecorder {
 
   private renderPitchTicks(settings: SequenceSettings): void {
     this.pitchTicks.replaceChildren();
-    this.pitchInput.step = settings.pitchMode.kind === 'stepped'
+    this.pitchInput.step = settings.pitchMode.kind === 'stepped' && (settings.pitchMode.scale ?? 'equal') === 'equal'
       ? String(1 / settings.pitchMode.stepsPerSide)
       : String(P['sequence-pitch-input'].step);
-    if (settings.pitchMode.kind !== 'stepped') return;
-    const steps = settings.pitchMode.stepsPerSide;
-    for (let index = -steps; index <= steps; index += 1) {
-      const value = index / steps; const tick = document.createElement('span');
-      tick.className = index === 0 ? 'center' : ''; tick.style.left = `${(value + 1) * 50}%`;
+    const positions = settings.pitchMode.kind === 'stepped'
+      ? pitchPositions(settings.pitchMode.stepsPerSide, settings.pitchMode.scale, settings.pitchScaleCent)
+      : [0];
+    for (const value of positions) {
+      const tick = document.createElement('span');
+      tick.className = value === 0 ? 'center' : ''; tick.style.left = `${(value + 1) * 50}%`;
       this.pitchTicks.append(tick);
     }
   }
@@ -472,6 +650,7 @@ export class TriggerRecorder {
 
   private finishRecording(): void {
     if (this.mode !== 'recording') return;
+    this.endPitchGesture(true);
     if (this.loopRecording) this.advanceLaps();
     const durationSec = Math.max(.001, Math.min(this.limitSec, this.elapsed()));
     this.endGate(this.recordPosition()); this.clearTimer();
@@ -626,9 +805,10 @@ export class TriggerRecorder {
     this.pitchMute.setAttribute('aria-pressed', String(available && this.engine()!.getPitchMuted(this.selectedId(), source.pitchUserId)));
     const settingsDisabled = !available || this.mode !== 'idle';
     for (const input of [this.pitchMode, this.pitchSteps, this.portamento, this.pitchScale, this.filterAmount, this.playSpeedInput]) input.disabled = settingsDisabled;
-    this.pitchMode.parentElement?.querySelectorAll<HTMLButtonElement>('[role="radio"]').forEach(button => { button.disabled = settingsDisabled; });
-    const stepped = this.pitchMode.value === 'stepped'; this.pitchSteps.disabled = settingsDisabled || !stepped; this.portamento.disabled = settingsDisabled || !stepped;
+    this.filterWide.disabled = settingsDisabled;
+    this.portamento.disabled = settingsDisabled || Number(this.pitchSteps.value) === 0;
     this.pitchInput.disabled = !available || this.mode === 'starting'; this.pitchCenter.disabled = this.pitchInput.disabled;
+    this.pitchTrack.classList.toggle('disabled', this.pitchInput.disabled);
     const stopping = this.transport.isPlaying(this.selectedId()); this.play.disabled = !available || this.mode !== 'idle';
     this.play.textContent = stopping ? '■ Stop' : '▶ Play'; this.play.setAttribute('aria-pressed', String(stopping));
   }

@@ -92,7 +92,7 @@ class ChannelStrip {
     equalPower(this.mix.balance).forEach((gain, i) => smoothAudioParam(this.sends[i]!.gain, gain, now, PARAM_SMOOTH_SEC));
   }
   timbre(): TimbreDocument {
-    return { formatVersion: 'KOROGI-Lab/timbre-v15', editorLayout: structuredClone(this.editorLayout), name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(),
+    return { formatVersion: 'KOROGI-Lab/timbre-v16', editorLayout: structuredClone(this.editorLayout), name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(),
       gatePatterns: structuredClone(this.gatePatterns), pitchPatterns: structuredClone(this.pitchPatterns), sequence: structuredClone(this.sequence) };
   }
   fadeOut(): void {
@@ -208,13 +208,13 @@ export class AudioEngine {
   setPitchMuted(id: string, patternId: UserPatternId, muted: boolean): void { this.assertReady(); this.pitchPattern(this.strip(id), patternId).muted = muted; }
   getSequenceSettings(id: string, patternId: UserPatternId): SequenceSettings {
     const strip = this.strip(id), pattern = this.pitchPattern(strip, patternId);
-    return { pitchMode: structuredClone(pattern.pitchMode), pitchScaleCent: pattern.pitchScaleCent, filterAmountCent: pattern.filterAmountCent,
+    return { pitchMode: structuredClone(pattern.pitchMode), pitchScaleCent: pattern.pitchScaleCent, filterAmountCent: pattern.filterAmountCent, filterAmountWide: pattern.filterAmountWide,
       recordSpeed: strip.sequence.recordSpeed, playSpeed: strip.sequence.playSpeed };
   }
   setSequenceSettings(id: string, patternId: UserPatternId, raw: SequenceSettings): void {
     this.assertReady(); const strip = this.strip(id), pattern = this.pitchPattern(strip, patternId);
     const settings = normalizeSequenceSettings(raw);
-    pattern.pitchMode = settings.pitchMode; pattern.pitchScaleCent = settings.pitchScaleCent; pattern.filterAmountCent = settings.filterAmountCent;
+    pattern.pitchMode = settings.pitchMode; pattern.pitchScaleCent = settings.pitchScaleCent; pattern.filterAmountCent = settings.filterAmountCent; pattern.filterAmountWide = settings.filterAmountWide;
     strip.sequence.recordSpeed = settings.recordSpeed; strip.sequence.playSpeed = settings.playSpeed;
   }
   gateOn(id: string, time = this.context.currentTime): void { this.assertReady(); const strip = this.strip(id); strip.activate(); strip.synth.gateOn(time); }
@@ -270,7 +270,7 @@ export class AudioEngine {
   setMasterMuted(muted: boolean): void { this.assertReady(); this.masterMuted = muted; smoothAudioParam(this.preLimiterOutput.gain, muted ? 0 : 1, this.context.currentTime, PARAM_SMOOTH_SEC); }
   isMasterMuted(): boolean { return this.masterMuted; }
   createSession(name: string): SessionDocument {
-    return { formatVersion: 'KOROGI-Lab/session-v16', name: name.trim() || 'Untitled', savedAt: new Date().toISOString(),
+    return { formatVersion: 'KOROGI-Lab/session-v17', name: name.trim() || 'Untitled', savedAt: new Date().toISOString(),
       channels: this.graph.slots.map(slot => ({ id: slot.id, ...this.getChannelMix(slot.id), timbre: this.graph.strips.get(slot.id)?.timbre() ?? null })),
       near: this.getBusSettings('near'), far: this.getBusSettings('far'), crossfade: this.crossfade, masterGainDb: this.masterGainDb, masterMuted: this.masterMuted };
   }

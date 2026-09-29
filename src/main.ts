@@ -9,7 +9,7 @@ import { MixerPanel } from './ui/MixerPanel';
 import { TriggerRecorder } from './ui/TriggerRecorder';
 import { SequenceTransport } from './ui/SequenceTransport';
 import { SignalMap } from './ui/SignalMap';
-import { mountPitchEnvelopeGuide } from './ui/PitchEnvelopeGuide';
+import { mountPitchEnvelopeGuide, syncPitchEnvelopeGuide } from './ui/PitchEnvelopeGuide';
 import type {
   BusAssignment,
   BurstSettings,
@@ -288,7 +288,7 @@ const transport = new SequenceTransport(() => engine, ensureAudioRunning,
   message => { patchStatus.textContent = message; }, id => mixer.manual.forgetSource(id));
 const mixer = new MixerPanel(requireElement('#mixer-slots'), () => engine, ensureAudioRunning, syncSelectedSource,
   message => { patchStatus.textContent = message; }, saveTimbre,
-  id => { transport.beforeReplace(id); if (recorder.lockedId() === id) recorder.cancel(); }, () => transport);
+  id => { transport.beforeReplace(id); recorder.releaseSource(id); if (recorder.lockedId() === id) recorder.cancel(); }, () => transport);
 const recorder = new TriggerRecorder(() => engine, () => mixer.selectedId, ensureAudioRunning,
   id => {
     mixer.manual.forgetSource(id);
@@ -659,8 +659,10 @@ function applyAmplitudeEnvelope(curve?: EnvelopeCurve, mode?: 'gate' | 'one-shot
 }
 
 function applyPitchEnvelope(): void {
+  const curve = requireElement<HTMLSelectElement>('#penv-curve').value as 'linear' | 'logarithmic';
   selectedChannel()?.setPitchEnvelope({
     mode: requireElement<HTMLSelectElement>('#penv-mode').value as 'gate' | 'one-shot',
+    curve,
     start: numberValue('#penv-start') / 100,
     attack: numberValue('#penv-attack-level') / 100,
     sustain: numberValue('#penv-sustain-level') / 100,
@@ -671,6 +673,7 @@ function applyPitchEnvelope(): void {
     scale: numberValue('#penv-scale'),
     releaseTiming: requireElement<HTMLSelectElement>('#penv-release-timing').value as ReleaseTiming
   });
+  syncPitchEnvelopeGuide(requireElement<HTMLElement>('#penv-shape-guide'), curve);
 }
 
 function updateModReadout(mode: ModMode): void {
@@ -766,6 +769,7 @@ for (const id of ['penv-start', 'penv-attack-level', 'penv-sustain-level', 'penv
 }
 requireElement<HTMLSelectElement>('#penv-release-timing').addEventListener('change', applyPitchEnvelope);
 requireElement<HTMLSelectElement>('#penv-mode').addEventListener('change', applyPitchEnvelope);
+requireElement<HTMLSelectElement>('#penv-curve').addEventListener('change', applyPitchEnvelope);
 
 requireElement<HTMLSelectElement>('#mod-mode').addEventListener('change', (event) => {
   const mode = (event.currentTarget as HTMLSelectElement).value as ModMode;
@@ -824,9 +828,23 @@ amplitudeEditor.wire(applyAmplitudeEnvelope);
 filterEnvelopeEditor.wire((curve, mode, timing) => {
   const channel = selectedChannel(); if (!channel) return;
   const next = { ...filterEnvelopeEditor.read(channel.getSettings().filterEnvelope, curve, mode, timing),
-    amountCent: numberValue('#fenv-amount') };
+    amountCent: Math.max(channel.getSettings().filterEnvelope.amountWide ? -7200 : -4800,
+      Math.min(channel.getSettings().filterEnvelope.amountWide ? 7200 : 4800, numberValue('#fenv-amount'))),
+    amountWide: channel.getSettings().filterEnvelope.amountWide };
   channel.setFilterEnvelope(next);
   filterEnvelopeEditor.sync(next, setValue);
+});
+requireElement<HTMLButtonElement>('#fenv-amount-wide').addEventListener('click', () => {
+  const channel = selectedChannel(); if (!channel) return;
+  const current = channel.getSettings().filterEnvelope;
+  const amountWide = !current.amountWide;
+  const amountCent = amountWide ? current.amountCent : Math.max(-4800, Math.min(4800, current.amountCent));
+  const input = requireElement<HTMLInputElement>('#fenv-amount');
+  input.dataset.sliderMin = String(amountWide ? -7200 : -4800);
+  input.dataset.sliderMax = String(amountWide ? 7200 : 4800);
+  channel.setFilterEnvelope({ ...current, amountWide, amountCent });
+  setValue('#fenv-amount', amountCent);
+  requireElement<HTMLButtonElement>('#fenv-amount-wide').setAttribute('aria-pressed', String(amountWide));
 });
 for (const selector of ['#burst-enabled', '#burst-block-enabled']) {
   requireElement<HTMLButtonElement>(selector).addEventListener('click', () => {
@@ -988,6 +1006,8 @@ function syncUiFromTimbre(timbre: TimbreDocument): void {
   setValue('#penv-scale', ch.pitchEnvelope.scale);
   setValue('#penv-release-timing', ch.pitchEnvelope.releaseTiming);
   setValue('#penv-mode', ch.pitchEnvelope.mode);
+  setValue('#penv-curve', ch.pitchEnvelope.curve);
+  syncPitchEnvelopeGuide(requireElement<HTMLElement>('#penv-shape-guide'), ch.pitchEnvelope.curve);
   setValue('#mod-mode', ch.mod.mode);
   setValue('#am-depth', ch.mod.amDepth * 100);
   setValue('#am-offset', ch.mod.amOffset);
@@ -1005,7 +1025,11 @@ function syncUiFromTimbre(timbre: TimbreDocument): void {
   requireElement<HTMLElement>('.cutoff-depth-control').hidden = ch.filter2Route !== 'filter1-cutoff';
   amplitudeEditor.sync(ch.ampEnvelope, setValue);
   filterEnvelopeEditor.sync(ch.filterEnvelope, setValue);
+  const fenvAmount = requireElement<HTMLInputElement>('#fenv-amount');
+  fenvAmount.dataset.sliderMin = String(ch.filterEnvelope.amountWide ? -7200 : -4800);
+  fenvAmount.dataset.sliderMax = String(ch.filterEnvelope.amountWide ? 7200 : 4800);
   setValue('#fenv-amount', ch.filterEnvelope.amountCent);
+  requireElement<HTMLButtonElement>('#fenv-amount-wide').setAttribute('aria-pressed', String(ch.filterEnvelope.amountWide));
   setValue('#burst-count-min', ch.burst.pulseCountMin);
   setValue('#burst-count-max', ch.burst.pulseCountMax);
   setValue('#burst-pulse-interval', ch.burst.pulseIntervalSec * 1000);
@@ -1273,7 +1297,7 @@ try {
   try { validateParameterRanges(P, context.sampleRate); }
   catch (error) { void context.close(); throw error; }
   engine = new AudioEngine(context, {
-    formatVersion: 'KOROGI-Lab/session-v16', name: 'KOROGI Session', savedAt: '',
+    formatVersion: 'KOROGI-Lab/session-v17', name: 'KOROGI Session', savedAt: '',
     channels: LAB_SLOT_IDS.map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
     near: defaultBus(), far: defaultBus(), crossfade: P.crossfade.defaultValue / 100, masterGainDb: P['master-gain'].defaultValue, masterMuted: false
   });

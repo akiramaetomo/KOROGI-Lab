@@ -13,7 +13,14 @@ async function chooseSegment(page, selectId, value) {
 }
 
 async function setNumber(page, selector, value) {
-  await page.locator(selector).fill(String(value)); await page.locator(selector).dispatchEvent('change');
+  await page.locator(selector).evaluate((node, target) => {
+    const slider = node.closest('.numeric-control').querySelector('input[type="range"]');
+    const min = Number(node.dataset.sliderMin ?? node.dataset.numericMin);
+    const max = Number(node.dataset.sliderMax ?? node.dataset.numericMax);
+    const position = node.dataset.numericScale === 'log1p' ? Math.log1p(target) / Math.log1p(max)
+      : (target - min) / (max - min);
+    slider.value = String(position * 10000); slider.dispatchEvent(new Event('input', { bubbles: true }));
+  }, value);
 }
 
 test('Pitch User records and displays a simplified curve while Auto Gate plays', async ({ page }) => {
@@ -26,7 +33,7 @@ test('Pitch User records and displays a simplified curve while Auto Gate plays',
   await expect(page.locator('#record-mode + .segmented-choice [data-value="gate"]')).toBeEnabled();
 
   await setNumber(page, '#sequence-pitch-scale', 600);
-  await chooseSegment(page, '#sequence-pitch-mode', 'stepped');
+  await page.locator('#sequence-pitch-mode').selectOption('equal');
   await setNumber(page, '#sequence-pitch-steps', 3);
   await setNumber(page, '#sequence-portamento', 80);
   await expect(page.locator('#sequence-pitch-ticks span')).toHaveCount(7);
@@ -38,7 +45,8 @@ test('Pitch User records and displays a simplified curve while Auto Gate plays',
     const left = Math.max(rect.left, clip.left) + 12; const right = Math.min(rect.right, clip.right) - 12;
     return { left, right, y: (Math.max(rect.top, clip.top) + Math.min(rect.bottom, clip.bottom)) / 2 };
   });
-  await page.mouse.move(drag.left, drag.y); await page.mouse.down(); await page.mouse.move(drag.right, drag.y); await page.mouse.up();
+  await page.mouse.move(drag.left, drag.y); await page.mouse.down(); await page.mouse.move(drag.right, drag.y);
+  await page.waitForTimeout(180); await page.mouse.up();
   expect(Number(await page.locator('#sequence-pitch-input').inputValue())).toBeGreaterThan(0);
   await page.locator('#sequence-pitch-center').click();
   await page.locator('#record-length').fill('3');
@@ -60,7 +68,7 @@ test('Pitch User records and displays a simplified curve while Auto Gate plays',
   expect(recording.points.some(point => point.valueNormalized === 2 / 3)).toBe(true);
   expect(recording.points.some(point => point.valueNormalized === -1 / 3)).toBe(true);
   expect(timbre.pitchPatterns[0].pitchScaleCent).toBe(600);
-  expect(timbre.pitchPatterns[0].pitchMode).toEqual({ kind: 'stepped', stepsPerSide: 3, portamentoSec: .08 });
+  expect(timbre.pitchPatterns[0].pitchMode).toEqual({ kind: 'stepped', stepsPerSide: 3, scale: 'equal', portamentoSec: .08 });
   expect(timbre.sequence.recordSpeed).toBe(1); expect(timbre.sequence.playSpeed).toBe(1);
   expect(timbre.gatePatterns[0].recording).toBeNull();
 });

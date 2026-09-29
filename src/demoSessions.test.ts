@@ -7,7 +7,7 @@ describe('bundled Demo Sessions', () => {
     expect(DEMO_SESSIONS.map(demo => demo.name)).toEqual(['Akino-mushi', 'Filter-Acid1', 'Filter-Acid2']);
     for (const demo of DEMO_SESSIONS) {
       const session = parseLabSession(demo.source);
-      expect(session.formatVersion).toBe('KOROGI-Lab/session-v16');
+      expect(session.formatVersion).toBe('KOROGI-Lab/session-v17');
       expect(session.channels).toHaveLength(8);
       expect(session.name).toBe(demo.name);
     }

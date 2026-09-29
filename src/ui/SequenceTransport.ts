@@ -239,7 +239,7 @@ export class SequenceTransport {
     }
     const operations: PitchOperation[] = [];
     for (const point of points.slice(0, -1)) {
-      const targetNormalized = quantizePitchValue(point.valueNormalized, settings.pitchMode.stepsPerSide);
+      const targetNormalized = quantizePitchValue(point.valueNormalized, settings.pitchMode.stepsPerSide, settings.pitchMode.scale, settings.pitchScaleCent);
       if (operations.at(-1)?.targetNormalized === targetNormalized) continue;
       operations.push({ time: point.timeSec, targetNormalized, transitionStoredSec: settings.pitchMode.portamentoSec });
     }
@@ -313,7 +313,7 @@ export class SequenceTransport {
       if (next) engine.setSequencePitch(id, next.valueNormalized, settings.pitchScaleCent, settings.filterAmountCent, now, (next.timeSec - phase) / pitch.speed);
     } else {
       const previous = [...points.slice(0, -1)].reverse().find(point => point.timeSec <= phase + EPSILON) ?? points[0]!;
-      const target = quantizePitchValue(previous.valueNormalized, settings.pitchMode.stepsPerSide);
+      const target = quantizePitchValue(previous.valueNormalized, settings.pitchMode.stepsPerSide, settings.pitchMode.scale, settings.pitchScaleCent);
       const remaining = Math.max(0, previous.timeSec + settings.pitchMode.portamentoSec - phase);
       engine.setSequencePitch(id, target, settings.pitchScaleCent, settings.filterAmountCent, now, remaining / pitch.speed);
     }

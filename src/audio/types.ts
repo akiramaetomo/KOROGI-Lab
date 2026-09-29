@@ -19,6 +19,7 @@ export interface OscillatorSettings {
 
 export interface PitchEnvelopeSettings {
   mode: 'gate' | 'one-shot';
+    curve: 'linear' | 'logarithmic';
   start: number; // P0, ratio relative to base frequency: -1 .. 1
   attack: number; // Pa
   sustain: number; // Ps
@@ -59,7 +60,7 @@ export interface ADSREnvelopeSettings {
 }
 
 export interface AmplitudeEnvelopeSettings extends ADSREnvelopeSettings {}
-export interface FilterEnvelopeSettings extends ADSREnvelopeSettings { amountCent: number; }
+export interface FilterEnvelopeSettings extends ADSREnvelopeSettings { amountCent: number; amountWide: boolean; }
 
 export type EnvelopeCurve = 'exponential' | 'linear';
 
@@ -123,7 +124,7 @@ export interface BusSettings {
 
 export interface TimbreDocument {
   editorLayout: EditorLayout;
-  formatVersion: 'KOROGI-Lab/timbre-v15';
+  formatVersion: 'KOROGI-Lab/timbre-v16';
   name: string;
   settings: ChannelSettings;
   detuneRangeCent: number;
@@ -134,10 +135,13 @@ export interface TimbreDocument {
 }
 
 export type UserPatternId = 'user-1' | 'user-2' | 'user-3';
-export type PitchMode = { kind: 'smooth' } | { kind: 'stepped'; stepsPerSide: number; portamentoSec: number };
+export type PitchScaleMode = 'equal' | 'just-major' | 'major' | 'natural-minor' | 'dorian' | 'major-blues' | 'minor-blues';
+export type PitchMode = { kind: 'smooth'; scale?: PitchScaleMode; portamentoSec?: number }
+  | { kind: 'stepped'; stepsPerSide: number; portamentoSec: number; scale?: PitchScaleMode };
 export interface SequenceSettings {
   pitchScaleCent: number;
   filterAmountCent: number;
+  filterAmountWide: boolean;
   pitchMode: PitchMode;
   recordSpeed: number;
   playSpeed: number;
@@ -158,7 +162,7 @@ export interface UserPattern {
 }
 export type PlaybackSource = { kind: 'auto' } | { kind: 'user'; patternId: UserPatternId };
 export interface GatePattern { id: UserPatternId; recording: TriggerRecording | null; muted: boolean }
-export interface PitchPattern { id: UserPatternId; recording: PitchRecording | null; muted: boolean; pitchMode: PitchMode; pitchScaleCent: number; filterAmountCent: number }
+export interface PitchPattern { id: UserPatternId; recording: PitchRecording | null; muted: boolean; pitchMode: PitchMode; pitchScaleCent: number; filterAmountCent: number; filterAmountWide: boolean }
 export interface SequenceSelection {
   gateMode: 'auto' | 'user'; gateUserId: UserPatternId; pitchUserId: UserPatternId;
   recordSpeed: number; playSpeed: number;
@@ -187,7 +191,7 @@ export interface SessionChannel extends ChannelMixSettings {
 
 /** The engine does not impose the Lab UI's four-slot limit. */
 export interface SessionDocument {
-  formatVersion: 'KOROGI-Lab/session-v16';
+  formatVersion: 'KOROGI-Lab/session-v17';
   name: string;
   savedAt: string;
   channels: SessionChannel[];

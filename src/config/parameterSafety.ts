@@ -13,7 +13,7 @@ const SAFETY: Record<ParameterKey, { min: number; max: number }> = {
   'filter-frequency': { min: .1, max: 20_000 }, 'filter-q': { min: .1, max: 30 },
   'filter1-cutoff-depth': { min: 0, max: 4_800 },
   attack: { min: 0, max: 5_000 }, decay: { min: 0, max: 5_000 }, sustain: { min: 0, max: 1 }, release: { min: 0, max: 5_000 },
-  'fenv-amount': { min: -4_800, max: 4_800 },
+  'fenv-amount': { min: -7_200, max: 7_200 },
   'fenv-attack': { min: 0, max: 5_000 }, 'fenv-decay': { min: 0, max: 5_000 },
   'fenv-sustain': { min: 0, max: 1 }, 'fenv-release': { min: 0, max: 5_000 },
   // 5 ms on/off yields at most ten event pairs in the 100 ms scheduler lookahead.
@@ -22,9 +22,9 @@ const SAFETY: Record<ParameterKey, { min: number; max: number }> = {
   'burst-pulse-interval': { min: 5, max: 250 }, 'burst-pulse-jitter': { min: 0, max: 50 },
   'burst-group-period': { min: 10, max: 6_000 }, 'burst-group-jitter': { min: 0, max: 50 },
   'record-length': { min: 1, max: 300 },
-  'sequence-filter-amount': { min: -4_800, max: 4_800 },
+  'sequence-filter-amount': { min: -7_200, max: 7_200 },
   'sequence-pitch-input': { min: -1, max: 1 }, 'sequence-pitch-scale': { min: 0, max: 2_400 },
-  'sequence-pitch-steps': { min: 1, max: 24 }, 'sequence-portamento': { min: 0, max: 5_000 },
+  'sequence-pitch-steps': { min: 0, max: 24 }, 'sequence-portamento': { min: 0, max: 1_000 },
   'sequence-record-speed': { min: .25, max: 4 }, 'sequence-play-speed': { min: .25, max: 4 },
   // tanh waveshaping has bounded output even at 48 dB input drive.
   'fx-dist-drive': { min: 0, max: 48 }, 'fx-dist-wet': { min: 0, max: 100 },

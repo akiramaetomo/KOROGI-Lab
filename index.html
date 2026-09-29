@@ -177,7 +177,7 @@
 
           <section class="function-panel" data-panel="modulation">
             <div class="panel-heading">
-              <div><strong>PITCH / MODULATION</strong><span>PEnv is common to OSC1/OSC2. ADSR points are percent offsets from each oscillator's base frequency; interpolation is linear in percent. AM and FM are exclusive.</span></div>
+                <div><strong>PITCH / MODULATION</strong><span>PEnv is common to OSC1/OSC2. ADSR points are percent offsets from each oscillator's base frequency. AM and FM are exclusive.</span></div>
               <span id="mod-path-label" class="path-label">OSC2 → FILTER2 → MOD</span>
             </div>
             <div class="control-columns two mod-layout">
@@ -207,10 +207,11 @@
                 <div class="penv-controls-scroll"><div class="penv-controls-inner">
                 <div class="penv-mode-scale">
                 <div class="penv-mode-switches">
-                <label class="choice-field"><span>PEnv mode</span><select id="penv-mode" data-audio-control hidden disabled><option value="gate">Gate</option><option value="one-shot">One-shot</option></select></label>
-                <label class="choice-field"><span>PEnv Release</span><select id="penv-release-timing" data-audio-control hidden disabled><option value="time">Time</option><option value="rate">Rate</option></select></label>
+                <label class="choice-field"><span>mode</span><select id="penv-mode" data-audio-control hidden disabled><option value="gate">Gate</option><option value="one-shot">One-shot</option></select></label>
+                <label class="choice-field"><span>curve</span><select id="penv-curve" data-audio-control hidden disabled><option value="linear">Linear</option><option value="logarithmic">Logarithmic</option></select></label>
+                <label class="choice-field"><span>release</span><select id="penv-release-timing" data-audio-control hidden disabled><option value="time">Time</option><option value="rate">Rate</option></select></label>
                 </div>
-                <label>Scale <span class="unit">0..1</span><input id="penv-scale" data-audio-control type="number" aria-label="PEnv Scale" disabled /></label>
+                <label>Scale <span class="unit">0..1</span><input id="penv-scale" data-audio-control data-display-only="true" type="number" aria-label="PEnv Scale" disabled /></label>
                 </div>
                 <div class="penv-control-grid penv-points">
                   <label>P0 <span class="unit">%</span><input id="penv-start" data-audio-control type="number" aria-label="P0 / Start (%)" disabled /></label>
@@ -354,8 +355,8 @@
                     <div class="record-controls">
                       <label class="choice-field record-mode-field"><span>Record</span><select id="record-mode" hidden><option value="gate" selected>Gate</option><option value="pitch">Pitch</option><option value="both">Both</option></select></label>
                       <label class="record-length-label"><span class="record-length-heading">Record length <span class="unit">(s)</span></span><input id="record-length" type="text" inputmode="numeric" value="30" aria-label="Record length in seconds, 1 to 300"></label>
-                      <button id="record-toggle" type="button" disabled>Start Recording</button>
                       <output id="record-counter" aria-live="off">00:00.00 / 00:30.00</output>
+                      <button id="record-toggle" type="button" disabled>Start Recording</button>
                     </div>
                     <output id="record-status" role="status">Ready</output>
                     <details class="record-log-details"><summary>Record log</summary><ol id="record-log"></ol></details>
@@ -388,13 +389,13 @@
                     </div></div>
                   </div>
                   <div class="sequence-pitch-controls" role="group" aria-label="Pitch recording controls">
-                    <div class="pitch-mode-config"><label class="choice-field"><span>Pitch curve</span><select id="sequence-pitch-mode" data-audio-control hidden disabled><option value="smooth">Smooth</option><option value="stepped">N-step</option></select></label><label>Steps / side<input id="sequence-pitch-steps" data-audio-control type="number" value="12" disabled></label></div>
-                    <label>Portamento<input id="sequence-portamento" data-audio-control type="number" value="0" disabled></label>
-                    <label>Pitch Scale<input id="sequence-pitch-scale" data-audio-control data-numeric-stops="200,400,600,1200,2400" type="number" value="200" disabled></label><output id="sequence-scale-custom"></output>
-                    <label title="Pitch → Filter1 / Filter2 cutoff / center frequency">Filter Amount<input id="sequence-filter-amount" data-audio-control type="number" value="0" disabled></label>
+                    <div class="pitch-mode-config"><label class="pitch-scale-choice"><span>Pitch curve</span><select id="sequence-pitch-mode" data-audio-control disabled><option value="equal">Equal division</option><option value="just-major">Just major</option><option value="major">Major</option><option value="natural-minor">Natural minor</option><option value="dorian">Dorian</option><option value="major-blues">Major blues</option><option value="minor-blues">Minor blues</option></select></label><label>Steps / side<input id="sequence-pitch-steps" data-audio-control data-display-only="true" type="number" value="0" disabled></label></div>
+                    <label>Portamento<input id="sequence-portamento" data-audio-control data-display-only="true" data-allow-legacy-overflow="true" type="number" value="0" disabled></label>
+                    <label>Pitch Scale<input id="sequence-pitch-scale" data-audio-control data-display-only="true" data-numeric-stops="0,200,400,600,1200,2400" type="number" value="200" disabled></label><output id="sequence-scale-custom"></output>
+                    <label title="Pitch → Filter1 / Filter2 cutoff / center frequency">Filter Amount<button id="sequence-filter-wide" class="flow-toggle range-wide-toggle" type="button" data-audio-control aria-label="Sequence Filter Amount Wide" aria-pressed="false" disabled>Wide</button><input id="sequence-filter-amount" data-audio-control data-display-only="true" type="number" value="0" disabled></label>
                   </div>
-                  <div class="pitch-performance"><label for="sequence-pitch-input">Pitch <output id="sequence-pitch-readout">0 cent</output></label><div class="pitch-slider-wrap"><input id="sequence-pitch-input" data-audio-control type="range" min="-1" max="1" step="0.001" value="0" disabled aria-label="Sequence pitch"><div id="sequence-pitch-ticks" class="pitch-step-ticks" aria-hidden="true"></div></div><button id="sequence-pitch-center" data-audio-control type="button" disabled>Center</button><button id="record-gate" type="button" disabled aria-label="Hold Trigger">Trigger</button></div>
-                  <div class="record-playback"><span class="space-trigger-hint">PC: Space = Trigger · Filter Amount → F1 / F2 cutoff / center</span></div>
+                  <div class="pitch-performance"><label for="sequence-pitch-input">Pitch <output id="sequence-pitch-readout">0 cent</output></label><div id="sequence-pitch-track" class="pitch-slider-wrap"><input id="sequence-pitch-input" data-audio-control type="range" min="-1" max="1" step="0.001" value="0" disabled aria-label="Sequence pitch"><div id="sequence-pitch-ticks" class="pitch-step-ticks" aria-hidden="true"></div><button id="record-gate" type="button" disabled aria-label="Hold slide Gate" aria-pressed="false"></button></div><button id="sequence-pitch-center" data-audio-control type="button" disabled>Center</button><button id="sequence-motion" type="button" aria-pressed="true">Motion ON</button><details class="sequence-motion-options"><summary>Options</summary><label for="sequence-motion-stop">Stop time <output id="sequence-motion-stop-value">150 ms</output></label><input id="sequence-motion-stop" type="range" min="50" max="400" step="10" value="150" aria-label="Motion stop time in milliseconds"></details></div>
+                  <div class="record-playback"><span class="space-trigger-hint">PC: Space = Gate · Drag Pitch + Gate · Filter Amount → F1 / F2 cutoff / center</span></div>
                 </div>
               </div>
             </div>
@@ -513,7 +514,7 @@
               <fieldset>
                 <legend>Status</legend>
                 <div class="patch-status" id="patch-status">No patch operation yet.</div>
-                <div class="readout-line">Use Load and Save in TIMBRES for individual timbres. Session files include all eight slots, independent Gate and Pitch User presets, and COMMON SPACE. New files use timbre-v15 / session-v16; supported older files can be loaded. Legacy PEnv Amount/Time is ignored on import.</div>
+                <div class="readout-line">Use Load and Save in TIMBRES for individual timbres. Session files include all eight slots, independent Gate and Pitch User presets, and COMMON SPACE. New files use timbre-v16 / session-v17; supported older files can be loaded. Legacy PEnv Amount/Time is ignored on import.</div>
               </fieldset>
             </div>
           </section>

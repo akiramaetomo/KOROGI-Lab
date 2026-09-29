@@ -1,6 +1,6 @@
 # ui
 
-PITCH / MODULATION uses equal-width MOD and PEnv cards. PEnv has mode switches left and Scale right, then four pitch points in a fixed four-column row (80px minimum per column), then three time controls. At default TIMBRES width, 1024/1194/1366px viewports fit the controls without horizontal scrolling; smaller widths scroll only the controls wrapper. The editor page scrolls vertically. `PitchEnvelopeGuide` mounts two initially collapsed, static SVG diagrams side by side: ADSR and Attack-OFF Time/Rate. It does not subscribe to settings or audio state.
+PITCH / MODULATION uses equal-width MOD and PEnv cards. PEnv has mode switches left and Scale right, then four pitch points in a fixed four-column row (80px minimum per column), then three time controls. At default TIMBRES width, 1024/1194/1366px viewports fit the controls without horizontal scrolling; smaller widths scroll only the controls wrapper. The editor page scrolls vertically. `PitchEnvelopeGuide` keeps its ADSR reference curve in sync with the selected Linear/Logarithmic PEnv mode; the Attack-OFF Time/Rate reference is shown only for Linear.
 
 The current UI is a fixed-viewport four-timbre Lab PoC.
 `MixerPanel` keeps four instance strips and their Gate queues; each strip has Load, Save, Init and Clear with Save disabled while empty. FILES handles Session files only. `main.ts` binds the existing detail editor to one selected source and common controls to the engine.

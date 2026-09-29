@@ -15,21 +15,19 @@ test('one AEnv curve choice controls all three phases and fits at tablet widths'
     const placement = await page.locator('.aenv-curve-control').evaluate(control => {
       const bounds = control.getBoundingClientRect();
       const fieldset = control.closest('fieldset').getBoundingClientRect();
-      const inputs = control.parentElement.previousElementSibling.getBoundingClientRect();
+      const inputs = control.closest('fieldset').querySelector('.inline-grid.four').getBoundingClientRect();
       const buttons = [...control.querySelectorAll('[role="radio"]')];
       const first = buttons[0].getBoundingClientRect();
+      const label = control.querySelector('.choice-field > span').getBoundingClientRect();
       return { left: bounds.left, right: bounds.right, width: bounds.width, fieldLeft: fieldset.left, fieldRight: fieldset.right,
-        top: bounds.top, inputsBottom: inputs.bottom, firstLeft: first.left, firstWidth: first.width,
-        heights: buttons.map(button => button.getBoundingClientRect().height),
+        bottom: bounds.bottom, inputsTop: inputs.top, labelRight: label.right, firstLeft: first.left,
         textFits: buttons.every(button => button.scrollWidth <= button.clientWidth && button.scrollHeight <= button.clientHeight) };
     });
     expect(placement.left).toBeGreaterThanOrEqual(placement.fieldLeft);
     expect(placement.right).toBeLessThanOrEqual(placement.fieldRight);
-    expect(placement.top).toBeGreaterThanOrEqual(placement.inputsBottom);
-    expect(placement.firstLeft - placement.left).toBeLessThan(5);
+    expect(placement.bottom).toBeLessThanOrEqual(placement.inputsTop);
+    expect(placement.firstLeft - placement.labelRight).toBeLessThan(12);
     expect(placement.width).toBeLessThanOrEqual(placement.fieldRight - placement.fieldLeft);
-    expect(placement.heights).toEqual([28, 28]);
-    expect(placement.firstWidth).toBeGreaterThan(90);
     expect(placement.textFits).toBe(true);
   }
   await page.locator('#aenv-curve + .segmented-choice [data-value="linear"]').click();

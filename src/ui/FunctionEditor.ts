@@ -14,10 +14,10 @@ export class FunctionEditor extends CardEditor<EditorCardId> {
       let card: HTMLElement;
       if (selectors[id]) {
         card = document.createElement('section'); card.className = 'function-panel'; card.dataset.panel = info.panel;
-        card.append(deck.querySelector(selectors[id]!)!.closest('fieldset')!);
         if (id === 'osc1' || id === 'osc2') {
           card.append(deck.querySelector<HTMLElement>(`.source-phase-row[data-osc="${id}"]`)!);
         }
+        card.append(deck.querySelector(selectors[id]!)!.closest('fieldset')!);
         if (id === 'mod') card.append(deck.querySelector('#mod-path-label')!);
       } else card = deck.querySelector<HTMLElement>(`[data-panel="${info.panel}"]`)!;
       cards.set(id, card);

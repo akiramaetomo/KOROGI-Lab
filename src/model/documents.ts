@@ -15,7 +15,7 @@ export function defaultBus(): BusSettings {
   ] };
 }
 export function defaultTimbre(name = 'Standard'): TimbreDocument {
-  return { formatVersion: 'KOROGI-Lab/timbre-v15', name, editorLayout: DEFAULT_EDITOR_LAYOUT.map(column => [...column]), settings: structuredClone(DEFAULT_CHANNEL_SETTINGS), detuneRangeCent: P['detune-range'].defaultValue, detuneNormalized: 0,
+  return { formatVersion: 'KOROGI-Lab/timbre-v16', name, editorLayout: DEFAULT_EDITOR_LAYOUT.map(column => [...column]), settings: structuredClone(DEFAULT_CHANNEL_SETTINGS), detuneRangeCent: P['detune-range'].defaultValue, detuneNormalized: 0,
     gatePatterns: emptyGatePatterns(), pitchPatterns: emptyPitchPatterns(), sequence: {
       gateMode: 'auto', gateUserId: 'user-1', pitchUserId: 'user-1', recordSpeed: 1, playSpeed: 1
     } };
@@ -44,12 +44,12 @@ function effect(value: EffectSlotSettings, fallback: Exclude<EffectSlotSettings[
 
 /** Pure boundary: reject invalid types/enums, normalize finite values, strip unknown fields. */
 export function normalizeTimbre(raw: unknown): TimbreDocument {
-  requireFormat(raw, ['KOROGI-Lab/timbre-v2', 'KOROGI-Lab/timbre-v3', 'KOROGI-Lab/timbre-v4', 'KOROGI-Lab/timbre-v5', 'KOROGI-Lab/timbre-v6', 'KOROGI-Lab/timbre-v7', 'KOROGI-Lab/timbre-v8', 'KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15']);
+  requireFormat(raw, ['KOROGI-Lab/timbre-v2', 'KOROGI-Lab/timbre-v3', 'KOROGI-Lab/timbre-v4', 'KOROGI-Lab/timbre-v5', 'KOROGI-Lab/timbre-v6', 'KOROGI-Lab/timbre-v7', 'KOROGI-Lab/timbre-v8', 'KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16']);
   const rawRecord = raw as Record<string, unknown>;
   const format = rawRecord.formatVersion as string;
-  const modern = ['KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15'].includes(format);
-  const newEnvelope = ['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15'].includes(format);
-  const independentEnvelope = ['KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15'].includes(format);
+  const modern = ['KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16'].includes(format);
+  const newEnvelope = ['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16'].includes(format);
+  const independentEnvelope = ['KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16'].includes(format);
   const old = format === 'KOROGI-Lab/timbre-v2';
   const legacyPatterns = !modern && !['KOROGI-Lab/timbre-v6', 'KOROGI-Lab/timbre-v7', 'KOROGI-Lab/timbre-v8'].includes(format);
   const legacyRecording = ['KOROGI-Lab/timbre-v4', 'KOROGI-Lab/timbre-v5'].includes(format) ? rawRecord.recording : null;
@@ -98,20 +98,29 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
       pitchUserId: oldPlayback.kind === 'auto' ? 'user-3' : oldPlayback.patternId,
       recordSpeed: selectedSettings?.recordSpeed ?? 1, playSpeed: selectedSettings?.playSpeed ?? 1 }
   };
-  const editorLayout = ['KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15'].includes(format)
-    ? normalizeEditorLayout(rawRecord.editorLayout, format !== 'KOROGI-Lab/timbre-v15') : DEFAULT_EDITOR_LAYOUT.map(column => [...column]);
+  const editorLayout = ['KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16'].includes(format)
+    ? normalizeEditorLayout(rawRecord.editorLayout, !['KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16'].includes(format)) : DEFAULT_EDITOR_LAYOUT.map(column => [...column]);
   const pitchPatternsWithAmount = Array.isArray(migrated.pitchPatterns)
-    ? migrated.pitchPatterns.map((item: Record<string, unknown>) => ({ ...item,
-      ...(!['KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15'].includes(format) ? { filterAmountCent: 0 } : {}) }))
+    ? migrated.pitchPatterns.map((item: Record<string, any>) => ({ ...item,
+      ...(!['KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16'].includes(format) ? { filterAmountCent: 0 } : {}),
+      ...(format !== 'KOROGI-Lab/timbre-v16' ? { pitchMode: { ...item.pitchMode, scale: 'equal',
+        portamentoSec: item.pitchMode?.portamentoSec ?? 0 } } : {}) }))
     : migrated.pitchPatterns;
-  const value = { ...migrated, pitchPatterns: pitchPatternsWithAmount, editorLayout, formatVersion: 'KOROGI-Lab/timbre-v15', settings: {
+  const newFormat = format === 'KOROGI-Lab/timbre-v16';
+  const value = { ...migrated, pitchPatterns: pitchPatternsWithAmount.map((item: Record<string, unknown>) => ({
+    ...item, ...(!newFormat ? { filterAmountWide: false } : {}) })), editorLayout, formatVersion: 'KOROGI-Lab/timbre-v16', settings: {
     ...(withSequencePitch.settings as Record<string, unknown>),
-    ...(!['KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15'].includes(format) ? {
+    ...(!['KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16'].includes(format) ? {
       filterEnvelope: { ...structuredClone(DEFAULT_CHANNEL_SETTINGS.filterEnvelope), amountCent: 0 },
       blocksEnabled: { ...(withSequencePitch.settings as ChannelSettings).blocksEnabled, fenv: false }
     } : {}),
-    pitchEnvelope: newEnvelope ? (withSequencePitch.settings as Record<string, unknown>).pitchEnvelope : structuredClone(DEFAULT_CHANNEL_SETTINGS.pitchEnvelope),
-    burst: ['KOROGI-Lab/timbre-v7', 'KOROGI-Lab/timbre-v8', 'KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15'].includes(format)
+    pitchEnvelope: { ...(newEnvelope ? (withSequencePitch.settings as Record<string, any>).pitchEnvelope : structuredClone(DEFAULT_CHANNEL_SETTINGS.pitchEnvelope)),
+      ...(!newFormat ? { curve: 'linear' } : {}) },
+    filterEnvelope: { ...(['KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16'].includes(format)
+      ? (withSequencePitch.settings as Record<string, any>).filterEnvelope
+      : { ...DEFAULT_CHANNEL_SETTINGS.filterEnvelope, amountCent: 0 }),
+      ...(!newFormat ? { amountWide: false } : {}) },
+    burst: ['KOROGI-Lab/timbre-v7', 'KOROGI-Lab/timbre-v8', 'KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16'].includes(format)
       ? (sequenced.settings as Record<string, unknown>).burst
       : structuredClone(DEFAULT_CHANNEL_SETTINGS.burst)
   } } as unknown as TimbreDocument;
@@ -141,9 +150,10 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
   normalizePatterns(withCurves.gatePatterns, 'Gate'); normalizePatterns(withCurves.pitchPatterns, 'Pitch');
   const gatePatterns = withCurves.gatePatterns.map(item => ({ id: item.id, recording: normalizeTriggerRecording(item.recording), muted: item.muted }));
   const pitchPatterns = withCurves.pitchPatterns.map(item => {
-    const settings = normalizeSequenceSettings({ pitchMode: item.pitchMode, pitchScaleCent: item.pitchScaleCent, filterAmountCent: item.filterAmountCent, recordSpeed: 1, playSpeed: 1 });
+    const settings = normalizeSequenceSettings({ pitchMode: item.pitchMode, pitchScaleCent: item.pitchScaleCent, filterAmountCent: item.filterAmountCent,
+      filterAmountWide: item.filterAmountWide, recordSpeed: 1, playSpeed: 1 });
     return { id: item.id, recording: normalizePitchRecording(item.recording), muted: item.muted,
-      pitchMode: settings.pitchMode, pitchScaleCent: settings.pitchScaleCent, filterAmountCent: settings.filterAmountCent };
+      pitchMode: settings.pitchMode, pitchScaleCent: settings.pitchScaleCent, filterAmountCent: settings.filterAmountCent, filterAmountWide: settings.filterAmountWide };
   });
   const speeds = normalizeSequenceSettings({ pitchMode: { kind: 'smooth' }, pitchScaleCent: 200,
     recordSpeed: selection.recordSpeed, playSpeed: selection.playSpeed });
@@ -168,6 +178,7 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
   checkChoice(ch.ampEnvelope.releaseTiming, ['time', 'rate'], 'AEnv Release Timing');
   if (ch.ampEnvelope.releaseTiming === 'rate' && ch.ampEnvelope.releaseCurve !== 'linear') throw new Error('AEnv Rate requires a Linear Release curve.');
   checkChoice(ch.pitchEnvelope.mode, ['gate', 'one-shot'], 'PEnv mode');
+  checkChoice(ch.pitchEnvelope.curve, ['linear', 'logarithmic'], 'PEnv curve');
   checkChoice(ch.pitchEnvelope.releaseTiming, ['time', 'rate'], 'PEnv Release Timing');
   if (!Number.isInteger(ch.burst.pulseCountMin) || ch.burst.pulseCountMin < LIMITS.burstCount.min || ch.burst.pulseCountMin > LIMITS.burstCount.max ||
     !Number.isInteger(ch.burst.pulseCountMax) || ch.burst.pulseCountMax < LIMITS.burstCount.min || ch.burst.pulseCountMax > LIMITS.burstCount.max) {
@@ -194,6 +205,7 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
     osc1: oscillator(ch.osc1, LIMITS.osc1Hz, true), osc2: oscillator(ch.osc2, LIMITS.osc2Hz, false),
     pitchEnvelope: {
       mode: ch.pitchEnvelope.mode,
+      curve: ch.pitchEnvelope.curve,
       start: bounded(ch.pitchEnvelope.start, LIMITS.pitchLevel), attack: bounded(ch.pitchEnvelope.attack, LIMITS.pitchLevel),
       sustain: bounded(ch.pitchEnvelope.sustain, LIMITS.pitchLevel), release: bounded(ch.pitchEnvelope.release, LIMITS.pitchLevel),
       attackSec: bounded(ch.pitchEnvelope.attackSec, LIMITS.pitchTimeSec), decaySec: bounded(ch.pitchEnvelope.decaySec, LIMITS.pitchTimeSec),
@@ -214,7 +226,8 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
       decaySec: bounded(ch.filterEnvelope.decaySec, LIMITS.filterEnvelopeDecay),
       sustain: bounded(ch.filterEnvelope.sustain, LIMITS.filterEnvelopeSustain),
       releaseSec: bounded(ch.filterEnvelope.releaseSec, LIMITS.filterEnvelopeRelease),
-      amountCent: bounded(ch.filterEnvelope.amountCent, LIMITS.filterEnvelopeAmount),
+      amountCent: bounded(ch.filterEnvelope.amountCent, { min: ch.filterEnvelope.amountWide ? -7200 : -4800, max: ch.filterEnvelope.amountWide ? 7200 : 4800 }),
+      amountWide: ch.filterEnvelope.amountWide,
       attackCurve: ch.filterEnvelope.attackCurve, decayCurve: ch.filterEnvelope.decayCurve, releaseCurve: ch.filterEnvelope.releaseCurve,
       releaseTiming: ch.filterEnvelope.releaseTiming, mode: ch.filterEnvelope.mode
     },
@@ -231,18 +244,18 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
       groupPeriodJitter: burstRange(ch.burst.groupPeriodJitter, LIMITS.burstJitter, 'group jitter')
     }
   };
-  return { formatVersion: 'KOROGI-Lab/timbre-v15', name: value.name.trim() || 'Untitled', editorLayout, settings,
+  return { formatVersion: 'KOROGI-Lab/timbre-v16', name: value.name.trim() || 'Untitled', editorLayout, settings,
     detuneRangeCent: bounded(value.detuneRangeCent, LIMITS.detuneRangeCent), detuneNormalized: clamp(value.detuneNormalized, -1, 1),
     gatePatterns, pitchPatterns, sequence: { gateMode: selection.gateMode, gateUserId: selection.gateUserId, pitchUserId: selection.pitchUserId,
       recordSpeed: speeds.recordSpeed, playSpeed: speeds.playSpeed } };
 }
 
 export function normalizeSession(raw: unknown): SessionDocument {
-  requireFormat(raw, ['KOROGI-Lab/session-v2', 'KOROGI-Lab/session-v3', 'KOROGI-Lab/session-v4', 'KOROGI-Lab/session-v5', 'KOROGI-Lab/session-v6', 'KOROGI-Lab/session-v7', 'KOROGI-Lab/session-v8', 'KOROGI-Lab/session-v9', 'KOROGI-Lab/session-v10', 'KOROGI-Lab/session-v11', 'KOROGI-Lab/session-v12', 'KOROGI-Lab/session-v13', 'KOROGI-Lab/session-v14', 'KOROGI-Lab/session-v15', 'KOROGI-Lab/session-v16']);
+  requireFormat(raw, ['KOROGI-Lab/session-v2', 'KOROGI-Lab/session-v3', 'KOROGI-Lab/session-v4', 'KOROGI-Lab/session-v5', 'KOROGI-Lab/session-v6', 'KOROGI-Lab/session-v7', 'KOROGI-Lab/session-v8', 'KOROGI-Lab/session-v9', 'KOROGI-Lab/session-v10', 'KOROGI-Lab/session-v11', 'KOROGI-Lab/session-v12', 'KOROGI-Lab/session-v13', 'KOROGI-Lab/session-v14', 'KOROGI-Lab/session-v15', 'KOROGI-Lab/session-v16', 'KOROGI-Lab/session-v17']);
   if (!isRecord(raw) || !Array.isArray(raw.channels)) throw new Error('Session channels must be an array.');
   checkShape(raw, { formatVersion: '', name: '', savedAt: '', near: defaultBus(), far: defaultBus(), crossfade: 0, masterGainDb: 0, masterMuted: false }, 'session');
   const value = raw as unknown as SessionDocument;
-  const legacyPan = !['KOROGI-Lab/session-v5', 'KOROGI-Lab/session-v6', 'KOROGI-Lab/session-v7', 'KOROGI-Lab/session-v8', 'KOROGI-Lab/session-v9', 'KOROGI-Lab/session-v10', 'KOROGI-Lab/session-v11', 'KOROGI-Lab/session-v12', 'KOROGI-Lab/session-v13', 'KOROGI-Lab/session-v14', 'KOROGI-Lab/session-v15', 'KOROGI-Lab/session-v16'].includes(value.formatVersion);
+  const legacyPan = !['KOROGI-Lab/session-v5', 'KOROGI-Lab/session-v6', 'KOROGI-Lab/session-v7', 'KOROGI-Lab/session-v8', 'KOROGI-Lab/session-v9', 'KOROGI-Lab/session-v10', 'KOROGI-Lab/session-v11', 'KOROGI-Lab/session-v12', 'KOROGI-Lab/session-v13', 'KOROGI-Lab/session-v14', 'KOROGI-Lab/session-v15', 'KOROGI-Lab/session-v16', 'KOROGI-Lab/session-v17'].includes(value.formatVersion);
   const ids = new Set<string>();
   const channels = value.channels.map(channel => {
     const withPan = legacyPan ? { ...channel, pan: P.pan.defaultValue } : channel;
@@ -253,7 +266,7 @@ export function normalizeSession(raw: unknown): SessionDocument {
       timbre: channel.timbre === null ? null : normalizeTimbre(channel.timbre) };
   });
   const bus = (b: BusSettings): BusSettings => ({ gainEnabled: b.gainEnabled, gainDb: bounded(b.gainDb, LIMITS.busGainDb), effects: [effect(b.effects[0], 'chorus'), effect(b.effects[1], 'reverb')] });
-  return { formatVersion: 'KOROGI-Lab/session-v16', name: value.name.trim() || 'Untitled', savedAt: value.savedAt,
+  return { formatVersion: 'KOROGI-Lab/session-v17', name: value.name.trim() || 'Untitled', savedAt: value.savedAt,
     channels, near: bus(value.near), far: bus(value.far), crossfade: clamp(value.crossfade, P.crossfade.min / 100, P.crossfade.max / 100), masterGainDb: bounded(value.masterGainDb, LIMITS.masterGainDb), masterMuted: value.masterMuted };
 }
 

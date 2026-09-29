@@ -21,10 +21,12 @@ test('1280x800 fits Sequence without scrolling and keeps controls aligned', asyn
       borderRadius: style.borderRadius, borderColor: style.borderColor, backgroundColor: style.backgroundColor, color: style.color };
   }));
   expect(lampStyles[0]).toEqual(lampStyles[1]);
-  const triggerStyles = await page.locator('#trigger, #record-gate').evaluateAll(nodes => nodes.map(node => {
+  const triggerStyles = await page.locator('#trigger').evaluate(node => {
     const style = getComputedStyle(node);
-    return { backgroundColor: style.backgroundColor, borderColor: style.borderColor, color: style.color };
-  }));
+    const slide = getComputedStyle(document.querySelector('#record-gate'), '::before');
+    const values = source => ({ backgroundColor: source.backgroundColor, borderColor: source.borderColor, color: source.color });
+    return [values(style), values(slide)];
+  });
   expect(triggerStyles[0]).toEqual(triggerStyles[1]);
   const gate = await page.locator('#gate-1').boundingBox();
   await page.mouse.move(gate.x + gate.width / 2, gate.y + gate.height / 2);
@@ -94,6 +96,8 @@ test('1280x800 fits Sequence without scrolling and keeps controls aligned', asyn
   expect(layout.portamento.right).toBeLessThan(layout.pitchScale.left);
   expect(layout.pitchPerformance.top).toBeGreaterThan(layout.pitchMode.top);
   expect(layout.trigger.left).toBeGreaterThan(layout.pitchPerformance.left);
+  expect(layout.trigger.width).toBe(56);
+  expect(layout.trigger.height).toBe(56);
   expect(layout.divider).toBe('2px');
   expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
 });
@@ -350,7 +354,7 @@ test('TIMBRE nodes use compact equal geometry and distinguish enabled from editi
   expect(off.border).toBe('1px');
   expect(burst).toEqual(off);
 
-  const triggerColors = await page.locator('#trigger, .slot-gate, #record-gate, #trigger-menu').evaluateAll(nodes => nodes.map(node => { const style = getComputedStyle(node); return { background: style.backgroundColor, border: style.borderColor, color: style.color, disabled: node.disabled }; }));
+  const triggerColors = await page.locator('#trigger, .slot-gate, #record-gate, #trigger-menu').evaluateAll(nodes => nodes.map(node => { const style = getComputedStyle(node, node.id === 'record-gate' ? '::before' : undefined); return { background: style.backgroundColor, border: style.borderColor, color: style.color, disabled: node.disabled }; }));
   expect(triggerColors.every(style => style.background === 'rgb(41, 63, 46)' && style.border === 'rgb(128, 150, 111)')).toBe(true);
   expect(triggerColors.filter(style => !style.disabled).every(style => style.color === 'rgb(219, 233, 211)')).toBe(true);
   const fx1Buttons = await page.locator('#fx1-monitor-toggle, [data-flow-block-wrapper="fx1"] .flow-toggle').evaluateAll(nodes => nodes.map(node => { const rect = node.getBoundingClientRect(); return { width: rect.width, height: rect.height }; }));

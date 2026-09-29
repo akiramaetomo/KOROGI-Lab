@@ -66,7 +66,8 @@ test('UI FEnv Amount reaches the live Filter1 detune after first audio resume', 
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   await openTimbreEditors(page, ['fenv']);
   for (const [id, value] of [['fenv-amount', '3600'], ['fenv-attack', '0'], ['fenv-decay', '0'], ['fenv-sustain', '1']]) {
-    await page.locator(`#${id}`).fill(value); await page.locator(`#${id}`).dispatchEvent('change');
+    if (id === 'fenv-amount') await page.locator(`#${id}`).evaluate((node, next) => { node.value = next; node.dispatchEvent(new Event('change', { bubbles: true })); }, value);
+    else { await page.locator(`#${id}`).fill(value); await page.locator(`#${id}`).dispatchEvent('change'); }
   }
   await page.locator('[data-editor-card="fenv"] [data-block-toggle="fenv"]').click();
   await page.evaluate(() => {
@@ -101,7 +102,8 @@ test('UI held TRG renders the audible one-second FEnv sweep', async ({ page }, i
   await page.locator('#timbre-file-1').setInputFiles({ name: 'diagnostic.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(patch)) });
   await openTimbreEditors(page, ['fenv']);
   for (const [id, value] of [['fenv-amount', '3600'], ['fenv-attack', '5'], ['fenv-decay', '1000'], ['fenv-sustain', '0'], ['fenv-release', '100']]) {
-    await page.locator(`#${id}`).fill(value); await page.locator(`#${id}`).dispatchEvent('change');
+    if (id === 'fenv-amount') await page.locator(`#${id}`).evaluate((node, next) => { node.value = next; node.dispatchEvent(new Event('change', { bubbles: true })); }, value);
+    else { await page.locator(`#${id}`).fill(value); await page.locator(`#${id}`).dispatchEvent('change'); }
   }
   await page.locator('#fenv-curve + .segmented-choice [data-value="linear"]').click();
   await page.locator('[data-editor-card="fenv"] [data-block-toggle="fenv"]').click();
@@ -153,7 +155,7 @@ test('UI held TRG renders the audible one-second FEnv sweep', async ({ page }, i
 test('FEnv shares ADSR controls, keeps independent values and round-trips cards/settings', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   await openTimbreEditors(page, ['aenv', 'fenv']);
-  await page.locator('#fenv-amount').fill('-2400'); await page.locator('#fenv-amount').dispatchEvent('change');
+  await page.locator('#fenv-amount').evaluate(node => { node.value = '-2400'; node.dispatchEvent(new Event('change', { bubbles: true })); });
   await page.locator('#fenv-attack').fill('45'); await page.locator('#fenv-attack').dispatchEvent('change');
   await expect(page.locator('#attack')).toHaveValue('5');
   await page.locator('#fenv-release-timing + .segmented-choice [data-value="rate"]').click();
@@ -165,7 +167,7 @@ test('FEnv shares ADSR controls, keeps independent values and round-trips cards/
   await page.locator('[data-editor-card="fenv"] .editor-card-handle').press('ArrowLeft');
   const download = page.waitForEvent('download'); await page.locator('#save-1').click();
   const value = JSON.parse(await readFile(await (await download).path(), 'utf8'));
-  expect(value.formatVersion).toBe('KOROGI-Lab/timbre-v15');
+  expect(value.formatVersion).toBe('KOROGI-Lab/timbre-v16');
   expect(value.editorLayout).toEqual([['fenv'], ['aenv']]); expect(value.settings.blocksEnabled.fenv).toBe(true);
   expect(value.settings.filterEnvelope).toMatchObject({ amountCent: -2400, attackSec: .045,
     mode: 'one-shot', releaseTiming: 'rate', releaseCurve: 'linear', attackCurve: 'exponential' });
@@ -199,7 +201,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768
     expect(result.wire.gap).toBeGreaterThan(0); expect(result.wire.dx).toBeCloseTo(0, 1);
     for (let i = 0; i < 4; i++) { expect(result.a[i].width).toBeGreaterThan(65); expect(result.f[i].width).toBeCloseTo(result.a[i].width, 1); }
     expect(new Set(result.f.map(x => x.top)).size).toBe(1);
-    await page.locator('#fenv-amount').scrollIntoViewIfNeeded(); await expect(page.locator('#fenv-amount')).toBeVisible();
+    await page.locator('#fenv-amount-coarse').scrollIntoViewIfNeeded(); await expect(page.locator('#fenv-amount-coarse')).toBeVisible();
     await page.screenshot({ path: info.outputPath('fenv-layout.png') });
   });
 }

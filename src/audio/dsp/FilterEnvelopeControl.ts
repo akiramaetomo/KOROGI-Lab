@@ -51,7 +51,8 @@ export class FilterEnvelopeControl extends EnvelopeTimeline<FilterEnvelopeSettin
       decaySec: clamp(value.decaySec, LIMITS.filterEnvelopeDecay.min, LIMITS.filterEnvelopeDecay.max),
       releaseSec: clamp(value.releaseSec, LIMITS.filterEnvelopeRelease.min, LIMITS.filterEnvelopeRelease.max),
       sustain: clamp(value.sustain, LIMITS.filterEnvelopeSustain.min, LIMITS.filterEnvelopeSustain.max),
-      amountCent: clamp(value.amountCent, LIMITS.filterEnvelopeAmount.min, LIMITS.filterEnvelopeAmount.max) };
+      amountCent: clamp(value.amountCent, value.amountWide ? LIMITS.filterEnvelopeAmount.min : -4800,
+        value.amountWide ? LIMITS.filterEnvelopeAmount.max : 4800), amountWide: value.amountWide };
   }
 
   protected scheduleFrom(time: number): void {

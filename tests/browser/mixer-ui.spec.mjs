@@ -22,6 +22,12 @@ async function save(page, id = 'export-patch') {
 async function file(page, selector, value) { await page.locator(selector).setInputFiles({ name: 'test.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(value)) }); }
 async function start(page) { await page.goto('/'); }
 async function four(page) { await start(page); for (const id of ['2', '3', '4']) { await page.locator(`#select-${id}`).click(); await page.locator(`#standard-${id}`).click(); } await page.locator('#select-1').click(); }
+async function showOsc(page, id) {
+  await openTimbreEditors(page, [id]);
+  const card = page.locator(`[data-editor-card="${id}"]`);
+  if (await card.isHidden()) await page.locator(`#flow-${id}`).click();
+  await expect(card).toBeVisible();
+}
 
 test('Initial slots, empty-source editor, per-timbre editing and common FX selection remain independent', async ({ page }) => {
   await start(page); await expect(page.locator('.mixer-slot')).toHaveCount(8);
@@ -52,18 +58,22 @@ test('Initial slots, empty-source editor, per-timbre editing and common FX selec
 });
 
 test('new Timbres default to SYNC and the common OSC1/2 phase mode persists per Timbre', async ({ page }) => {
-  await start(page); await openTimbreEditors(page, ['osc1', 'osc2']);
+  await start(page); await showOsc(page, 'osc1');
   await expect(page.locator('#phase-mode-osc1 + .segmented-choice [data-value="sync"]')).toHaveAttribute('aria-checked', 'true');
   await page.locator('#phase-mode-osc1 + .segmented-choice [data-value="free"]').click();
+  await showOsc(page, 'osc2');
   await expect(page.locator('#phase-mode-osc2 + .segmented-choice [data-value="free"]')).toHaveAttribute('aria-checked', 'true');
-  await page.locator('[data-editor-card="osc1"] .editor-card-close').click();
   await page.locator('#phase-mode-osc2 + .segmented-choice [data-value="sync"]').click();
+  await showOsc(page, 'osc1');
   await expect(page.locator('#phase-mode-osc1 + .segmented-choice [data-value="sync"]')).toHaveAttribute('aria-checked', 'true');
+  await showOsc(page, 'osc2');
   await page.locator('#phase-mode-osc2 + .segmented-choice [data-value="free"]').click();
   const timbre = await save(page, 'save-1'); expect(timbre.settings.phaseMode).toBe('free');
   await file(page, '#timbre-file-2', timbre); await page.locator('#select-2').click(); await panel(page, 'sources');
+  await showOsc(page, 'osc2');
   await expect(page.locator('#phase-mode-osc2 + .segmented-choice [data-value="free"]')).toHaveAttribute('aria-checked', 'true');
   await page.locator('#select-3').click(); await page.locator('#standard-3').click(); await panel(page, 'sources');
+  await showOsc(page, 'osc1');
   await expect(page.locator('#phase-mode-osc1 + .segmented-choice [data-value="sync"]')).toHaveAttribute('aria-checked', 'true');
 });
 
@@ -120,7 +130,7 @@ test('Timbre and session round-trip independently; old formats are rejected with
   const timbre = await save(page, 'save-2');
   await expect(page.locator('#select-2')).toHaveAttribute('aria-pressed', 'true');
   await panel(page, 'patch'); await expect(page.locator('#timbre-name, #export-timbre')).toHaveCount(0);
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v15'); expect(timbre).not.toHaveProperty('near'); expect(timbre).not.toHaveProperty('pan');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v16'); expect(timbre).not.toHaveProperty('near'); expect(timbre).not.toHaveProperty('pan');
   await page.locator('#level-2').evaluate(input => { input.value = '-9'; input.dispatchEvent(new Event('input')); });
   await page.locator('#balance-2').evaluate(input => { input.value = '.8'; input.dispatchEvent(new Event('input')); });
   await page.locator('#pan-2').evaluate(input => { input.value = '-.65'; input.dispatchEvent(new Event('input')); });
@@ -129,7 +139,7 @@ test('Timbre and session round-trip independently; old formats are rejected with
   await panel(page, 'space-output'); await edit(page, '#master-gain', -21);
   await edit(page, '#crossfade', 70);
   await page.locator('#master-mute').click(); const saved = await save(page);
-  expect(saved.formatVersion).toBe('KOROGI-Lab/session-v16'); expect(saved.channels[1].pan).toBe(-.65);
+  expect(saved.formatVersion).toBe('KOROGI-Lab/session-v17'); expect(saved.channels[1].pan).toBe(-.65);
   await file(page, '#timbre-file-3', timbre); await expect(page.locator('#patch-status')).toContainText('Loaded timbre 3: Second');
   const afterTimbre = await save(page); expect(afterTimbre.near).toEqual(saved.near); expect(afterTimbre.crossfade).toBe(.7);
   expect(afterTimbre.channels[1].pan).toBe(-.65); expect(afterTimbre.channels[2].pan).toBe(0);

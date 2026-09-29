@@ -60,7 +60,7 @@ export const PARAMETER_RANGES = {
   sustain: { min: 0, max: 1, defaultValue: .8, step: .01, scale: linear, fine: 'none', axis: horizontal, unit: '' },
   release: { min: 0, max: 5_000, defaultValue: 30, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
   // Independent filter envelope: signed cents and normalized ADSR.
-  'fenv-amount': { min: -4_800, max: 4_800, defaultValue: 4_800, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'cent' },
+  'fenv-amount': { min: -7_200, max: 7_200, defaultValue: 4_800, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'cent' },
   'fenv-attack': { min: 0, max: 5_000, defaultValue: 5, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
   'fenv-decay': { min: 0, max: 5_000, defaultValue: 300, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
   'fenv-sustain': { min: 0, max: 1, defaultValue: 0, step: .01, scale: linear, fine: 'none', axis: horizontal, unit: '' },
@@ -80,12 +80,12 @@ export const PARAMETER_RANGES = {
   'record-length': { min: 1, max: 300, defaultValue: 30, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 's', integer: true },
   // Sequence pitch is stored normalized; Scale maps +/-1 to cents at playback.
   'sequence-pitch-input': { min: -1, max: 1, defaultValue: 0, step: .001, scale: linear, fine: 'none', axis: horizontal, unit: '' },
-  'sequence-filter-amount': { min: -4_800, max: 4_800, defaultValue: 0, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'cent' },
+  'sequence-filter-amount': { min: -7_200, max: 7_200, defaultValue: 0, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'cent' },
   'sequence-pitch-scale': { min: 0, max: 2_400, defaultValue: 200, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'cent' },
   // Stepped mode has this many positions on each side of the always-present center.
-  'sequence-pitch-steps': { min: 1, max: 24, defaultValue: 12, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: '', integer: true },
+  'sequence-pitch-steps': { min: 0, max: 24, defaultValue: 0, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: '', integer: true },
   // Zero means an immediate target change; nonzero values glide linearly in cents.
-  'sequence-portamento': { min: 0, max: 5_000, defaultValue: 0, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'ms' },
+  'sequence-portamento': { min: 0, max: 1_000, defaultValue: 0, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
   'sequence-record-speed': { min: .25, max: 4, defaultValue: 1, step: .01, scale: log, fine: 'none', axis: horizontal, unit: 'x' },
   'sequence-play-speed': { min: .25, max: 4, defaultValue: 1, step: .01, scale: log, fine: 'none', axis: horizontal, unit: 'x' },
   // All FX slots use these ranges. Wet percent is divided by 100; all Wet bounds currently match.

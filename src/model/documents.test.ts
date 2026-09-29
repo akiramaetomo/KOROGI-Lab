@@ -4,7 +4,7 @@ import type { SessionDocument } from '../audio/types';
 import { PARAMETER_RANGES as P, parameterValueBounds } from '../config/parameterRanges';
 
 function session(): SessionDocument {
-  return { formatVersion: 'KOROGI-Lab/session-v16', name: 'Four', savedAt: '2026-09-19', channels: ['1', '2', '3', '4'].map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
+  return { formatVersion: 'KOROGI-Lab/session-v17', name: 'Four', savedAt: '2026-09-19', channels: ['1', '2', '3', '4'].map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
     near: defaultBus(), far: defaultBus(), crossfade: .5, masterGainDb: -18, masterMuted: false };
 }
 function legacy(assignment = 'mix1') {
@@ -38,12 +38,12 @@ describe('Timbre and session boundaries', () => {
     oldSettings.autoTrigger = { tonSec: .25, toffSec: .25, oneShotRepeatSec: .5 };
     delete (oldSettings.ampEnvelope as Record<string, unknown>).releaseTiming;
     const migrated = normalizeTimbre(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v15');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v16');
     expect(migrated.settings.pitchEnvelope).toEqual(defaultTimbre().settings.pitchEnvelope);
     expect(migrated.settings.ampEnvelope.releaseTiming).toBe('time');
     const newTimbre = defaultTimbre();
     newTimbre.settings.pitchEnvelope = { mode: 'one-shot', start: -.5, attack: 1, sustain: 0, release: -1,
-      attackSec: 0, decaySec: .03, releaseSec: .03, scale: 0, releaseTiming: 'rate' };
+      attackSec: 0, decaySec: .03, releaseSec: .03, scale: 0, releaseTiming: 'rate', curve: 'linear' };
     newTimbre.settings.ampEnvelope.releaseCurve = 'linear';
     newTimbre.settings.ampEnvelope.releaseTiming = 'rate';
     expect(normalizeTimbre(newTimbre).settings.pitchEnvelope).toEqual(newTimbre.settings.pitchEnvelope);
@@ -191,9 +191,9 @@ describe('Timbre and session boundaries', () => {
     (settings.osc2 as Record<string, unknown>).baseFrequencyHz = 1_000_000;
     channels[0]!.gainDb = 6;
     const migrated = parseLabSession(JSON.stringify(old));
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v16');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v17');
     expect(migrated.channels.every(channel => channel.pan === 0)).toBe(true);
-    expect(migrated.channels[0]!.timbre?.formatVersion).toBe('KOROGI-Lab/timbre-v15');
+    expect(migrated.channels[0]!.timbre?.formatVersion).toBe('KOROGI-Lab/timbre-v16');
     expect(migrated.channels[0]!.timbre?.settings.phaseMode).toBe('free');
     expect(migrated.channels[0]!.timbre?.settings.filter2Route).toBe('mod');
     expect(migrated.channels[0]!.timbre?.settings.filter1CutoffDepthCent).toBe(1200);
@@ -232,7 +232,7 @@ describe('Timbre and session boundaries', () => {
     timbre.formatVersion = 'KOROGI-Lab/timbre-v4'; delete timbre.playbackSource;
     timbre.recording = { durationSec: 1, selectionStartSec: 0, selectionEndSec: 1, gates: [{ onSec: .1, offSec: .2 }] };
     const migrated = normalizeSession(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v16');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v17');
     expect(migrated.channels[0]!.timbre!.sequence.gateMode).toBe('auto');
     expect(migrated.channels[0]!.timbre!.gatePatterns[0]!.recording).toEqual(timbre.recording);
     expect(migrated.channels[0]!.timbre!.gatePatterns[1]!.recording).toBeNull();
@@ -258,7 +258,7 @@ describe('Timbre and session boundaries', () => {
     old.patterns = [{ id: 'user-1', recording: { durationSec: 1, selectionStartSec: 0, selectionEndSec: 1,
       gates: [{ onSec: .1, offSec: .4 }] } }, { id: 'user-2', recording: null }];
     const migrated = normalizeTimbre(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v15');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v16');
     expect(migrated.pitchPatterns[2]!.recording).toBeNull();
     expect(migrated.gatePatterns[0]!.recording).toEqual((old.patterns as Array<Record<string, unknown>>)[0]!.recording);
     expect(migrated.pitchPatterns.map(pattern => pattern.recording)).toEqual([null, null, null]);
@@ -266,7 +266,7 @@ describe('Timbre and session boundaries', () => {
     migrated.pitchPatterns[2]!.recording = { durationSec: 2, selectionStartSec: .25, selectionEndSec: 1.75,
       points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: 1, valueNormalized: .5 }, { timeSec: 2, valueNormalized: -.25 }] };
     migrated.pitchPatterns[2]!.pitchScaleCent = 1200;
-    migrated.pitchPatterns[2]!.pitchMode = { kind: 'stepped', stepsPerSide: 12, portamentoSec: .08 };
+    migrated.pitchPatterns[2]!.pitchMode = { kind: 'stepped', stepsPerSide: 12, scale: 'equal', portamentoSec: .08 };
     migrated.sequence.recordSpeed = 2; migrated.sequence.playSpeed = .5;
     migrated.pitchPatterns[1]!.recording = structuredClone(migrated.pitchPatterns[2]!.recording);
     migrated.pitchPatterns[1]!.pitchMode = structuredClone(migrated.pitchPatterns[2]!.pitchMode);

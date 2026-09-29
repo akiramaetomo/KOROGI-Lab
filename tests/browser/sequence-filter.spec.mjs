@@ -1,6 +1,32 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
 
+test('Sequence Filter Wide and a legacy long Portamento survive save; moving its slider adopts the new limit', async ({ page }) => {
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  const download = page.waitForEvent('download'); await page.locator('#save-1').click();
+  const timbre = JSON.parse(await readFile(await (await download).path(), 'utf8'));
+  timbre.formatVersion = 'KOROGI-Lab/timbre-v15';
+  timbre.pitchPatterns.forEach(item => { delete item.filterAmountWide; });
+  delete timbre.settings.pitchEnvelope.curve; delete timbre.settings.filterEnvelope.amountWide;
+  timbre.pitchPatterns[0].pitchMode = { kind: 'stepped', stepsPerSide: 4, portamentoSec: 4.5 };
+  await page.locator('#timbre-file-1').setInputFiles({ name: 'legacy.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
+  await page.locator('#trigger-menu').click();
+  await expect(page.locator('.numeric-control[data-numeric-control="sequence-portamento"] .numeric-value-readout')).toHaveText('4500 ms (legacy)');
+  await page.locator('#sequence-filter-wide').click();
+  const amount = page.locator('#sequence-filter-amount');
+  await amount.evaluate(node => { const slider = node.closest('.numeric-control').querySelector('input[type="range"]');
+    slider.value = String(10000 * (7000 + 7200) / 14400); slider.dispatchEvent(new Event('input', { bubbles: true })); });
+  await expect(amount).toHaveValue('7000');
+  const savedDownload = page.waitForEvent('download'); await page.locator('#save-1').click();
+  const saved = JSON.parse(await readFile(await (await savedDownload).path(), 'utf8'));
+  expect(saved.pitchPatterns[0]).toMatchObject({ filterAmountCent: 7000, filterAmountWide: true });
+  expect(saved.pitchPatterns[0].pitchMode.portamentoSec).toBe(4.5);
+  await page.locator('#sequence-portamento-coarse').evaluate(node => { node.value = '10000'; node.dispatchEvent(new Event('input', { bubbles: true })); });
+  await expect(page.locator('#sequence-portamento')).toHaveValue('1000');
+  await page.locator('#sequence-filter-wide').click();
+  await expect(amount).toHaveValue('4800');
+});
+
 test('both Filter chains follow independent Sequence Amount with matching rendered frequency response', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   const results = await page.evaluate(async () => {
@@ -71,7 +97,8 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768
     await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
     await page.locator('#trigger-menu').click();
     const amount = page.locator('#sequence-filter-amount'); await expect(amount).toHaveValue('0');
-    await amount.fill('-1200'); await amount.dispatchEvent('change');
+    await amount.evaluate(node => { const slider = node.closest('.numeric-control').querySelector('input[type="range"]');
+      slider.value = '3750'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
     const download = page.waitForEvent('download'); await page.locator('#save-1').click();
     const saved = JSON.parse(await readFile(await (await download).path(), 'utf8'));
     expect(saved.pitchPatterns.map(item => item.filterAmountCent)).toEqual([-1200, 0, 0]);
@@ -85,7 +112,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768
     });
     expect(metrics.control).toBeGreaterThanOrEqual(140); expect(metrics.slider).toBeGreaterThanOrEqual(75);
     expect(metrics.scroll).toBeLessThanOrEqual(metrics.width + 1);
-    await amount.scrollIntoViewIfNeeded(); await page.screenshot({ path: info.outputPath('filter-amount.png') });
+    await page.locator('#sequence-filter-amount-coarse').scrollIntoViewIfNeeded(); await page.screenshot({ path: info.outputPath('filter-amount.png') });
   });
 }
 
@@ -98,7 +125,16 @@ test('manual, recorded and live edited Pitch keep both outputs synchronized acro
     ChannelSynth.prototype.setSequencePitch = function (...args) { window.__sequenceSynth = this; return original.apply(this, args); };
   });
   await page.locator('#trigger-menu').click();
-  const number = async (selector, value) => { await page.locator(selector).fill(String(value)); await page.locator(selector).dispatchEvent('change'); };
+  const number = async (selector, value) => {
+    if (selector === '#sequence-filter-amount' || selector === '#sequence-pitch-steps' || selector === '#sequence-portamento') {
+      await page.locator(selector).evaluate((node, target) => {
+        const slider = node.closest('.numeric-control').querySelector('input[type="range"]');
+        const min = Number(node.dataset.sliderMin ?? node.dataset.numericMin), max = Number(node.dataset.sliderMax ?? node.dataset.numericMax);
+        const position = node.dataset.numericScale === 'log1p' ? Math.log1p(target) / Math.log1p(max) : (target - min) / (max - min);
+        slider.value = String(position * 10000); slider.dispatchEvent(new Event('input', { bubbles: true }));
+      }, value);
+    } else { await page.locator(selector).fill(String(value)); await page.locator(selector).dispatchEvent('change'); }
+  };
   const output = () => page.evaluate(() => { const s = window.__sequenceSynth; return [s.getSequencePitchCent(), s.getSequenceFilterCent()]; });
   const initial = await page.evaluate(async () => {
     const { defaultTimbre } = await import('/src/model/documents.ts');
@@ -110,7 +146,7 @@ test('manual, recorded and live edited Pitch keep both outputs synchronized acro
   await page.locator('#sequence-pitch-input').evaluate(node => { node.value = '1'; node.dispatchEvent(new Event('input', { bubbles: true })); });
   await expect.poll(output).toEqual([0, 1200]);
   await page.locator('#sequence-pitch-center').click(); await expect.poll(output).toEqual([0, 0]);
-  await page.locator('#sequence-pitch-mode + .segmented-choice [data-value="stepped"]').click();
+  await page.locator('#sequence-pitch-mode').selectOption('equal');
   await number('#sequence-pitch-steps', 2); await number('#sequence-portamento', 50);
   await page.locator('#record-mode + .segmented-choice [data-value="pitch"]').click();
   await number('#record-length', 1); await page.locator('#record-toggle').click();
@@ -118,7 +154,7 @@ test('manual, recorded and live edited Pitch keep both outputs synchronized acro
   await page.locator('#sequence-pitch-input').evaluate(node => { node.value = '.37'; node.dispatchEvent(new Event('input', { bubbles: true })); });
   await expect.poll(output).toEqual([0, 600]);
   await page.locator('#record-toggle').click();
-  await page.locator('#sequence-pitch-mode + .segmented-choice [data-value="smooth"]').click();
+  await number('#sequence-pitch-steps', 0);
   const download = page.waitForEvent('download'); await page.locator('#save-1').click();
   const saved = JSON.parse(await readFile(await (await download).path(), 'utf8'));
   expect(saved.pitchPatterns[0].recording.points.some(item => item.valueNormalized === .5)).toBe(true);

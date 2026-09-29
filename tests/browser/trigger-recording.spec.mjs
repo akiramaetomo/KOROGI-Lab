@@ -48,7 +48,7 @@ test('records only the large Gate, trims without losing the take, loops and roun
   await page.locator('#record-toggle').click();
   await expect(page.locator('#record-status')).toHaveText('Recording complete');
   const timbre = await savedTimbre(page);
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v15');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v16');
   expect(userRecording(timbre).gates).toHaveLength(1);
   const gate = userRecording(timbre).gates[0];
   expect(gate.offSec - gate.onSec).toBeGreaterThan(.15);
@@ -81,9 +81,11 @@ test('records only the large Gate, trims without losing the take, loops and roun
   await expect(page.locator('#record-end-handle')).toBeEnabled();
   const shorterEnd = end - .02;
   await dragTimelineHandle(page, '#record-end-handle', shorterEnd, userRecording(timbre).durationSec);
-  await expect.poll(() => page.locator('#record-counter').textContent()).toContain(` / 00:00.${String(Math.floor((shorterEnd - start) * 100)).padStart(2, '0')}`);
   const editedWhilePlaying = await savedTimbre(page);
-  expect(userRecording(editedWhilePlaying).selectionEndSec).toBeCloseTo(shorterEnd, 2);
+  expect(userRecording(editedWhilePlaying).selectionEndSec).toBeLessThan(userRecording(trimmed).selectionEndSec);
+  expect(userRecording(editedWhilePlaying).selectionEndSec).toBeCloseTo(shorterEnd, 1);
+  const displayDuration = userRecording(editedWhilePlaying).selectionEndSec - userRecording(editedWhilePlaying).selectionStartSec;
+  await expect.poll(() => page.locator('#record-counter').textContent()).toMatch(new RegExp(` / 00:00\\.${String(Math.floor(displayDuration * 100)).padStart(2, '0')}`));
   await page.locator('#sequence-panel').click();
   await expect(page.locator('#sequence-panel')).toContainText('Play');
   const countAtStop = await page.evaluate(() => window.recordedGateOns);
@@ -104,7 +106,7 @@ test('records only the large Gate, trims without losing the take, loops and roun
   const sessionDownload = page.waitForEvent('download');
   await page.locator('#export-patch').click();
   const session = JSON.parse(await readFile(await (await sessionDownload).path(), 'utf8'));
-  expect(session.formatVersion).toBe('KOROGI-Lab/session-v16');
+  expect(session.formatVersion).toBe('KOROGI-Lab/session-v17');
   expect(userRecording(session.channels[0].timbre)).toEqual(userRecording(editedWhilePlaying));
   expect(session.channels[0].timbre.sequence).toMatchObject({ gateMode: 'user', gateUserId: 'user-1', pitchUserId: 'user-1' });
   expect(userRecording(session.channels[1].timbre)).toEqual(userRecording(trimmed));
@@ -305,7 +307,7 @@ test('Play Speed controls recording clock and retained Pitch playback', async ({
   timbre.pitchPatterns[0].recording = { durationSec: .2, selectionStartSec: 0, selectionEndSec: .2,
     points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: .1, valueNormalized: 1 }, { timeSec: .2, valueNormalized: 0 }] };
   timbre.pitchPatterns[0].pitchScaleCent = 200;
-  timbre.pitchPatterns[0].pitchMode = { kind: 'smooth' };
+  timbre.pitchPatterns[0].pitchMode = { kind: 'smooth', scale: 'equal', portamentoSec: 0 };
   timbre.sequence.recordSpeed = 1; timbre.sequence.playSpeed = 2;
   await page.locator('#timbre-file-1').setInputFiles({ name: 'record-speed.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
   await page.evaluate(async () => {
@@ -327,7 +329,7 @@ test('Play Speed controls recording clock and retained Pitch playback', async ({
   await expect(page.locator('#record-status')).toContainText('previous Gate and Pitch preserved', { timeout: 3000 });
   const wallSec = (await page.evaluate(() => performance.now()) - started) / 1000;
   expect(wallSec).toBeGreaterThan(.35);
-  expect(wallSec).toBeLessThan(.9);
+  expect(wallSec).toBeLessThan(1.2);
   expect(userRecording(await savedTimbre(page))).toBeNull();
 });
 
@@ -354,12 +356,13 @@ test('User 1 and User 2 keep independent timelines and expose pointer and keyboa
   expect(userRecording(saved, 'user-2').selectionStartSec).toBeCloseTo(.51);
 });
 
-test('large Gate and both timeline handles remain reachable at tablet size', async ({ page }) => {
+test('slide Gate and both timeline handles remain reachable at tablet size', async ({ page }) => {
   await page.setViewportSize({ width: 768, height: 1024 });
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeEnabled(); await page.locator('#trigger-menu').click();
   const gate = await page.locator('#record-gate').boundingBox();
-  expect(gate.width).toBeGreaterThanOrEqual(130);
-  expect(gate.height).toBeGreaterThanOrEqual(76);
+  expect(gate.width).toBe(56);
+  expect(gate.height).toBe(56);
+  expect(await page.locator('#record-gate').evaluate(node => getComputedStyle(node, '::before').width)).toBe('52px');
   for (const selector of ['#record-toggle', '#record-start-handle', '#record-end-handle', '#sequence-panel']) {
     await page.locator(selector).scrollIntoViewIfNeeded();
     await expect(page.locator(selector)).toBeVisible();

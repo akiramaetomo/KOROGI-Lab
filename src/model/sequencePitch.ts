@@ -1,4 +1,4 @@
-import type { AutoSequence, PitchPoint, PitchRecording, SequenceSettings } from '../audio/types';
+import type { AutoSequence, PitchPoint, PitchRecording, PitchScaleMode, SequenceSettings } from '../audio/types';
 import { PARAMETER_RANGES as P } from '../config/parameterRanges';
 import { clamp } from '../audio/dsp/params';
 import { isRecord } from './patch';
@@ -10,6 +10,7 @@ export const PITCH_SIMPLIFY_TOLERANCE = 1 / P['sequence-pitch-scale'].max;
 export function defaultSequenceSettings(): SequenceSettings {
   return {
     filterAmountCent: P['sequence-filter-amount'].defaultValue,
+    filterAmountWide: false,
     pitchScaleCent: P['sequence-pitch-scale'].defaultValue,
     pitchMode: { kind: 'smooth' },
     recordSpeed: P['sequence-record-speed'].defaultValue,
@@ -26,24 +27,29 @@ const bounded = (value: number, range: { min: number; max: number }): number => 
 
 export function normalizeSequenceSettings(raw: unknown): SequenceSettings {
   if (!isRecord(raw) || (raw.filterAmountCent !== undefined && !finiteNumber(raw.filterAmountCent)) || !finiteNumber(raw.pitchScaleCent) || !finiteNumber(raw.recordSpeed) || !finiteNumber(raw.playSpeed)
+    || (raw.filterAmountWide !== undefined && typeof raw.filterAmountWide !== 'boolean')
     || !isRecord(raw.pitchMode) || typeof raw.pitchMode.kind !== 'string') {
     throw new Error('Invalid sequence settings.');
   }
   const stepsPerSide = raw.pitchMode.stepsPerSide;
+  const scale = raw.pitchMode.scale ?? 'equal';
+  if (!(['equal', 'just-major', 'major', 'natural-minor', 'dorian', 'major-blues', 'minor-blues'] as unknown[]).includes(scale)) throw new Error('Invalid pitch scale mode.');
   const pitchMode = raw.pitchMode.kind === 'smooth'
-    ? { kind: 'smooth' as const }
+    ? { kind: 'smooth' as const, scale: scale as PitchScaleMode,
+      portamentoSec: finiteNumber(raw.pitchMode.portamentoSec) ? bounded(raw.pitchMode.portamentoSec, { min: 0, max: 5 }) : 0 }
     : raw.pitchMode.kind === 'stepped' && typeof stepsPerSide === 'number' && Number.isInteger(stepsPerSide)
       && finiteNumber(raw.pitchMode.portamentoSec)
       && stepsPerSide >= P['sequence-pitch-steps'].min
       && stepsPerSide <= P['sequence-pitch-steps'].max
-      ? { kind: 'stepped' as const, stepsPerSide,
+      ? { kind: 'stepped' as const, stepsPerSide, scale: scale as PitchScaleMode,
         portamentoSec: bounded(raw.pitchMode.portamentoSec, {
-          min: P['sequence-portamento'].min / 1000, max: P['sequence-portamento'].max / 1000
+          min: 0, max: 5
         }) }
       : null;
   if (!pitchMode) throw new Error('Invalid sequence pitch mode.');
   return {
-    filterAmountCent: bounded((raw.filterAmountCent ?? 0) as number, P['sequence-filter-amount']),
+    filterAmountCent: bounded((raw.filterAmountCent ?? 0) as number, { min: raw.filterAmountWide ? -7200 : -4800, max: raw.filterAmountWide ? 7200 : 4800 }),
+    filterAmountWide: raw.filterAmountWide ?? false,
     pitchScaleCent: bounded(raw.pitchScaleCent, P['sequence-pitch-scale']),
     pitchMode,
     recordSpeed: bounded(raw.recordSpeed, P['sequence-record-speed']),
@@ -81,9 +87,39 @@ export function normalizePitchRecording(raw: unknown): PitchRecording | null {
   return { durationSec, selectionStartSec, selectionEndSec, points };
 }
 
-export function quantizePitchValue(value: number, stepsPerSide: number): number {
-  const steps = Math.round(clamp(stepsPerSide, P['sequence-pitch-steps'].min, P['sequence-pitch-steps'].max));
-  return clamp(Math.round(clamp(value, -1, 1) * steps) / steps, -1, 1);
+const SCALE_SEMITONES: Record<Exclude<PitchScaleMode, 'equal' | 'just-major'>, readonly number[]> = {
+  major: [0, 2, 4, 5, 7, 9, 11], 'natural-minor': [0, 2, 3, 5, 7, 8, 10],
+  dorian: [0, 2, 3, 5, 7, 9, 10], 'major-blues': [0, 2, 3, 4, 7, 9],
+  'minor-blues': [0, 3, 5, 6, 7, 10]
+};
+const JUST_MAJOR = [1, 9 / 8, 5 / 4, 4 / 3, 3 / 2, 5 / 3, 15 / 8];
+
+export function pitchPositions(stepsPerSide: number, scale: PitchScaleMode = 'equal', pitchScaleCent = 200): number[] {
+  const steps = Math.round(clamp(stepsPerSide, 0, 24));
+  if (steps === 0) return [];
+  if (scale === 'equal') return Array.from({ length: steps * 2 + 1 }, (_, i) => (i - steps) / steps);
+  // With Scale=0, preserve the independent Filter Amount's normalized motion.
+  if (pitchScaleCent === 0) return [];
+  const positive: number[] = [];
+  for (let octave = 0; positive.length < steps && octave < 8; octave += 1) {
+    const degrees = scale === 'just-major'
+      ? JUST_MAJOR.map(ratio => 1200 * Math.log2(ratio))
+      : SCALE_SEMITONES[scale].map(semitone => semitone * 100);
+    for (const degree of degrees) {
+      const cents = octave * 1200 + degree;
+      if (cents <= 0) continue;
+      if (cents > pitchScaleCent + 1e-9) return [...[...positive].reverse().map(v => -v), 0, ...positive];
+      if (positive.length < steps) positive.push(cents / pitchScaleCent);
+    }
+  }
+  return [...[...positive].reverse().map(v => -v), 0, ...positive];
+}
+
+export function quantizePitchValue(value: number, stepsPerSide: number, scale: PitchScaleMode = 'equal', pitchScaleCent = 200): number {
+  const positions = pitchPositions(stepsPerSide, scale, pitchScaleCent);
+  const bounded = clamp(value, -1, 1);
+  if (!positions.length) return bounded;
+  return positions.reduce((best, candidate) => Math.abs(candidate - bounded) < Math.abs(best - bounded) ? candidate : best);
 }
 
 export function pitchValueAt(points: readonly PitchPoint[], timeSec: number): number {

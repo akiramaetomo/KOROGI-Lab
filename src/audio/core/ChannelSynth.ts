@@ -445,8 +445,10 @@ export class ChannelSynth {
   }
 
   setFilterEnvelope(settings: FilterEnvelopeSettings): void {
-    this.settings.filterEnvelope = { ...settings };
-    this.fEnv.setSettings(settings);
+    const safe = { ...settings, amountCent: clamp(settings.amountCent,
+      settings.amountWide ? -7200 : -4800, settings.amountWide ? 7200 : 4800) };
+    this.settings.filterEnvelope = safe;
+    this.fEnv.setSettings(safe);
   }
 
   setAmplitudeEnvelope(settings: AmplitudeEnvelopeSettings): void {

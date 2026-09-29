@@ -12,9 +12,9 @@ describe('author-edited parameter ranges', () => {
       expect(parameterForInput(`fenv-${phase}`)).toBe(PARAMETER_RANGES[`fenv-${phase}`]);
       expect(PARAMETER_RANGES[`fenv-${phase}`]).not.toBe(PARAMETER_RANGES[phase]);
     }
-    const ranges = copy(); ranges['fenv-amount'].min = -4801;
+    const ranges = copy(); ranges['fenv-amount'].min = -7201;
     expect(() => validateParameterRanges(ranges)).toThrow('fenv-amount.min');
-    ranges['fenv-amount'].min = -4800; ranges['fenv-release'].max = 5001;
+    ranges['fenv-amount'].min = -7200; ranges['fenv-release'].max = 5001;
     expect(() => validateParameterRanges(ranges)).toThrow('fenv-release.max');
   });
   it('accepts the current values and a safe PoC tuning change', () => {

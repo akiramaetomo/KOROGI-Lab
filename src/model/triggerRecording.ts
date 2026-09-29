@@ -11,7 +11,7 @@ export function emptyUserPatterns(): UserPattern[] {
 }
 export function emptyGatePatterns(): GatePattern[] { return USER_PATTERN_IDS.map(id => ({ id, recording: null, muted: false })); }
 export function emptyPitchPatterns(): PitchPattern[] { return USER_PATTERN_IDS.map(id => ({ id, recording: null, muted: false,
-  pitchMode: { kind: 'smooth' }, filterAmountCent: 0, pitchScaleCent: defaultSequenceSettings().pitchScaleCent })); }
+  pitchMode: { kind: 'smooth', scale: 'equal', portamentoSec: 0 }, filterAmountCent: 0, filterAmountWide: false, pitchScaleCent: defaultSequenceSettings().pitchScaleCent })); }
 
 export function patternRecording(patterns: readonly UserPattern[], patternId: UserPatternId): TriggerRecording | null {
   return patterns.find(pattern => pattern.id === patternId)?.gateRecording ?? null;

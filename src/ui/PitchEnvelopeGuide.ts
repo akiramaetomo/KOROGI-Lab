@@ -1,4 +1,4 @@
-/** Static reference diagrams, independent of settings and audio state. */
+/** Reference diagrams for the selected PEnv interpolation. */
 export function mountPitchEnvelopeGuide(host: HTMLElement): void {
   // Both diagrams use the same level and time scales: Rate keeps the Ps→Pr slope.
   const tr = 42;
@@ -14,7 +14,7 @@ export function mountPitchEnvelopeGuide(host: HTMLElement): void {
   host.innerHTML = `<details class="penv-shape-guide">
     <summary>PEnv Shape Guide</summary>
     <div class="penv-guide-diagrams">
-      <figure><figcaption>ADSR</figcaption>
+      <figure><figcaption>ADSR <span class="penv-guide-curve-name">Linear</span></figcaption>
         <svg viewBox="0 0 180 120" role="img" aria-label="ADSR: P0 to Pa to Ps; Gate OFF starts Release to Pr over Tr">${axes}
           <path class="event" d="M117 18V95"/>
           <path class="time envelope-line" d="M22 65L52 22L83 49H117L159 84H172"/>
@@ -23,7 +23,7 @@ export function mountPitchEnvelopeGuide(host: HTMLElement): void {
           <text x="32" y="91">Ta</text><text x="62" y="91">Td</text><text x="127" y="91">Tr</text>
         </svg>
       </figure>
-      <figure><figcaption>OFF during Attack
+      <figure class="penv-guide-linear-release"><figcaption>OFF during Attack
         <div class="penv-release-note"><strong>Release duration</strong><span>Time: fixed Tr</span><span>Rate: same slope as Ps→Pr</span></div>
       </figcaption>
         <svg viewBox="0 0 180 120" role="img" aria-label="Gate OFF during Attack. Gray is normal ADSR. Time takes Tr; Rate keeps the Ps to Pr slope and lasts longer in this example">${axes}
@@ -42,6 +42,26 @@ export function mountPitchEnvelopeGuide(host: HTMLElement): void {
           ${parallelMark((50 + rateEnd) / 2, 59.5, 'rate')}
         </svg>
       </figure>
-    </div>
+    </div><p class="penv-guide-log-note" hidden>Logarithmic: each transition starts faster and reaches the same endpoint at the specified time. Rate scales the Release duration by the starting distance.</p>
   </details>`;
+}
+
+export function syncPitchEnvelopeGuide(host: HTMLElement, curve: 'linear' | 'logarithmic'): void {
+  const details = host.querySelector<HTMLElement>('.penv-shape-guide');
+  if (details) details.dataset.curve = curve;
+  const progress = (value: number) => curve === 'logarithmic' ? Math.log1p(9 * value) / Math.log(10) : value;
+  const segment = (x1: number, y1: number, x2: number, y2: number) =>
+    Array.from({ length: 17 }, (_, index) => {
+      const position = index / 16;
+      return `${index === 0 ? 'M' : 'L'}${(x1 + (x2 - x1) * position).toFixed(2)} ${(y1 + (y2 - y1) * progress(position)).toFixed(2)}`;
+    }).join('');
+  const path = host.querySelector<SVGPathElement>('.penv-guide-diagrams .envelope-line');
+  path?.setAttribute('d', curve === 'linear' ? 'M22 65L52 22L83 49H117L159 84H172'
+    : `${segment(22, 65, 52, 22)}${segment(52, 22, 83, 49)}L117 49${segment(117, 49, 159, 84)}L172 84`);
+  const linearOnly = host.querySelector<HTMLElement>('.penv-guide-linear-release');
+  if (linearOnly) linearOnly.hidden = curve === 'logarithmic';
+  const note = host.querySelector<HTMLElement>('.penv-guide-log-note');
+  if (note) note.hidden = curve !== 'logarithmic';
+  const name = host.querySelector<HTMLElement>('.penv-guide-curve-name');
+  if (name) name.textContent = curve === 'logarithmic' ? 'Logarithmic' : 'Linear';
 }

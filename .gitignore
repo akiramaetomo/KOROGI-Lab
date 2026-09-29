@@ -6,3 +6,6 @@ playwright-report/
 # Local recordings and temporary research data; keep the directory guide tracked.
 /local_data/*
 !/local_data/README.md
+
+# Local music experiments and generated study artifacts are optional.
+/studies/

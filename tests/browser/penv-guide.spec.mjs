@@ -35,10 +35,12 @@ for (const viewport of [{ width: 1024, height: 768 }, { width: 1194, height: 834
     expect(geometry.scale.y).toBeCloseTo(geometry.modes.y, 0);
     const scaleRows = await panel.locator('[data-numeric-control="penv-scale"]').evaluate(node => {
       const rect = selector => node.querySelector(selector).getBoundingClientRect();
-      return { label: rect('.numeric-heading'), input: rect('input'), slider: rect('.numeric-slider-axes') };
+      return { label: rect('.numeric-heading'), slider: rect('.numeric-slider-axes') };
     });
-    expect(scaleRows.slider.x).toBeGreaterThan(scaleRows.label.right);
-    expect(scaleRows.input.y).toBeGreaterThan(scaleRows.label.y);
+    expect(scaleRows.slider.y).toBeGreaterThanOrEqual(scaleRows.label.bottom);
+    expect(scaleRows.slider.width).toBeGreaterThan(100);
+    await expect(page.locator('#penv-scale')).toBeHidden();
+    await expect(panel.locator('[data-numeric-control="penv-scale"] .numeric-value-readout')).toHaveText('1');
     if ([1024, 1366].includes(viewport.width)) await page.screenshot({ path: testInfo.outputPath('penv-collapsed.png') });
     await guide.locator('summary').click();
     await expect(guide).toHaveAttribute('open', '');
@@ -67,8 +69,8 @@ for (const viewport of [{ width: 1024, height: 768 }, { width: 1194, height: 834
     await page.locator('#penv-attack-level').fill('12');
     await page.locator('#penv-attack-level').dispatchEvent('change');
     expect(await guide.locator('svg').evaluateAll(nodes => nodes.map(node => node.innerHTML))).toEqual(diagrams);
-    await page.locator('#penv-scale').scrollIntoViewIfNeeded();
-    await expect(page.locator('#penv-scale')).toBeVisible();
+    await page.locator('#penv-scale-coarse').scrollIntoViewIfNeeded();
+    await expect(page.locator('#penv-scale-coarse')).toBeVisible();
     await guide.locator('figure').last().scrollIntoViewIfNeeded();
     if ([1024, 1366].includes(viewport.width)) await page.screenshot({ path: testInfo.outputPath('penv-expanded.png') });
     expect(await page.locator('.function-editor').evaluate(node => getComputedStyle(node).overflowY)).toBe('auto');

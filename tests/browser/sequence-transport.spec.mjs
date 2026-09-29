@@ -135,7 +135,7 @@ test('User Gate and Pitch use independent periods under the same Play Speed', as
   user.gatePatterns[0].recording = { durationSec: .4, selectionStartSec: 0, selectionEndSec: .4, gates: [{ onSec: 0, offSec: .05 }] };
   user.pitchPatterns[0].recording = { durationSec: .2, selectionStartSec: 0, selectionEndSec: .2,
     points: [{ timeSec: 0, valueNormalized: -.5 }, { timeSec: .1, valueNormalized: .5 }, { timeSec: .2, valueNormalized: -.5 }] };
-  user.pitchPatterns[0].pitchScaleCent = 200; user.pitchPatterns[0].pitchMode = { kind: 'smooth' };
+  user.pitchPatterns[0].pitchScaleCent = 200; user.pitchPatterns[0].pitchMode = { kind: 'smooth', scale: 'equal', portamentoSec: 0 };
   user.sequence.recordSpeed = 1; user.sequence.playSpeed = 2; user.sequence.gateMode = 'user';
   await loadTimbre(page, '1', user);
   await page.evaluate(async () => {
@@ -176,7 +176,7 @@ test('Auto Gate and Pitch receive one common start and source Play Speed', async
   const timbre = await saveTimbre(page);
   timbre.pitchPatterns[2].recording = { durationSec: .2, selectionStartSec: 0, selectionEndSec: .2,
     points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: .1, valueNormalized: 1 }, { timeSec: .2, valueNormalized: 0 }] };
-  timbre.pitchPatterns[2].pitchScaleCent = 300; timbre.pitchPatterns[2].pitchMode = { kind: 'smooth' };
+  timbre.pitchPatterns[2].pitchScaleCent = 300; timbre.pitchPatterns[2].pitchMode = { kind: 'smooth', scale: 'equal', portamentoSec: 0 };
   timbre.sequence.pitchUserId = 'user-3'; timbre.sequence.recordSpeed = 1; timbre.sequence.playSpeed = 2;
   await loadTimbre(page, '1', timbre);
   await page.evaluate(async () => {

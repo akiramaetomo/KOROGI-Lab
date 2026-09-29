@@ -11,7 +11,7 @@ describe('SequenceTransport timing', () => {
     vi.stubGlobal('window', { setInterval: () => 1, clearInterval: () => {} });
     const context = { currentTime: 0, state: 'running' };
     const synth = { isAutoTriggerRunning: () => false } as ChannelSynth;
-    let settings: SequenceSettings = { pitchScaleCent: 200, filterAmountCent: -4800, pitchMode: { kind: 'smooth' }, recordSpeed: 1, playSpeed: 1 };
+    let settings: SequenceSettings = { pitchScaleCent: 200, filterAmountCent: -4800, filterAmountWide: false, pitchMode: { kind: 'smooth' }, recordSpeed: 1, playSpeed: 1 };
     const calls = { gateOns: [] as number[], gateCancels: [] as number[], pitchHolds: [] as number[], pitches: [] as Array<{ cents: number; filterCent: number; time: number; transition: number }> };
     const engine = {
       context,

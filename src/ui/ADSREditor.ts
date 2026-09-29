@@ -6,19 +6,22 @@ export class ADSREditor {
   constructor(private readonly root: HTMLElement, private readonly prefix: 'aenv' | 'fenv') {
     const name = prefix === 'aenv' ? 'AEnv' : 'FEnv';
     root.innerHTML = `<legend>${name} / ADSR</legend>
-      ${prefix === 'fenv' ? '<label>Amount <span class="unit">cent</span><input id="fenv-amount" data-audio-control type="number" value="0" disabled></label>' : ''}
+      <div class="envelope-mode-layout">
+      <div class="adsr-mode-row ${prefix}-mode-row">
+        <div class="adsr-mode-control ${prefix}-mode-control"><label class="choice-field"><span>mode</span>
+          <select id="${prefix}-mode" data-audio-control hidden disabled><option value="gate">Gate</option><option value="one-shot">One-shot</option></select></label></div>
+        <div class="adsr-curve-control ${prefix}-curve-control"><label class="choice-field"><span>curve</span>
+          <select id="${prefix}-curve" data-audio-control hidden disabled><option value="exponential">Exponential</option><option value="linear">Linear</option></select></label>
+          <output id="${prefix}-curve-status" aria-live="polite" hidden>Mixed A/D/R curves</output></div>
+        <div class="adsr-release-control ${prefix}-release-control"><label class="choice-field"><span>release</span>
+          <select id="${prefix}-release-timing" data-audio-control hidden disabled><option value="time">Time</option><option value="rate">Rate</option></select></label></div>
+      </div>
+      ${prefix === 'fenv' ? '<label class="fenv-amount-control">Amount <button id="fenv-amount-wide" class="flow-toggle range-wide-toggle" data-audio-control type="button" aria-label="FEnv Amount Wide" aria-pressed="false" disabled>Wide</button><input id="fenv-amount" data-audio-control data-display-only="true" type="number" value="0" disabled></label>' : ''}
+      </div>
       <div class="inline-grid four">${['attack', 'decay', 'sustain', 'release'].map(phase =>
         `<label>${phase[0]!.toUpperCase() + phase.slice(1)} <span class="unit">${phase === 'sustain' ? '0..1' : 'ms'}</span>
           <input id="${this.id(phase)}" data-audio-control type="number" value="${phase === 'sustain' ? '.8' : phase === 'attack' ? '5' : phase === 'decay' ? '20' : '30'}" disabled></label>`).join('')}</div>
-      <div class="adsr-mode-row ${prefix}-mode-row">
-        <div class="adsr-curve-control ${prefix}-curve-control"><label class="choice-field"><span>A/D/R curve</span>
-          <select id="${prefix}-curve" data-audio-control hidden disabled><option value="exponential">Exponential</option><option value="linear">Linear</option></select></label>
-          <output id="${prefix}-curve-status" aria-live="polite" hidden>Mixed A/D/R curves</output></div>
-        <div class="adsr-mode-control ${prefix}-mode-control"><label class="choice-field"><span>Envelope mode</span>
-          <select id="${prefix}-mode" data-audio-control hidden disabled><option value="gate">Gate</option><option value="one-shot">One-shot</option></select></label></div>
-        <div class="adsr-release-control ${prefix}-release-control"><label class="choice-field"><span>${name} Release</span>
-          <select id="${prefix}-release-timing" data-audio-control hidden disabled><option value="time">Time</option><option value="rate">Rate</option></select></label></div>
-      </div><small>${prefix === 'aenv' ? 'Rate uses the gain 1 to floor interval as the Release reference.' : 'Amount shifts Filter1 cutoff / BPF center. Rate uses normalized 1 to 0 as the Release reference.'} Rate requires a Linear Release curve.</small>`;
+      <small>${prefix === 'aenv' ? 'Rate uses the gain 1 to floor interval as the Release reference.' : 'Amount shifts Filter1 cutoff / BPF center. Rate uses normalized 1 to 0 as the Release reference.'} Rate requires a Linear Release curve.</small>`;
   }
 
   read(existing: ADSREnvelopeSettings, curve?: EnvelopeCurve, mode?: 'gate' | 'one-shot', timing?: ReleaseTiming): ADSREnvelopeSettings {

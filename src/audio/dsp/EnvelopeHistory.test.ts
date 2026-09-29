@@ -6,11 +6,11 @@ import type { AmplitudeEnvelopeSettings, PitchEnvelopeSettings } from '../types'
 const amp: AmplitudeEnvelopeSettings = { attackSec: .01, decaySec: .03, sustain: .5, releaseSec: .03,
   mode: 'gate', attackCurve: 'linear', decayCurve: 'linear', releaseCurve: 'linear', releaseTiming: 'time' };
 const pitch: PitchEnvelopeSettings = { start: 0, attack: .05, sustain: 0, release: -.05,
-  attackSec: .01, decaySec: .03, releaseSec: .03, mode: 'gate', scale: .5, releaseTiming: 'time' };
+  attackSec: .01, decaySec: .03, releaseSec: .03, mode: 'gate', curve: 'linear', scale: .5, releaseTiming: 'time' };
 
 // No event log in the AudioParam stub: measurements concern the envelopes themselves.
 function harness() {
-  const param = () => ({ value: 0, cancelAndHoldAtTime() {}, setValueAtTime() {},
+  const param = () => ({ value: 0, cancelAndHoldAtTime() {}, setValueAtTime() {}, setValueCurveAtTime() {},
     linearRampToValueAtTime() {}, exponentialRampToValueAtTime() {} });
   const node = () => ({ gain: param(), offset: param(), connect(target: unknown) { return target; }, start() {} });
   const clock = { currentTime: 0, createGain: node, createConstantSource: node };
@@ -27,6 +27,19 @@ interface Inspection {
 const inspect = (env: AmplitudeEnvelope | PitchEnvelopeControl) => env as unknown as Inspection;
 
 describe('bounded envelope history', () => {
+  it('curves signed PEnv levels logarithmically without changing endpoints or Rate duration', () => {
+    const { context } = harness();
+    const env = new PitchEnvelopeControl(context, { ...pitch, start: -.4, attack: .6,
+      sustain: .2, release: -.2, attackSec: .1, decaySec: .1, releaseSec: .1,
+      scale: 1, curve: 'logarithmic', releaseTiming: 'rate' });
+    env.gateOn(0); env.gateOff(.2);
+    expect(env.valueAt(0)).toBeCloseTo(-.4);
+    expect(env.valueAt(.05)).toBeCloseTo(-.4 + Math.log1p(4.5) / Math.log(10));
+    expect(env.valueAt(.1)).toBeCloseTo(.6);
+    expect(env.valueAt(.2)).toBeCloseTo(.2);
+    expect(env.valueAt(.25)).toBeCloseTo(.2 - .4 * Math.log1p(4.5) / Math.log(10));
+    expect(env.valueAt(.3)).toBeCloseTo(-.2);
+  });
   for (const mode of ['gate', 'one-shot'] as const) for (const interval of [.1, .025]) {
     it(`${mode}, ${interval * 1000} ms: 8 timbres retain bounded history for 5000 notes`, () => {
       const { clock, context } = harness();

@@ -54,7 +54,7 @@ test('BURST is an independent One-shot Timbre block and round-trips its settings
   await edit(page, '#burst-group-period', 100);
   await edit(page, '#burst-group-jitter', 10);
   const timbre = await saveTimbre(page);
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v15');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v16');
   expect(timbre.settings.burst).toEqual({ enabled: true, pulseCountMin: 1, pulseCountMax: 3,
     pulseIntervalSec: .025, pulseIntervalJitter: .2, groupPeriodSec: .1, groupPeriodJitter: .1 });
 
@@ -101,7 +101,7 @@ test('BURST emits 25 ms three-pulse groups and Auto Ton acts as the phrase windo
     synth.addGateScheduleListener(event => events.push(event));
     const start = context.currentTime + .05;
     synth.startAutoTrigger(start);
-    await new Promise(resolve => setTimeout(resolve, 170));
+    await new Promise(resolve => setTimeout(resolve, 260));
     synth.stopAutoTrigger(); synth.dispose(); await context.close();
     return { start, events };
   });
@@ -140,7 +140,7 @@ test('BURST Auto phrases and Sequence Pitch run together and round-trip', async 
   timbre.settings.autoTrigger.tonSec = .15; timbre.settings.autoTrigger.repeatSec = .2;
   timbre.pitchPatterns[2].recording = { durationSec: .2, selectionStartSec: 0, selectionEndSec: .2,
     points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: .1, valueNormalized: 1 }, { timeSec: .2, valueNormalized: 0 }] };
-  timbre.pitchPatterns[2].pitchScaleCent = 240; timbre.pitchPatterns[2].pitchMode = { kind: 'smooth' };
+  timbre.pitchPatterns[2].pitchScaleCent = 240; timbre.pitchPatterns[2].pitchMode = { kind: 'smooth', scale: 'equal', portamentoSec: 0 };
   timbre.sequence.pitchUserId = 'user-3';
   await loadTimbre(page, timbre);
 

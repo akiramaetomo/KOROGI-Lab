@@ -6,6 +6,7 @@ import {
   normalizeSequenceSettings,
   pitchValueAt,
   quantizePitchValue,
+  pitchPositions,
   simplifyPitchPoints
 } from './sequencePitch';
 
@@ -13,11 +14,12 @@ describe('sequence pitch data boundary', () => {
   it('provides the accepted defaults and normalizes bounded settings', () => {
     expect(defaultAutoSequence()).toEqual({ pitchRecording: null, settings: defaultSequenceSettings() });
     expect(defaultSequenceSettings()).toEqual({
-      pitchScaleCent: 200, filterAmountCent: 0, pitchMode: { kind: 'smooth' }, recordSpeed: 1, playSpeed: 1
+      pitchScaleCent: 200, filterAmountCent: 0, filterAmountWide: false, pitchMode: { kind: 'smooth' }, recordSpeed: 1, playSpeed: 1
     });
     expect(normalizeSequenceSettings({ pitchScaleCent: 3000,
       pitchMode: { kind: 'stepped', stepsPerSide: 12, portamentoSec: 10 }, recordSpeed: .1, playSpeed: 8 })).toEqual({
-      pitchScaleCent: 2400, filterAmountCent: 0, pitchMode: { kind: 'stepped', stepsPerSide: 12, portamentoSec: 5 }, recordSpeed: .25, playSpeed: 4
+      pitchScaleCent: 2400, filterAmountCent: 0, filterAmountWide: false,
+      pitchMode: { kind: 'stepped', stepsPerSide: 12, scale: 'equal', portamentoSec: 5 }, recordSpeed: .25, playSpeed: 4
     });
     expect(() => normalizeSequenceSettings({ ...defaultSequenceSettings(), pitchMode: { kind: 'stepped', stepsPerSide: 25, portamentoSec: 0 } })).toThrow('pitch mode');
   });
@@ -38,5 +40,23 @@ describe('sequence pitch data boundary', () => {
     const simplified = simplifyPitchPoints(points);
     expect(simplified).toEqual([points[0], points.at(-1)]);
     for (const time of [.25, .75, 1.25, 1.75]) expect(pitchValueAt(simplified, time)).toBeCloseTo(time / 2, 12);
+  });
+
+  it('uses musical cent positions, mirrors them around the root, and keeps zero-step motion continuous', () => {
+    expect(pitchPositions(7, 'major', 1200)).toEqual([-1, -11 / 12, -.75, -7 / 12, -5 / 12, -1 / 3, -1 / 6,
+      0, 1 / 6, 1 / 3, 5 / 12, 7 / 12, .75, 11 / 12, 1]);
+    expect(quantizePitchValue(.37, 7, 'major', 1200)).toBe(1 / 3);
+    expect(quantizePitchValue(-.37, 7, 'major', 1200)).toBe(-1 / 3);
+    expect(quantizePitchValue(.33, 7, 'just-major', 1200)).toBeCloseTo(Math.log2(5 / 4), 8);
+    expect(quantizePitchValue(.37, 0, 'minor-blues', 1200)).toBe(.37);
+    expect(quantizePitchValue(.37, 7, 'major', 0)).toBe(.37);
+  });
+
+  it('preserves legacy glides and validates the Wide filter range', () => {
+    const base = defaultSequenceSettings();
+    expect(normalizeSequenceSettings({ ...base, pitchMode: { kind: 'stepped', stepsPerSide: 2, portamentoSec: 4.5 } }).pitchMode)
+      .toEqual({ kind: 'stepped', stepsPerSide: 2, scale: 'equal', portamentoSec: 4.5 });
+    expect(normalizeSequenceSettings({ ...base, filterAmountCent: 7000, filterAmountWide: true }).filterAmountCent).toBe(7000);
+    expect(normalizeSequenceSettings({ ...base, filterAmountCent: 7000, filterAmountWide: false }).filterAmountCent).toBe(4800);
   });
 });

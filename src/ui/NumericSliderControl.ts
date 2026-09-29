@@ -10,8 +10,8 @@ function clamp(value: number, min: number, max: number): number {
 export class NumericSliderControl {
   private readonly coarse: HTMLInputElement;
   private readonly fine: HTMLInputElement | null;
-  private readonly min: number;
-  private readonly max: number;
+  private min: number;
+  private max: number;
   private readonly valueMin: number;
   private readonly valueMax: number;
   private readonly logarithmic: boolean;
@@ -24,6 +24,7 @@ export class NumericSliderControl {
   private readonly axis: 'horizontal' | 'vertical';
   private readonly unit: string;
   private readonly caption: string;
+  private readonly readout: HTMLOutputElement | null;
   private readonly scales = new Map<'coarse' | 'fine', HTMLElement>();
   private guide: HTMLElement | null = null;
   private fineAnchor: number;
@@ -68,6 +69,15 @@ export class NumericSliderControl {
     title.className = 'numeric-caption';
     title.textContent = caption;
     heading.append(title, ...switches);
+    this.readout = numberInput.dataset.displayOnly === 'true' ? document.createElement('output') : null;
+    if (this.readout) {
+      this.readout.className = 'numeric-value-readout';
+      this.readout.htmlFor = numberInput.id;
+      heading.append(this.readout);
+      numberInput.hidden = true;
+      numberInput.tabIndex = -1;
+      numberInput.setAttribute('aria-hidden', 'true');
+    }
     const axes = document.createElement('div');
     axes.className = 'numeric-slider-axes';
     this.coarse = this.makeAxis(axes, 'coarse', hasFine ? 'Coarse' : '');
@@ -97,6 +107,7 @@ export class NumericSliderControl {
     bindSliderReset(this.coarse, () => this.commit(Number(this.numberInput.defaultValue), 'coarse'));
     if (this.fine) bindSliderReset(this.fine, () => this.commit(this.fineAnchor, 'fine'));
     numberInput.addEventListener('change', () => this.sync(this.sliderSource !== 'fine'));
+    numberInput.addEventListener('slider-range-change', () => this.sync());
     numberInput.addEventListener('wheel', (event) => {
       const delta = event.deltaY || event.deltaX;
       if (numberInput.disabled || event.ctrlKey || delta === 0) return;
@@ -150,7 +161,15 @@ export class NumericSliderControl {
 
   /** Called after programmatic updates such as patch import or Mix selection. */
   sync(recenter = Number(this.numberInput.value) !== this.lastValue): void {
-    const value = clamp(Number(this.numberInput.value), this.valueMin, this.valueMax);
+    const nextMin = Number(this.numberInput.dataset.sliderMin ?? this.min);
+    const nextMax = Number(this.numberInput.dataset.sliderMax ?? this.max);
+    if (Number.isFinite(nextMin) && Number.isFinite(nextMax) && nextMax > nextMin && (nextMin !== this.min || nextMax !== this.max)) {
+      this.min = nextMin; this.max = nextMax;
+      const step = Number(this.numberInput.dataset.numericCoarseStep ?? this.numberInput.dataset.numericStep);
+      if (!this.logarithmic && !this.zeroLogarithmic) this.coarse.step = String(step / (this.max - this.min) * SLIDER_MAX);
+    }
+    const value = clamp(Number(this.numberInput.value), this.valueMin,
+      this.numberInput.dataset.allowLegacyOverflow === 'true' ? 5000 : this.valueMax);
     if (!Number.isFinite(value)) return;
     const position = this.positionFor(value);
     this.coarse.value = String(clamp(position * SLIDER_MAX, 0, SLIDER_MAX));
@@ -169,6 +188,8 @@ export class NumericSliderControl {
       this.updateScale('fine');
     }
     this.lastValue = value;
+    if (this.readout) this.readout.textContent = `${value}${this.unit ? ` ${this.unit}` : ''}`
+      + (this.numberInput.dataset.allowLegacyOverflow === 'true' && value > this.max ? ' (legacy)' : '');
     this.syncDisabled();
   }
 

@@ -98,8 +98,8 @@ test('PEnv controls and Release choices survive Timbre save and load', async ({ 
   for (const [id, value] of [['penv-start', '2'], ['penv-attack-level', '5'], ['penv-sustain-level', '0'],
     ['penv-release-level', '-5'], ['penv-attack-time', '0'], ['penv-decay-time', '30'],
     ['penv-release-time', '30'], ['penv-scale', '0.75']]) {
-    await page.locator(`#${id}`).fill(value);
-    await page.locator(`#${id}`).dispatchEvent('change');
+    if (id === 'penv-scale') await page.locator('#penv-scale-coarse').evaluate(node => { node.value = '7500'; node.dispatchEvent(new Event('input', { bubbles: true })); });
+    else { await page.locator(`#${id}`).fill(value); await page.locator(`#${id}`).dispatchEvent('change'); }
   }
   await page.locator('#penv-release-timing + .segmented-choice [data-value="rate"]').click();
   await page.locator('#flow-aenv').click();
@@ -107,9 +107,9 @@ test('PEnv controls and Release choices survive Timbre save and load', async ({ 
   await page.locator('#aenv-release-timing + .segmented-choice [data-value="rate"]').click();
   const download = page.waitForEvent('download'); await page.locator('#save-1').click();
   const timbre = JSON.parse(await readFile(await (await download).path(), 'utf8'));
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v15');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v16');
   expect(timbre.settings.pitchEnvelope).toEqual({ mode: 'gate', start: .02, attack: .05, sustain: 0, release: -.05,
-    attackSec: 0, decaySec: .03, releaseSec: .03, scale: .75, releaseTiming: 'rate' });
+    attackSec: 0, decaySec: .03, releaseSec: .03, scale: .75, releaseTiming: 'rate', curve: 'linear' });
   expect(timbre.settings.ampEnvelope).toMatchObject({ releaseCurve: 'linear', releaseTiming: 'rate' });
   await page.locator('#timbre-file-1').setInputFiles({ name: 'envelope.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
   await expect(page.locator('#patch-status')).toContainText('Loaded timbre 1');
