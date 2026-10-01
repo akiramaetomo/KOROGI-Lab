@@ -50,9 +50,9 @@ test('FILTER2 destination, depth, segmented choices, and v4 save stay synchroniz
     await engine.close();
     return { saved: saved.channels[0].timbre, migrated: migrated.channels[0].timbre, migratedVersion: migrated.formatVersion, rejected, retained };
   });
-  expect(result.saved.formatVersion).toBe('KOROGI-Lab/timbre-v16');
+  expect(result.saved.formatVersion).toBe('KOROGI-Lab/timbre-v17');
   expect(result.saved.settings.filter1CutoffDepthCent).toBe(4800);
-  expect(result.migratedVersion).toBe('KOROGI-Lab/session-v17');
+  expect(result.migratedVersion).toBe('KOROGI-Lab/session-v20');
   expect(result.migrated.settings.filter2Route).toBe('mod');
   expect(result.migrated.settings.filter1CutoffDepthCent).toBe(1200);
   expect(result.rejected && result.retained).toBe(true);

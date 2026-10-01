@@ -7,6 +7,29 @@ import { SequenceTransport } from './SequenceTransport';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('SequenceTransport timing', () => {
+  it('keeps each timbre and each lane on its own loop period after Play All', async () => {
+    vi.stubGlobal('window', { setInterval: () => 1, clearInterval: () => {} });
+    const context = { currentTime: 0, state: 'running' };
+    const synths = { '1': {} as ChannelSynth, '2': {} as ChannelSynth };
+    const engine = {
+      context, getChannelIds: () => ['1', '2'], getChannel: (id: '1' | '2') => synths[id],
+      getSequenceSelection: () => ({ gateMode: 'user', gateUserId: 'user-1', pitchUserId: 'user-1', recordSpeed: 1, playSpeed: 1 }),
+      getSequenceSettings: () => ({ pitchMode: { kind: 'smooth' }, pitchScaleCent: 200, filterAmountCent: 0, filterAmountWide: false, recordSpeed: 1, playSpeed: 1 }),
+      getGateMuted: () => false, getPitchMuted: () => false,
+      getGateRecording: (id: string) => ({ durationSec: id === '1' ? 1 : 2, selectionStartSec: 0,
+        selectionEndSec: id === '1' ? 1 : 2, gates: [{ onSec: 0, offSec: .2 }] }),
+      getPitchRecording: () => ({ durationSec: 1.5, selectionStartSec: 0, selectionEndSec: 1.5,
+        points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: 1.5, valueNormalized: 0 }] }),
+      gateOn: () => {}, gateOff: () => {}, cancelScheduledGates: () => {}, resetSequencePitch: () => {}, setSequencePitch: () => {}
+    } as unknown as AudioEngine;
+    const transport = new SequenceTransport(() => engine, async () => {}, () => {}, () => {}, () => {});
+    await transport.playAll();
+    context.currentTime = 1.88;
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.8);
+    expect(transport.position('1', 'pitch')?.elapsed).toBeCloseTo(.3);
+    expect(transport.position('2', 'gate')?.elapsed).toBeCloseTo(1.8);
+    transport.stopAll();
+  });
   it('retains independent User Gate and Pitch phases across a live Play Speed change', async () => {
     vi.stubGlobal('window', { setInterval: () => 1, clearInterval: () => {} });
     const context = { currentTime: 0, state: 'running' };

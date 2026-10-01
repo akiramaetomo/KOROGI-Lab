@@ -4,11 +4,11 @@ import { WhiteNoiseFactory } from '../dsp/WhiteNoiseFactory';
 import { EffectSlot } from '../effects/EffectSlot';
 import { LIMITS, PARAM_SMOOTH_SEC } from '../constants';
 import { clamp, dbToGain, smoothAudioParam } from '../dsp/params';
-import { defaultBus, defaultTimbre, DEFAULT_CHANNEL_MIX, normalizeSession, normalizeTimbre } from '../../model/documents';
+import { defaultBus, defaultSongSettings, defaultTimbre, DEFAULT_CHANNEL_MIX, normalizeSession, normalizeSongSettings, normalizeTimbre } from '../../model/documents';
 import { normalizeTriggerRecording } from '../../model/triggerRecording';
 import { normalizePitchRecording, normalizeSequenceSettings } from '../../model/sequencePitch';
 import { PARAMETER_RANGES as P } from '../../config/parameterRanges';
-import type { BusAssignment, BusEffectSlotIndex, BusSettings, ChannelMixSettings, EffectParameter, EffectSlotSettings, EffectType, GatePattern, MasterInputMode, PitchPattern, PitchRecording, SequenceSelection, SequenceSettings, SessionChannel, SessionDocument, TimbreDocument, TriggerRecording, UserPatternId } from '../types';
+import type { BusAssignment, BusEffectSlotIndex, BusSettings, ChannelMixSettings, EffectParameter, EffectSlotSettings, EffectType, GatePattern, MasterInputMode, PitchPattern, PitchRecording, SequenceSelection, SequenceSettings, SessionChannel, SessionDocument, SongSettings, TimbreDocument, TriggerRecording, UserPatternId } from '../types';
 
 export function equalPower(position: number): [number, number] {
   const u = clamp(position, 0, 1);
@@ -92,7 +92,7 @@ class ChannelStrip {
     equalPower(this.mix.balance).forEach((gain, i) => smoothAudioParam(this.sends[i]!.gain, gain, now, PARAM_SMOOTH_SEC));
   }
   timbre(): TimbreDocument {
-    return { formatVersion: 'KOROGI-Lab/timbre-v16', editorLayout: structuredClone(this.editorLayout), name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(),
+    return { formatVersion: 'KOROGI-Lab/timbre-v17', editorLayout: structuredClone(this.editorLayout), name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(),
       gatePatterns: structuredClone(this.gatePatterns), pitchPatterns: structuredClone(this.pitchPatterns), sequence: structuredClone(this.sequence) };
   }
   fadeOut(): void {
@@ -125,6 +125,7 @@ export class AudioEngine {
   private crossfade = P.crossfade.defaultValue / 100;
   private masterGainDb = -18;
   private masterMuted = false;
+  private song = defaultSongSettings();
   private masterInputMode: MasterInputMode = 'common-space';
   private directMonitorId: string | null = null;
   private busy = false;
@@ -143,11 +144,11 @@ export class AudioEngine {
     this.output.threshold.value = -3; this.output.knee.value = 0; this.output.ratio.value = 20;
     this.output.attack.value = .003; this.output.release.value = .1;
     const session = normalizeSession(initial ?? {
-      formatVersion: 'KOROGI-Lab/session-v16', name: 'Untitled', savedAt: '', channels: [{ id: '1', ...DEFAULT_CHANNEL_MIX, timbre: defaultTimbre() }],
-      near: defaultBus(), far: defaultBus(), crossfade: P.crossfade.defaultValue / 100, masterGainDb: P['master-gain'].defaultValue, masterMuted: false
+      formatVersion: 'KOROGI-Lab/session-v20', name: 'Untitled', savedAt: '', channels: [{ id: '1', ...DEFAULT_CHANNEL_MIX, timbre: defaultTimbre() }],
+      near: defaultBus(), far: defaultBus(), crossfade: P.crossfade.defaultValue / 100, masterGainDb: P['master-gain'].defaultValue, masterMuted: false, song: defaultSongSettings()
     });
     this.graph = this.prepareGraph(session);
-    this.crossfade = session.crossfade; this.masterGainDb = session.masterGainDb; this.masterMuted = session.masterMuted;
+    this.crossfade = session.crossfade; this.masterGainDb = session.masterGainDb; this.masterMuted = session.masterMuted; this.song = session.song;
     this.masterGain.gain.value = dbToGain(this.masterGainDb); this.preLimiterOutput.gain.value = this.masterMuted ? 0 : 1;
     this.connectGraph(this.graph);
     this.commonMonitorGain.connect(this.masterGain); this.directMonitorGain.connect(this.masterGain);
@@ -185,6 +186,16 @@ export class AudioEngine {
     this.assertReady(); this.strip(id).editorLayout = normalizeEditorLayout(layout);
   }
   getSequenceSelection(id: string): SequenceSelection { return structuredClone(this.strip(id).sequence); }
+  getSongSettings(): SongSettings { return structuredClone(this.song); }
+  setSongSettings(settings: SongSettings): void { this.assertReady(); this.song = normalizeSongSettings(settings); }
+  copyUserPattern(id: string, from: UserPatternId, to: UserPatternId): void {
+    this.assertReady(); const strip = this.strip(id);
+    if (from === to) return;
+    const gate = structuredClone(this.gatePattern(strip, from));
+    const pitch = structuredClone(this.pitchPattern(strip, from));
+    Object.assign(this.gatePattern(strip, to), gate, { id: to });
+    Object.assign(this.pitchPattern(strip, to), pitch, { id: to });
+  }
   setSequenceSelection(id: string, changes: Partial<SequenceSelection>): void {
     this.assertReady(); const strip = this.strip(id);
     const timbre = { ...strip.timbre(), sequence: { ...strip.sequence, ...changes } };
@@ -235,6 +246,7 @@ export class AudioEngine {
   getSequencePitchCent(id: string, time = this.context.currentTime): number { this.assertReady(); return this.strip(id).synth.getSequencePitchCent(time); }
   cancelScheduledGates(id: string): void { if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.cancelScheduledGates(); }
   cancelScheduledGatesFrom(id: string, time: number): void { if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.cancelScheduledGatesFrom(time); }
+  cancelSongFuture(id: string, time: number): void { if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.cancelSongFuture(time); }
   startAuto(id: string, startAt?: number, playSpeed = 1): void { this.assertReady(); const strip = this.strip(id); strip.activate(); strip.synth.startAutoTrigger(startAt, playSpeed); }
   setAutoPlaySpeed(id: string, playSpeed: number): void { this.assertReady(); this.strip(id).synth.setAutoTriggerPlaybackSpeed(playSpeed); }
   stopAuto(id: string): void { if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.stopAutoTrigger(); }
@@ -270,9 +282,9 @@ export class AudioEngine {
   setMasterMuted(muted: boolean): void { this.assertReady(); this.masterMuted = muted; smoothAudioParam(this.preLimiterOutput.gain, muted ? 0 : 1, this.context.currentTime, PARAM_SMOOTH_SEC); }
   isMasterMuted(): boolean { return this.masterMuted; }
   createSession(name: string): SessionDocument {
-    return { formatVersion: 'KOROGI-Lab/session-v17', name: name.trim() || 'Untitled', savedAt: new Date().toISOString(),
+    return { formatVersion: 'KOROGI-Lab/session-v20', name: name.trim() || 'Untitled', savedAt: new Date().toISOString(),
       channels: this.graph.slots.map(slot => ({ id: slot.id, ...this.getChannelMix(slot.id), timbre: this.graph.strips.get(slot.id)?.timbre() ?? null })),
-      near: this.getBusSettings('near'), far: this.getBusSettings('far'), crossfade: this.crossfade, masterGainDb: this.masterGainDb, masterMuted: this.masterMuted };
+      near: this.getBusSettings('near'), far: this.getBusSettings('far'), crossfade: this.crossfade, masterGainDb: this.masterGainDb, masterMuted: this.masterMuted, song: this.getSongSettings() };
   }
   async applySession(raw: SessionDocument): Promise<void> {
     this.assertReady(); const session = normalizeSession(raw); const candidate = this.prepareGraph(session);
@@ -280,7 +292,7 @@ export class AudioEngine {
     await new Promise<void>(resolve => globalThis.setTimeout(resolve, PARAM_SMOOTH_SEC * 1000 + 2));
     if (this.disposed) { this.disposeGraph(candidate); this.busy = false; return; }
     const old = this.graph; this.graph = candidate; this.connectGraph(candidate); this.disposeGraph(old); this.disposeRetired();
-    this.crossfade = session.crossfade; this.masterGainDb = session.masterGainDb; this.masterMuted = session.masterMuted;
+    this.crossfade = session.crossfade; this.masterGainDb = session.masterGainDb; this.masterMuted = session.masterMuted; this.song = session.song;
     this.masterInputMode = 'common-space'; this.directMonitorId = null;
     this.graph.strips.forEach(strip => strip.setDirectSelected(false));
     this.busy = false; this.setMasterGainDb(this.masterGainDb); this.setMasterMuted(this.masterMuted); this.setMasterInputMode('common-space');

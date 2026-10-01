@@ -26,7 +26,7 @@ export class SequenceTransport {
   private blocked: { id: string; lane: RecordingLane } | null = null;
   constructor(private readonly engine: () => AudioEngine | null, private readonly ensureRunning: () => Promise<void>,
     private readonly changed: () => void, private readonly report: (message: string) => void,
-    private readonly forgetManual: (id: string) => void) {}
+    private readonly forgetManual: (id: string) => void, private readonly beforePlay: () => void = () => {}) {}
 
   setRecordingTarget(id: string | null, lane: RecordingLane = 'both'): void {
     const previous = this.blocked?.id ?? null;
@@ -60,6 +60,7 @@ export class SequenceTransport {
   async toggle(id: string): Promise<void> { if (this.isPlaying(id)) this.stop(id); else await this.play(id); }
   async toggleAll(): Promise<void> { if (this.anyPlaying()) this.stopAll(); else await this.playAll(); }
   async play(id: string): Promise<void> {
+    this.beforePlay();
     const engine = this.engine(); const synth = engine?.getChannel(id);
     if (!engine || !synth || this.blocked?.id === id) return;
     const source = this.source(id);
@@ -73,6 +74,7 @@ export class SequenceTransport {
     this.start(id, engine.context.currentTime + .08);
   }
   async playAll(): Promise<void> {
+    this.beforePlay();
     this.stopAll(); const engine = this.engine(); if (!engine) return;
     const candidates = new Map(engine.getChannelIds().map(id => [id, engine.getChannel(id)]));
     const tokens = new Map(engine.getChannelIds().map(id => [id, this.requests.get(id)]));

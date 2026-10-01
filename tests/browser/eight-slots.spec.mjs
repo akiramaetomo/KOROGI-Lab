@@ -69,7 +69,7 @@ test('Slots 5 to 8 play together, accept digit Gates and round-trip individual t
   const sessionDownload = page.waitForEvent('download');
   await page.locator('#export-patch').click();
   const session = JSON.parse(await readFile(await (await sessionDownload).path(), 'utf8'));
-  expect(session.formatVersion).toBe('KOROGI-Lab/session-v17');
+  expect(session.formatVersion).toBe('KOROGI-Lab/session-v20');
   expect(session.channels).toHaveLength(8);
   expect(session.channels[7]).toMatchObject({ id: '8', gainDb: -12, timbre: { name: 'Eighth' } });
   await page.locator('#patch-file').setInputFiles({ name: 'eight.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) });

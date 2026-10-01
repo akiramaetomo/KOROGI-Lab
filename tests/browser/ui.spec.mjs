@@ -21,7 +21,7 @@ async function edit(page, selector, value) {
 test('FILES reports the current timbre and session formats', async ({ page }) => {
   await page.goto('/');
   await page.locator('[data-panel-target="patch"]').first().click();
-  await expect(page.locator('[data-panel="patch"]')).toContainText('New files use timbre-v16 / session-v17');
+  await expect(page.locator('[data-panel="patch"]')).toContainText('New files use timbre-v17 / session-v20');
 });
 
 test('Earlier formats and malformed session are rejected without changing settings or Auto', async ({ page }) => {

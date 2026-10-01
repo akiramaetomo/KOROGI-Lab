@@ -58,11 +58,11 @@ test('reorders by keyboard and mouse without replacing controls or their values'
 test('retains unsaved layouts per timbre, exports both formats and restores files including empty layouts', async ({ page }) => {
   await start(page); await closeAll(page); await select(page, 'filter1'); await select(page, 'osc1');
   const timbre = await saved(page, '#save-1');
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v16'); expect(timbre.editorLayout).toEqual([['filter1'], ['osc1']]);
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v17'); expect(timbre.editorLayout).toEqual([['filter1'], ['osc1']]);
   await page.locator('#select-2').click(); await page.locator('#standard-2').click(); await closeAll(page);
   await page.locator('#select-1').click(); expect(await layout(page)).toEqual(['filter1', 'osc1']);
   await page.locator('#files-menu').click(); const session = await saved(page, '#export-patch');
-  expect(session.formatVersion).toBe('KOROGI-Lab/session-v17'); expect(session.channels[1].timbre.editorLayout).toEqual([]);
+  expect(session.formatVersion).toBe('KOROGI-Lab/session-v20'); expect(session.channels[1].timbre.editorLayout).toEqual([]);
   await page.locator('#patch-file').setInputFiles({ name: 'session.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) });
   await expect(page.locator('#patch-status')).toContainText('Loaded');
   await select(page, 'filter1'); expect(await layout(page)).toEqual(['filter1', 'osc1']);

@@ -124,7 +124,7 @@ export interface BusSettings {
 
 export interface TimbreDocument {
   editorLayout: EditorLayout;
-  formatVersion: 'KOROGI-Lab/timbre-v16';
+  formatVersion: 'KOROGI-Lab/timbre-v17';
   name: string;
   settings: ChannelSettings;
   detuneRangeCent: number;
@@ -134,7 +134,8 @@ export interface TimbreDocument {
   sequence: SequenceSelection;
 }
 
-export type UserPatternId = 'user-1' | 'user-2' | 'user-3';
+export type UserPatternId = 'user-1' | 'user-2' | 'user-3' | 'user-4' | 'user-5' | 'user-6' | 'user-7' | 'user-8';
+export interface SongSettings { bpm: number; speed: number; bars: [number, number, number, number, number, number, number, number]; timingMode: 'original' | 'bars' }
 export type PitchScaleMode = 'equal' | 'just-major' | 'major' | 'natural-minor' | 'dorian' | 'major-blues' | 'minor-blues';
 export type PitchMode = { kind: 'smooth'; scale?: PitchScaleMode; portamentoSec?: number }
   | { kind: 'stepped'; stepsPerSide: number; portamentoSec: number; scale?: PitchScaleMode };
@@ -191,7 +192,7 @@ export interface SessionChannel extends ChannelMixSettings {
 
 /** The engine does not impose the Lab UI's four-slot limit. */
 export interface SessionDocument {
-  formatVersion: 'KOROGI-Lab/session-v17';
+  formatVersion: 'KOROGI-Lab/session-v20';
   name: string;
   savedAt: string;
   channels: SessionChannel[];
@@ -200,6 +201,7 @@ export interface SessionDocument {
   crossfade: number;
   masterGainDb: number;
   masterMuted: boolean;
+  song: SongSettings;
 }
 
 export type GateScheduleEvent =

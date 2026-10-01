@@ -244,6 +244,21 @@ export class ChannelSynth {
     this.scheduleGateOff(boundary);
   }
 
+  /** Replace Song lookahead without changing the Gate or envelope already sounding. */
+  cancelSongFuture(time = this.context.currentTime): void {
+    const boundary = Math.max(time, this.context.currentTime);
+    this.baseGateEvents = this.baseGateEvents.filter(event => event.time <= boundary);
+    if (this.burstActive()) {
+      this.burstScheduler.retimeFrom(boundary);
+      this.emitGate({ kind: 'cancel', time: boundary });
+      return;
+    }
+    this.cancelPhaseResetsFrom(boundary);
+    this.ampEnvelope.preserveCurrent(boundary);
+    this.pEnv.preserveCurrent(boundary); this.fEnv.preserveCurrent(boundary);
+    this.emitGate({ kind: 'cancel', time: boundary });
+  }
+
   /** The TRIGGER panel's held Gate overlays Auto or recorded playback. */
   triggerGateOn(): void {
     this.assertUsable();

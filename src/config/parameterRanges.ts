@@ -78,6 +78,9 @@ export const PARAMETER_RANGES = {
   'burst-group-jitter': { min: 0, max: 50, defaultValue: 0, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
   // Gate-recording length is an integer UI duration; file validation retains the fixed five-minute safety cap.
   'record-length': { min: 1, max: 300, defaultValue: 30, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 's', integer: true },
+  'song-bpm': { min: 40, max: 240, defaultValue: 120, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'BPM', integer: true },
+  'song-speed': { min: .25, max: 4, defaultValue: 1, step: .01, scale: linear, fine: 'none', axis: horizontal, unit: '×' },
+  'song-bars': { min: 1, max: 300, defaultValue: 1, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'bars', integer: true },
   // Sequence pitch is stored normalized; Scale maps +/-1 to cents at playback.
   'sequence-pitch-input': { min: -1, max: 1, defaultValue: 0, step: .001, scale: linear, fine: 'none', axis: horizontal, unit: '' },
   'sequence-filter-amount': { min: -7_200, max: 7_200, defaultValue: 0, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'cent' },

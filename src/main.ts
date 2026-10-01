@@ -4,10 +4,13 @@ import { CommonSpaceEditor, prepareCommonSpaceCards, type CommonCardId } from '.
 import type { EditorCardId } from './model/editorLayout';
 import { DEFAULT_EDITOR_LAYOUT } from './model/editorLayout';
 import { AudioEngine } from './audio/core/AudioEngine';
-import { defaultBus, defaultTimbre, DEFAULT_CHANNEL_MIX, LAB_SLOT_IDS, parseLabSession } from './model/documents';
+import { defaultBus, defaultSongSettings, defaultTimbre, DEFAULT_CHANNEL_MIX, LAB_SLOT_IDS, parseLabSession } from './model/documents';
 import { MixerPanel } from './ui/MixerPanel';
 import { TriggerRecorder } from './ui/TriggerRecorder';
 import { SequenceTransport } from './ui/SequenceTransport';
+import { SongTransport } from './ui/SongTransport';
+import { USER_PATTERN_IDS } from './model/triggerRecording';
+import { maxSongBars } from './model/recordingLimits';
 import { SignalMap } from './ui/SignalMap';
 import { mountPitchEnvelopeGuide, syncPitchEnvelopeGuide } from './ui/PitchEnvelopeGuide';
 import type {
@@ -24,6 +27,7 @@ import type {
   Filter2Route,
   FilterType,
   TimbreDocument,
+  UserPatternId,
   ModMode,
   OscSourceType
 } from './audio/types';
@@ -212,12 +216,22 @@ const patchStatus = requireElement<HTMLElement>('#patch-status');
 
 const sequencePanelButton = requireElement<HTMLButtonElement>('#sequence-panel');
 const sourceAutoButton = requireElement<HTMLButtonElement>('#source-auto');
-const sourceUser1Button = requireElement<HTMLButtonElement>('#source-user-1');
-const sourceUser2Button = requireElement<HTMLButtonElement>('#source-user-2');
-const sourceUser3Button = requireElement<HTMLButtonElement>('#source-user-3');
-const pitchUserButtons = ['user-1', 'user-2', 'user-3'].map((_, index) => requireElement<HTMLButtonElement>(`#pitch-user-${index + 1}`));
-const gateUserButtons = [sourceUser1Button, sourceUser2Button, sourceUser3Button];
+const pitchUserButtons = USER_PATTERN_IDS.map((_, index) => requireElement<HTMLButtonElement>(`#pitch-user-${index + 1}`));
+const gateUserButtons = USER_PATTERN_IDS.map((_, index) => requireElement<HTMLButtonElement>(`#source-user-${index + 1}`));
 const recordedGateButton = requireElement<HTMLButtonElement>('#source-recorded');
+const songButton = requireElement<HTMLButtonElement>('#song-toggle');
+const songTimingSelect = requireElement<HTMLSelectElement>('#song-timing');
+const songBarsGroup = requireElement<HTMLFieldSetElement>('#song-bars-group');
+const songBpmInput = requireElement<HTMLInputElement>('#song-bpm');
+const recordBpmInput = requireElement<HTMLInputElement>('#record-bpm');
+const recordBpmLabel = requireElement<HTMLLabelElement>('.record-bpm-label');
+const recordLengthMode = requireElement<HTMLSelectElement>('#record-length-mode');
+const songSpeedInput = requireElement<HTMLInputElement>('#song-speed');
+const songSpeedSlider = requireElement<HTMLInputElement>('#song-speed-slider');
+const songUserSelect = requireElement<HTMLSelectElement>('#song-user');
+const songBarsInput = requireElement<HTMLInputElement>('#song-bars');
+const songDuration = requireElement<HTMLOutputElement>('#song-duration');
+const songClock = requireElement<HTMLOutputElement>('#song-clock');
 
 function showDisplayError(message: string): void {
   displayErrorElement.textContent = message;
@@ -285,23 +299,26 @@ function ensureAudioRunning(forceAttempt = false): Promise<void> {
 statusElement.addEventListener('click', () => { void ensureAudioRunning(true).catch(() => {}); });
 const transport = new SequenceTransport(() => engine, ensureAudioRunning,
   () => { mixer.refresh(); recorder.refresh(); numericSliders.forEach(slider => slider.sync()); syncTransportControls(); },
-  message => { patchStatus.textContent = message; }, id => mixer.manual.forgetSource(id));
+  message => { patchStatus.textContent = message; }, id => mixer.manual.forgetSource(id), () => songTransport.stop());
+const songTransport = new SongTransport(() => engine, ensureAudioRunning, syncTransportControls, () => transport.stopAll());
 const mixer = new MixerPanel(requireElement('#mixer-slots'), () => engine, ensureAudioRunning, syncSelectedSource,
   message => { patchStatus.textContent = message; }, saveTimbre,
-  id => { transport.beforeReplace(id); recorder.releaseSource(id); if (recorder.lockedId() === id) recorder.cancel(); }, () => transport);
+  id => { songTransport.stop(); transport.beforeReplace(id); recorder.releaseSource(id); if (recorder.lockedId() === id) recorder.cancel(); }, () => transport);
 const recorder = new TriggerRecorder(() => engine, () => mixer.selectedId, ensureAudioRunning,
   id => {
     mixer.manual.forgetSource(id);
     engine?.cancelScheduledGates(id);
     mixer.refresh();
   }, (id, lane) => {
+    if (id) songTransport.stop();
     transport.setRecordingTarget(id, lane);
     mixer.protectSource(id);
     if (id) applyRecordingLock();
     else setAudioControlsEnabled(engine !== null && !loadingSession);
-  }, transport);
+  }, transport, () => { if (songTransport.isPlaying()) songTransport.stop(); }, syncSongSettings);
 function selectedChannel() { return engine?.getChannel(mixer.selectedId); }
 let gateState = false;
+let lastSongPreviewAt = 0;
 
 function setGateIndicator(on: boolean): void {
   gateState = on;
@@ -315,6 +332,13 @@ function animateGate(): void {
   const floor = selectedChannel()?.isPitchFloorLimitedNow() ?? false;
   requireElement<HTMLOutputElement>('#penv-floor-status').hidden = !floor;
   recorder.refreshClock();
+  if (performance.now() - lastSongPreviewAt > 500) { syncSongPreview(); lastSongPreviewAt = performance.now(); }
+  const song = songTransport.position();
+  if (song) {
+    songClock.textContent = song.bar === undefined
+      ? `User ${song.user} · ${songTime(song.userElapsedSec)} / ${songTime(song.userDurationSec)} · Total ${songTime(song.elapsedSec)}`
+      : `User ${song.user} · Bar ${song.bar} · Beat ${song.beat} · ${songTime(song.elapsedSec)}`;
+  } else songClock.textContent = 'Song stopped';
   syncTransportControls();
   window.requestAnimationFrame(animateGate);
 }
@@ -341,6 +365,8 @@ function syncTransportControls(): void {
   const any = transport.anyPlaying();
   playAllButton.textContent = any ? 'Stop All' : 'Play All';
   playAllButton.setAttribute('aria-pressed', String(any));
+  songButton.textContent = songTransport.isPlaying() ? '■ Stop Song' : '▶ Play Song';
+  songButton.setAttribute('aria-pressed', String(songTransport.isPlaying()));
 }
 window.requestAnimationFrame(animateGate);
 
@@ -371,11 +397,10 @@ function setAudioControlsEnabled(enabled: boolean): void {
   triggerButton.disabled = !sourceEnabled;
   const anyVoice = enabled && !!engine?.getChannelIds().some(id => engine?.getChannel(id));
   playAllButton.disabled = !anyVoice;
+  songButton.disabled = !anyVoice || recorder.isBusy();
   sequencePanelButton.disabled = !sourceEnabled;
   sourceAutoButton.disabled = !sourceEnabled;
-  sourceUser1Button.disabled = !sourceEnabled;
-  sourceUser2Button.disabled = !sourceEnabled;
-  sourceUser3Button.disabled = !sourceEnabled;
+  gateUserButtons.forEach(button => { button.disabled = !sourceEnabled; });
   recordedGateButton.disabled = !sourceEnabled;
   pitchUserButtons.forEach(button => { button.disabled = !sourceEnabled; });
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>(
@@ -388,6 +413,8 @@ function setAudioControlsEnabled(enabled: boolean): void {
   refreshAutoTriggerControls();
   refreshBurstControls();
   applyRecordingLock();
+  syncSongSettings();
+  if (!enabled) { recordBpmInput.disabled = true; songBarsGroup.disabled = true; }
 }
 
 function applyRecordingLock(): void {
@@ -395,9 +422,10 @@ function applyRecordingLock(): void {
   triggerButton.disabled = true;
   sequencePanelButton.disabled = true;
   sourceAutoButton.disabled = true;
-  sourceUser1Button.disabled = true;
-  sourceUser2Button.disabled = true;
-  sourceUser3Button.disabled = true;
+  gateUserButtons.forEach(button => { button.disabled = true; });
+  songButton.disabled = true;
+  recordBpmInput.disabled = true;
+  songBarsGroup.disabled = true;
   recordedGateButton.disabled = true;
   pitchUserButtons.forEach(button => { button.disabled = true; });
 }
@@ -725,12 +753,94 @@ function refreshDetuneReadouts(): void {
 
 mixer.manual.bind(triggerButton, () => mixer.selectedId);
 playAllButton.addEventListener('click', () => { void transport.toggleAll(); });
+songButton.addEventListener('click', () => {
+  if (recorder.isBusy()) return;
+  if (!songTransport.isPlaying() && !songTransport.preview().length) {
+    patchStatus.textContent = 'Record or load a Gate USER pattern before playing Song.'; return;
+  }
+  void songTransport.toggle();
+});
+function songTime(seconds: number): string {
+  const whole = Math.floor(Math.max(0, seconds));
+  return `${String(Math.floor(whole / 60)).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}`;
+}
+function syncSongPreview(): void {
+  const settings = engine?.getSongSettings(); if (!settings) return;
+  const sections = songTransport.preview();
+  const barsTime = settings.bars[Number(songUserSelect.value) - 1]! * 240 / (settings.bpm * settings.speed);
+  const users = sections.map(item => item.user).join(', ');
+  const duration = settings.timingMode === 'bars' ? `Bars USER ${songUserSelect.value}: ${barsTime.toFixed(2)} s`
+    : `Seconds total: ${sections.length ? `${sections.reduce((sum, section) => sum + section.duration, 0).toFixed(2)} s` : 'empty'}`;
+  songDuration.textContent = `${duration} · ${users ? `Song USER ${users}` : 'No Gate USER'}`;
+}
+function syncSongSettings(): void {
+  const settings = engine?.getSongSettings(); if (!settings) return;
+  setValue('#song-timing', settings.timingMode);
+  songBpmInput.value = String(settings.bpm);
+  recordBpmInput.value = String(settings.bpm);
+  recordBpmLabel.hidden = recordLengthMode.value !== 'bars';
+  recordBpmInput.disabled = recordLengthMode.value !== 'bars' || recorder.isBusy();
+  songBarsGroup.disabled = settings.timingMode !== 'bars' || recorder.isBusy();
+  songSpeedInput.value = String(settings.speed);
+  songSpeedSlider.value = String(settings.speed);
+  songBarsInput.value = String(settings.bars[Number(songUserSelect.value) - 1]);
+  songBarsInput.setAttribute('aria-label', `Bars to fit the selected USER, 1 to ${maxSongBars(settings.bpm)}`);
+  syncSongPreview();
+}
+recordLengthMode.addEventListener('change', syncSongSettings);
+songUserSelect.addEventListener('change', syncSongSettings);
+songTimingSelect.addEventListener('change', () => {
+  if (!engine) return;
+  songTransport.stop(); engine.setSongSettings({ ...engine.getSongSettings(), timingMode: songTimingSelect.value as 'original' | 'bars' });
+  syncSongSettings(); recorder.refresh();
+});
+function applyBpm(value: string): void {
+  if (!engine) return;
+  const bpm = Number(value);
+  if (Number.isInteger(bpm) && bpm >= P['song-bpm'].min && bpm <= P['song-bpm'].max) {
+    if (engine.getSongSettings().bars.some(bars => bars > maxSongBars(bpm))) {
+      patchStatus.textContent = `Reduce Fit to Bars to ${maxSongBars(bpm)} or fewer before setting ${bpm} BPM.`;
+    } else { engine.setSongSettings({ ...engine.getSongSettings(), bpm }); songTransport.updateTiming(); recorder.refresh(); }
+  } else patchStatus.textContent = 'BPM must be a whole number from 40 to 240.';
+  syncSongSettings();
+}
+songBpmInput.addEventListener('change', () => { if (!songBpmInput.disabled) applyBpm(songBpmInput.value); });
+recordBpmInput.addEventListener('change', () => { if (!recordBpmInput.disabled) applyBpm(recordBpmInput.value); });
+function applySongSpeed(value: number): void {
+  if (!engine || !Number.isFinite(value) || value < P['song-speed'].min || value > P['song-speed'].max) {
+    patchStatus.textContent = 'Song Speed must be 0.25–4×.';
+  } else {
+    engine.setSongSettings({ ...engine.getSongSettings(), speed: value });
+    songTransport.updateTiming();
+  }
+  syncSongSettings();
+}
+songSpeedInput.addEventListener('change', () => applySongSpeed(Number(songSpeedInput.value)));
+songSpeedSlider.addEventListener('input', () => applySongSpeed(Number(songSpeedSlider.value)));
+songBarsInput.addEventListener('change', () => {
+  if (!engine) return;
+  const bars = Number(songBarsInput.value);
+  if (Number.isInteger(bars) && bars >= P['song-bars'].min && bars <= maxSongBars(engine.getSongSettings().bpm)) {
+    songTransport.stop(); const settings = engine.getSongSettings();
+    settings.bars[Number(songUserSelect.value) - 1] = bars; engine.setSongSettings(settings);
+  } else patchStatus.textContent = `Fit to Bars must be a whole number from 1 to ${maxSongBars(engine.getSongSettings().bpm)}.`;
+  syncSongSettings();
+});
+requireElement<HTMLButtonElement>('#copy-user').addEventListener('click', () => {
+  const id = mixer.selectedId, from = requireElement<HTMLSelectElement>('#copy-from').value as UserPatternId;
+  const to = requireElement<HTMLSelectElement>('#copy-to').value as UserPatternId;
+  if (!engine?.getChannel(id) || recorder.isBusy()) return;
+  if (from === to) { patchStatus.textContent = 'Choose a different destination USER.'; return; }
+  if (!window.confirm(`Overwrite Timbre ${id} ${to} with ${from}? Gate, Pitch, selections, mute and Pitch settings will be replaced.`)) return;
+  songTransport.stop(); transport.stop(id); engine.copyUserPattern(id, from, to);
+  recorder.refresh(); syncSongPreview(); syncTransportControls(); patchStatus.textContent = `Copied Timbre ${id} ${from} → ${to}.`;
+});
 sourceAutoButton.addEventListener('click', () => transport.setSelection(mixer.selectedId, { gateMode: 'auto' }));
 recordedGateButton.addEventListener('click', () => transport.setSelection(mixer.selectedId, { gateMode: 'user' }));
 gateUserButtons.forEach((button, index) => button.addEventListener('click', () => transport.setSelection(mixer.selectedId,
-  { gateUserId: `user-${index + 1}` as 'user-1' | 'user-2' | 'user-3' })));
+  { gateUserId: USER_PATTERN_IDS[index]! })));
 pitchUserButtons.forEach((button, index) => button.addEventListener('click', () => transport.setSelection(mixer.selectedId,
-  { pitchUserId: `user-${index + 1}` as 'user-1' | 'user-2' | 'user-3' })));
+  { pitchUserId: USER_PATTERN_IDS[index]! })));
 
 for (const id of ['osc1', 'osc2'] as const) {
   requireElement<HTMLSelectElement>(`#phase-mode-${id}`).addEventListener('change', event => {
@@ -1110,8 +1220,9 @@ async function loadSessionSource(source: string, loadingMessage: string, loadedP
   try {
     patchStatus.textContent = loadingMessage;
     const raw = JSON.parse(source) as { channels?: Array<{ timbre?: { formatVersion?: string } | null }> };
-    const oldPitchEnvelope = raw.channels?.some(channel => channel.timbre && !['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15'].includes(channel.timbre.formatVersion ?? '')) ?? false;
+    const oldPitchEnvelope = raw.channels?.some(channel => channel.timbre && !['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(channel.timbre.formatVersion ?? '')) ?? false;
     const session = parseLabSession(source);
+    songTransport.stop();
     transport.stopAll();
     recorder.cancel();
     loadingSession = true;
@@ -1120,7 +1231,7 @@ async function loadSessionSource(source: string, loadingMessage: string, loadedP
     document.querySelectorAll<HTMLButtonElement | HTMLInputElement | HTMLSelectElement>('[data-audio-control], .mixer-slot button, .mixer-slot input').forEach(control => { control.disabled = true; });
     await engine.applySession(session);
     mixer.manual.releaseAll(); mixer.refresh();
-    setValue('#patch-name', session.name); syncCommonMix(); syncSelectedSource();
+    setValue('#patch-name', session.name); syncCommonMix(); syncSelectedSource(); syncSongSettings();
     patchStatus.textContent = `${loadedPrefix}: ${session.name}${oldPitchEnvelope ? ' · Legacy PEnv Amount/Time was ignored; new PEnv is neutral.' : ''}`;
   } catch (error) { patchStatus.textContent = `${errorPrefix}: ${error instanceof Error ? error.message : String(error)}`; }
   finally { loadingSession = false; patchFileInput.value = ''; setAudioControlsEnabled(true); }
@@ -1297,14 +1408,14 @@ try {
   try { validateParameterRanges(P, context.sampleRate); }
   catch (error) { void context.close(); throw error; }
   engine = new AudioEngine(context, {
-    formatVersion: 'KOROGI-Lab/session-v17', name: 'KOROGI Session', savedAt: '',
+    formatVersion: 'KOROGI-Lab/session-v20', name: 'KOROGI Session', savedAt: '',
     channels: LAB_SLOT_IDS.map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
-    near: defaultBus(), far: defaultBus(), crossfade: P.crossfade.defaultValue / 100, masterGainDb: P['master-gain'].defaultValue, masterMuted: false
+    near: defaultBus(), far: defaultBus(), crossfade: P.crossfade.defaultValue / 100, masterGainDb: P['master-gain'].defaultValue, masterMuted: false, song: defaultSongSettings()
   });
   engine.context.addEventListener('statechange', refreshStatus);
   mixer.refresh();
   setAudioControlsEnabled(true);
-  syncCommonMix(); syncSelectedSource();
+  syncCommonMix(); syncSelectedSource(); syncSongSettings();
   refreshStatus();
 } catch (error) {
   patchStatus.textContent = `Audio engine is unavailable: ${error instanceof Error ? error.message : String(error)}`;

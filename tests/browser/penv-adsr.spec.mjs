@@ -107,7 +107,7 @@ test('PEnv controls and Release choices survive Timbre save and load', async ({ 
   await page.locator('#aenv-release-timing + .segmented-choice [data-value="rate"]').click();
   const download = page.waitForEvent('download'); await page.locator('#save-1').click();
   const timbre = JSON.parse(await readFile(await (await download).path(), 'utf8'));
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v16');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v17');
   expect(timbre.settings.pitchEnvelope).toEqual({ mode: 'gate', start: .02, attack: .05, sustain: 0, release: -.05,
     attackSec: 0, decaySec: .03, releaseSec: .03, scale: .75, releaseTiming: 'rate', curve: 'linear' });
   expect(timbre.settings.ampEnvelope).toMatchObject({ releaseCurve: 'linear', releaseTiming: 'rate' });

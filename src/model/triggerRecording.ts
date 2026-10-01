@@ -4,7 +4,7 @@ import { defaultSequenceSettings } from './sequencePitch';
 export { MAX_RECORDING_SEC } from './recordingLimits';
 import { MAX_RECORDING_SEC } from './recordingLimits';
 
-export const USER_PATTERN_IDS = ['user-1', 'user-2', 'user-3'] as const satisfies readonly UserPatternId[];
+export const USER_PATTERN_IDS = ['user-1', 'user-2', 'user-3', 'user-4', 'user-5', 'user-6', 'user-7', 'user-8'] as const satisfies readonly UserPatternId[];
 export const LEGACY_USER_PATTERN_IDS = ['user-1', 'user-2'] as const satisfies readonly UserPatternId[];
 export function emptyUserPatterns(): UserPattern[] {
   return LEGACY_USER_PATTERN_IDS.map(id => ({ id, gateRecording: null, pitchRecording: null, settings: defaultSequenceSettings() }));

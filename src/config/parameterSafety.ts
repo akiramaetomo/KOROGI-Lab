@@ -22,6 +22,7 @@ const SAFETY: Record<ParameterKey, { min: number; max: number }> = {
   'burst-pulse-interval': { min: 5, max: 250 }, 'burst-pulse-jitter': { min: 0, max: 50 },
   'burst-group-period': { min: 10, max: 6_000 }, 'burst-group-jitter': { min: 0, max: 50 },
   'record-length': { min: 1, max: 300 },
+  'song-bpm': { min: 40, max: 240 }, 'song-speed': { min: .25, max: 4 }, 'song-bars': { min: 1, max: 300 },
   'sequence-filter-amount': { min: -7_200, max: 7_200 },
   'sequence-pitch-input': { min: -1, max: 1 }, 'sequence-pitch-scale': { min: 0, max: 2_400 },
   'sequence-pitch-steps': { min: 0, max: 24 }, 'sequence-portamento': { min: 0, max: 1_000 },

@@ -71,6 +71,18 @@ export class BurstScheduler {
     if (this.nextGroupStart !== null && this.nextGroupStart >= boundary) this.nextGroupStart = null;
   }
 
+  /** Keep the current phrase while replacing only lookahead groups. */
+  retimeFrom(time: number): void {
+    const boundary = Math.max(time, this.context.currentTime);
+    const futureStart = this.groups.find(group => group.start >= boundary)?.start;
+    const nextStart = this.nextGroupStart;
+    this.cancelFrom(boundary);
+    if (this.phraseOn) {
+      this.nextGroupStart = futureStart ?? nextStart ?? boundary + this.settings.groupPeriodSec;
+      this.tick();
+    }
+  }
+
   stop(): void {
     this.phraseOn = false;
     this.nextGroupStart = null;

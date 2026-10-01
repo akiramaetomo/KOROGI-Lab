@@ -6,6 +6,11 @@ import { preview } from 'vite';
 const root = process.cwd();
 const htmlPath = join(root, 'dist', 'index.html');
 const html = await readFile(htmlPath, 'utf8');
+const version = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')).version;
+const buildLabel = html.match(/<title>KOROGI-Lab ([^<]+)<\/title>/)?.[1];
+if (!buildLabel?.startsWith(`${version} (`) || !/\([0-9a-f]{7}(?:\+dirty)?\)$/.test(buildLabel)) {
+  throw new Error('Pages artifact has no identifiable application version and commit.');
+}
 
 if (/\/(?:src)\//.test(html)) {
   throw new Error('Pages artifact still references source files.');
@@ -45,6 +50,9 @@ try {
     throw new Error('Pages preview has a stale Timbre count.');
   }
   await page.locator('#demo-menu-button').click();
+  if ((await page.locator('#lab-build-label').textContent())?.trim() !== buildLabel) {
+    throw new Error('Pages preview does not display the build identity.');
+  }
   if (!(await page.getByRole('menuitem', { name: 'Akino-mushi', exact: true }).isVisible())) {
     throw new Error('Pages preview did not open the Demo menu.');
   }

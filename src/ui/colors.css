@@ -528,6 +528,12 @@ button:focus-visible / outline */
   --color-record-toggle-pressed-border: #d2a78d;
   /* 対象: #record-toggle[aria-pressed="true"] / background */
   --color-record-toggle-pressed-background: #513b34;
+  --color-song-button-background: #63343c;
+  --color-song-button-border: #bd7881;
+  --color-song-button-text: #fff0f1;
+  --color-song-button-hover-background: #78414b;
+  --color-song-button-active-background: #973e4a;
+  --color-song-button-active-border: #eea3ac;
   /* 対象: #record-counter / color */
   --color-record-counter-text: #b9c8cf;
   /* 対象: .record-timeline-label span, .record-ticks, #record-status / color */

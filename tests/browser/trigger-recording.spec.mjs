@@ -48,7 +48,7 @@ test('records only the large Gate, trims without losing the take, loops and roun
   await page.locator('#record-toggle').click();
   await expect(page.locator('#record-status')).toHaveText('Recording complete');
   const timbre = await savedTimbre(page);
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v16');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v17');
   expect(userRecording(timbre).gates).toHaveLength(1);
   const gate = userRecording(timbre).gates[0];
   expect(gate.offSec - gate.onSec).toBeGreaterThan(.15);
@@ -106,7 +106,7 @@ test('records only the large Gate, trims without losing the take, loops and roun
   const sessionDownload = page.waitForEvent('download');
   await page.locator('#export-patch').click();
   const session = JSON.parse(await readFile(await (await sessionDownload).path(), 'utf8'));
-  expect(session.formatVersion).toBe('KOROGI-Lab/session-v17');
+  expect(session.formatVersion).toBe('KOROGI-Lab/session-v20');
   expect(userRecording(session.channels[0].timbre)).toEqual(userRecording(editedWhilePlaying));
   expect(session.channels[0].timbre.sequence).toMatchObject({ gateMode: 'user', gateUserId: 'user-1', pitchUserId: 'user-1' });
   expect(userRecording(session.channels[1].timbre)).toEqual(userRecording(trimmed));
@@ -331,6 +331,22 @@ test('Play Speed controls recording clock and retained Pitch playback', async ({
   expect(wallSec).toBeGreaterThan(.35);
   expect(wallSec).toBeLessThan(1.2);
   expect(userRecording(await savedTimbre(page))).toBeNull();
+});
+
+test('an unaccompanied new take uses wall seconds even when Timbre Play Speed is 2x', async ({ page }) => {
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  const timbre = await savedTimbre(page);
+  timbre.sequence.playSpeed = 2;
+  await page.locator('#timbre-file-1').setInputFiles({ name: 'new-take-speed.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
+  await page.locator('#trigger-menu').click();
+  await page.locator('#record-length').fill('1');
+  const started = await page.evaluate(() => performance.now());
+  await page.locator('#record-toggle').click();
+  await expect(page.locator('#record-status')).toContainText('Recording · One take');
+  await expect(page.locator('#record-status')).toContainText('No input recorded', { timeout: 4000 });
+  const wallSec = (await page.evaluate(() => performance.now()) - started) / 1000;
+  expect(wallSec).toBeGreaterThan(.8);
+  expect(wallSec).toBeLessThan(1.6);
 });
 
 test('User 1 and User 2 keep independent timelines and expose pointer and keyboard slider semantics', async ({ page }) => {

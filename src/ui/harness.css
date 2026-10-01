@@ -105,6 +105,7 @@ button.primary { border-color: var(--color-button-primary-border); background: v
 .brand-title { display: flex; align-items: center; gap: .4rem; min-width: 0; }
 .brand strong { font-size: clamp(1.05rem, 1.65vw, 1.55rem); letter-spacing: 0.02em; white-space: nowrap; }
 .brand span { color: var(--color-brand-text); white-space: nowrap; }
+.brand #lab-build-label { display: inline-flex; font-size: .8rem; font-variant-numeric: tabular-nums; }
 .demo-picker { position: relative; flex: 0 0 auto; }
 .demo-menu-button { padding: .16rem .38rem; font-size: .78rem; }
 .demo-menu {
@@ -625,6 +626,7 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
   .topbar { grid-template-columns: minmax(0, 1fr) auto auto; gap: .4rem; }
   .audio-state { display: flex; }
   .brand span { display: none; }
+  .brand-title { flex-wrap: wrap; }
 }
 @media (max-width: 900px) {
   .audio-state #status, .audio-state .state-dot { display: none; }
@@ -880,7 +882,7 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .record-controls { grid-template-columns: minmax(138px, 1fr) 78px 122px; grid-template-rows: auto auto; gap: .2rem .35rem; }
 .record-mode-field .segmented-choice { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .record-controls .record-mode-field { grid-column: 1; grid-row: 1 / 3; }
-.record-controls .record-length-label { grid-column: 2; grid-row: 1 / 3; }
+.record-controls .record-length-label { grid-column: 2; grid-row: 1; }
 .record-controls #record-counter { grid-column: 3; grid-row: 1; }
 .record-controls #record-toggle { grid-column: 3; grid-row: 2; }
 .trigger-user-group #record-status { display: block; min-height: 1.2rem; margin-top: .2rem; color: var(--color-trigger-user-group-record-status-text); font-size: .8rem; }
@@ -893,6 +895,32 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .record-performance .source-choice > span { min-width: 35px; color: var(--color-record-performance-source-choice-text); font-size: .8rem; }
 .record-performance .source-choice button { display: flex; justify-content: space-between; align-items: center; gap: .25rem; min-height: 32px; white-space: nowrap; }
 .record-performance .source-choice button small { font-size: .8rem; font-variant-numeric: tabular-nums; color: var(--color-record-performance-source-choice-text-2); }
+.record-performance .source-choice { display: grid; grid-template-columns: 35px repeat(4, minmax(0, 1fr)); }
+.record-performance .source-choice > span { grid-row: 1 / 3; align-self: center; }
+.record-performance .source-choice button { font-size: .8rem; padding: .15rem; gap: .1rem; }
+.song-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem .65rem; }
+.song-controls label { display: inline-flex; align-items: center; gap: .3rem; white-space: nowrap; }
+.song-controls .song-timing-field .segmented-choice { width: 130px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.song-controls input { width: 3.5rem; min-height: 32px; }
+.song-bars-group { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .5rem; width: max-content; max-width: 100%; min-width: 0; margin: 0; padding: .15rem .45rem .35rem; border: 1px solid var(--color-trigger-group-border); border-radius: 4px; }
+.song-bars-group legend { padding-inline: .25rem; font-size: .8rem; color: var(--color-trigger-group-title-text); }
+.song-bars-group[disabled] { opacity: .46; }
+.song-bars-group select { width: 6.9rem; }
+.song-controls #song-toggle { flex: 0 0 auto; white-space: nowrap; border-color: var(--color-song-button-border); background: var(--color-song-button-background); color: var(--color-song-button-text); }
+.song-controls #song-toggle:hover:not(:disabled) { background: var(--color-song-button-hover-background); }
+.song-controls #song-toggle[aria-pressed="true"] { border-color: var(--color-song-button-active-border); background: var(--color-song-button-active-background); }
+.song-controls .song-speed-row { display: flex; align-items: center; gap: .55rem; flex: 0 0 100%; min-width: 0; }
+.song-controls .song-speed-row input[type="range"] { flex: 0 1 clamp(160px, 30vw, 320px); min-width: 150px; max-width: 320px; width: 100%; min-height: 24px; }
+.song-controls select, .song-controls button { min-height: 32px; }
+.song-controls output { min-width: 210px; font-variant-numeric: tabular-nums; }
+.song-copy { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .35rem; width: max-content; max-width: 100%; }
+.song-copy select { flex: 0 0 auto; width: 9.5rem; }
+.song-copy button { flex: 0 0 auto; white-space: nowrap; }
+.record-controls .record-bars-label { grid-column: 2; grid-row: 2; display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; gap: .1rem; }
+.record-controls .record-bars-label select { width: 100%; min-width: 0; }
+.record-controls .record-bpm-label { grid-column: 2; grid-row: 3; display: grid; grid-template-columns: minmax(0, 1fr); gap: .1rem; }
+.record-controls .record-bpm-label input { width: 100%; min-width: 0; min-height: 32px; }
+.record-controls .record-bpm-label[hidden] { display: none; }
 .record-performance #sequence-panel { grid-column: 2; grid-row: 1; min-height: 68px; font-size: 1rem; font-weight: 700; }
 .record-performance #sequence-panel[aria-pressed="true"] { background: var(--color-record-performance-sequence-panel-pressed-background); border: 2px solid var(--color-record-performance-sequence-panel-pressed-border); color: var(--color-record-performance-sequence-panel-pressed-text); box-shadow: 0 0 0 2px var(--color-record-performance-sequence-panel-pressed-shadow); }
 .record-performance .numeric-control[data-numeric-control="sequence-play-speed"] { grid-column: 1 / -1; grid-row: 2; }
@@ -912,6 +940,7 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .timeline-row .record-timeline-label, .timeline-row .record-timeline { grid-column: 1 / -1; }
 .timeline-row .record-ticks { grid-column: 1; }
 .timeline-row .record-selection-values { grid-column: 2; justify-content: flex-end; gap: .4rem; white-space: nowrap; }
+.timeline-row .selection-bars-action { grid-column: 1 / -1; justify-self: end; width: max-content; min-height: 27px; font-size: .8rem; }
 .sequence-perform .record-timeline-label { justify-content: flex-start; min-height: 28px; }
 .sequence-perform .record-timeline-label strong { white-space: nowrap; }
 .sequence-perform .record-timeline-label span { margin-left: auto; }
@@ -1317,6 +1346,10 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 
 @media (max-width: 600px) {
   .topbar { grid-template-columns: minmax(0, 1fr) auto; gap: .3rem; overflow: hidden; }
+  .brand-title { display: grid; grid-template-columns: max-content max-content; gap: .05rem .4rem; }
+  .brand-title strong { grid-column: 1; grid-row: 1; }
+  .brand-title .demo-picker { grid-column: 2; grid-row: 1; }
+  .brand-title #lab-build-label { grid-column: 1 / -1; grid-row: 2; }
   .audio-state { display: flex; grid-column: 1 / -1; grid-row: 2; min-width: 0; }
   .audio-state #status, .audio-state .state-dot { display: inline-flex; }
   .audio-state #status { overflow: hidden; text-overflow: ellipsis; }

@@ -101,7 +101,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768
       slider.value = '3750'; slider.dispatchEvent(new Event('input', { bubbles: true })); });
     const download = page.waitForEvent('download'); await page.locator('#save-1').click();
     const saved = JSON.parse(await readFile(await (await download).path(), 'utf8'));
-    expect(saved.pitchPatterns.map(item => item.filterAmountCent)).toEqual([-1200, 0, 0]);
+    expect(saved.pitchPatterns.map(item => item.filterAmountCent)).toEqual([-1200, 0, 0, 0, 0, 0, 0, 0]);
     await page.locator('#pitch-user-2').click(); await expect(amount).toHaveValue('0');
     await page.locator('#pitch-user-1').click(); await expect(amount).toHaveValue('-1200');
     await page.locator('#timbre-file-1').setInputFiles({ name: 'filter.timbre.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(saved)) });

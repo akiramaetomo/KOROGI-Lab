@@ -379,7 +379,7 @@ test('legacy Pitch Scale is Custom until the five-stop slider is operated', asyn
   expect((await saveTimbre(page)).pitchPatterns[2].pitchScaleCent).toBe(400);
 });
 
-test('390px viewport keeps vertical Record modes and horizontal User choices reachable by local scrolling', async ({ page }) => {
+test('390px viewport keeps vertical Record modes and two-row User choices reachable by local scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   await page.locator('#trigger-menu').click();
@@ -391,7 +391,7 @@ test('390px viewport keeps vertical Record modes and horizontal User choices rea
   });
   expect(geometry.scrollWidth).toBeGreaterThan(geometry.clientWidth);
   expect(new Set(geometry.modeTops).size).toBe(3);
-  expect(new Set(geometry.gateTops).size).toBe(1);
+  expect(new Set(geometry.gateTops).size).toBe(2);
   for (const selector of ['#record-toggle', '#sequence-panel', '#record-gate']) {
     await page.locator(selector).scrollIntoViewIfNeeded();
     await expect(page.locator(selector)).toBeVisible();

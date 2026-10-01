@@ -81,4 +81,18 @@ describe('BurstScheduler', () => {
     expect(pulses.some(time => Math.abs(time - .4) < 1e-9)).toBe(true);
     scheduler.gateOff(.4);
   });
+
+  it('replaces future groups without restarting the active phrase', () => {
+    vi.useFakeTimers();
+    const { context, pulses, cancellations, scheduler } = harness();
+    scheduler.gateOn(0);
+    context.currentTime = .075;
+    scheduler.retimeFrom(.075);
+    expect(cancellations).toEqual([.075]);
+    expect(pulses.slice(0, 3)).toEqual([0, .025, .05]);
+    expect(pulses.filter(time => Math.abs(time - .1) < 1e-9)).toHaveLength(1);
+    expect(scheduler.isRunning()).toBe(true);
+    scheduler.gateOff(.11);
+    expect(scheduler.isRunning()).toBe(false);
+  });
 });
