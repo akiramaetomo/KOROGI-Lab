@@ -27,7 +27,7 @@ test('Pitch User records and displays a simplified curve while Auto Gate plays',
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await page.locator('#trigger-menu').click();
   await expect(page.locator('#pitch-record-target')).toContainText('Null');
   await expect(page.locator('#pitch-curve-line')).toHaveAttribute('points', '');
-  await expect(page.locator('#record-mode')).toHaveValue('gate');
+  await expect(page.locator('#record-mode')).toHaveValue('both');
   await chooseSegment(page, '#record-mode', 'pitch');
   await expect(page.locator('#record-mode + .segmented-choice [data-value="pitch"]')).toHaveAttribute('aria-checked', 'true');
   await expect(page.locator('#record-mode + .segmented-choice [data-value="gate"]')).toBeEnabled();
@@ -50,7 +50,7 @@ test('Pitch User records and displays a simplified curve while Auto Gate plays',
   expect(Number(await page.locator('#sequence-pitch-input').inputValue())).toBeGreaterThan(0);
   await page.locator('#sequence-pitch-center').click();
   await page.locator('#record-length').fill('3');
-  await page.locator('#record-toggle').click(); await expect(page.locator('#record-status')).toContainText('Recording · One take');
+  await page.locator('#record-toggle').click(); await expect(page.locator('#record-status')).toContainText('Recording · Loop');
   await page.locator('#sequence-pitch-input').focus(); await page.keyboard.press('ArrowRight'); await page.keyboard.press('ArrowRight');
   await expect(page.locator('#sequence-pitch-readout')).toHaveText('400 cent');
   await page.waitForTimeout(70);
@@ -84,9 +84,9 @@ test('User Gate and Pitch recording lanes can be replaced independently', async 
   await page.locator('#timbre-file-1').setInputFiles({ name: 'lanes.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(initial)) });
   await page.locator('#trigger-menu').click();
 
-  await expect(page.locator('#record-mode')).toHaveValue('gate');
+  await expect(page.locator('#record-mode')).toHaveValue('both');
   await chooseSegment(page, '#record-mode', 'both');
-  await page.locator('#record-length').fill('3'); await page.locator('#record-toggle').click();
+  await expect(page.locator('#record-length')).toBeDisabled(); await page.locator('#record-toggle').click();
   await page.evaluate(() => document.activeElement?.blur()); await page.keyboard.down('Space'); await page.waitForTimeout(40);
   await page.locator('#sequence-pitch-input').fill('0.6'); await page.locator('#sequence-pitch-input').dispatchEvent('input');
   await page.waitForTimeout(40); await page.keyboard.up('Space'); await page.locator('#record-toggle').click();
@@ -94,7 +94,7 @@ test('User Gate and Pitch recording lanes can be replaced independently', async 
   expect(afterBoth.gatePatterns[0].recording).not.toEqual(oldGate); expect(afterBoth.gatePatterns[0].recording.gates).toHaveLength(1);
   expect(afterBoth.pitchPatterns[0].recording).not.toEqual(oldPitch);
 
-  await chooseSegment(page, '#record-mode', 'gate'); await page.locator('#record-length').fill('1');
+  await chooseSegment(page, '#record-mode', 'gate');
   await page.locator('#record-toggle').click(); await page.evaluate(() => document.activeElement?.blur());
   await page.keyboard.down('Space'); await page.waitForTimeout(70); await page.locator('#record-toggle').click(); await page.keyboard.up('Space');
   const afterGate = await savedTimbre(page);
@@ -118,9 +118,9 @@ test('document Space Trigger preserves its press target and ignores edit, repeat
   await page.evaluate(async () => {
     const { AudioEngine } = await import('/src/audio/core/AudioEngine.ts');
     window.spaceGateCalls = [];
-    const on = AudioEngine.prototype.triggerGateOn, off = AudioEngine.prototype.triggerGateOff;
-    AudioEngine.prototype.triggerGateOn = function (id) { window.spaceGateCalls.push(`on:${id}`); return on.call(this, id); };
-    AudioEngine.prototype.triggerGateOff = function (id) { window.spaceGateCalls.push(`off:${id}`); return off.call(this, id); };
+    const on = AudioEngine.prototype.controllerGateOn, off = AudioEngine.prototype.controllerGateOff;
+    AudioEngine.prototype.controllerGateOn = function (id) { window.spaceGateCalls.push(`on:${id}`); return on.call(this, id); };
+    AudioEngine.prototype.controllerGateOff = function (id) { window.spaceGateCalls.push(`off:${id}`); return off.call(this, id); };
   });
 
   await expect(page.locator('#select-1')).toHaveAttribute('aria-pressed', 'true');

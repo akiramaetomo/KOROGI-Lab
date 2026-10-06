@@ -10,7 +10,7 @@ async function saveSession(page) {
   return JSON.parse(await readFile(await (await download).path(), 'utf8'));
 }
 
-test('Song clock settings and USER copy survive Session round-trip', async ({ page }) => {
+test('Song clock settings and Pattern copy survive Session round-trip', async ({ page }) => {
   await page.goto('/');
   await expect(page.locator('#osc1-frequency')).toBeEnabled();
   let session = await saveSession(page);
@@ -24,38 +24,56 @@ test('Song clock settings and USER copy survive Session round-trip', async ({ pa
   await page.locator('#patch-file').setInputFiles({ name: 'song.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) });
   await expect(page.locator('#patch-status')).toContainText('Loaded:');
   await page.locator('#trigger-menu').click();
+  await expect(page.locator('.trigger-user-group .trigger-group-title')).toHaveText('PATTERN / RECORD / PLAY');
+  await expect(page.locator('#song-user')).toHaveAttribute('aria-label', 'Pattern to fit to bars');
+  await expect(page.locator('#song-user option')).toHaveText(['Pattern 1', 'Pattern 2', 'Pattern 3', 'Pattern 4', 'Pattern 5', 'Pattern 6', 'Pattern 7', 'Pattern 8']);
+  await expect(page.locator('#copy-from option')).toHaveText(['Pattern 1', 'Pattern 2', 'Pattern 3', 'Pattern 4', 'Pattern 5', 'Pattern 6', 'Pattern 7', 'Pattern 8']);
+  await expect(page.locator('#copy-to option')).toHaveText(['Pattern 1', 'Pattern 2', 'Pattern 3', 'Pattern 4', 'Pattern 5', 'Pattern 6', 'Pattern 7', 'Pattern 8']);
   await expect(page.locator('#song-bpm')).toBeDisabled();
+  // New Pattern Length (Unit/BPM) is editable only on a Null Gate and Null Pitch Pattern.
+  await expect(page.locator('#record-new-length')).toHaveJSProperty('disabled', true);
+  await page.locator('#source-user-2').click(); await page.locator('#pitch-user-2').click();
+  await expect(page.locator('#record-new-length')).toHaveJSProperty('disabled', false);
   await page.locator('#record-length-mode').selectOption('bars');
   await page.locator('#record-bpm').fill('130'); await page.locator('#record-bpm').dispatchEvent('change');
+  await page.locator('#source-user-1').click(); await page.locator('#pitch-user-1').click();
   await expect(page.locator('#song-bpm')).toHaveValue('130');
   await page.locator('#song-speed-slider').evaluate(input => { input.value = '1.5'; input.dispatchEvent(new Event('input', { bubbles: true })); });
   await expect(page.locator('#song-speed')).toHaveValue('1.5');
-  await expect(page.locator('#record-length-unit')).toHaveText('(bars)');
-  await page.locator('#record-length').fill('2'); await page.locator('#record-length').dispatchEvent('change');
-  await expect(page.locator('#record-counter')).toContainText('00:03.69');
+  await expect(page.locator('#record-length')).toHaveAttribute('aria-label', /^Record length in bars/);
+  await expect(page.locator('#record-length')).toBeDisabled();
+  await expect(page.locator('#record-counter')).toContainText('00:01.00');
   await page.locator('.song-timing-field [role="radio"][data-value="bars"]').click();
   await page.locator('#song-user').selectOption('4');
   await page.locator('#song-bars').fill('2'); await page.locator('#song-bars').dispatchEvent('change');
   await page.locator('#copy-from').selectOption('user-1');
   for (const user of ['user-2', 'user-3', 'user-4']) {
     await page.locator('#copy-to').selectOption(user);
-    page.once('dialog', dialog => dialog.accept());
+    let confirmation;
+    page.once('dialog', async dialog => { confirmation = dialog.message(); await dialog.accept(); });
     await page.locator('#copy-user').click();
+    expect(confirmation).toContain(`Pattern ${user.slice(-1)} with Pattern 1`);
+    await expect(page.locator('#patch-status')).toContainText(`Copied Timbre 1 Pattern 1 → Pattern ${user.slice(-1)}.`);
   }
   await expect(page.locator('#source-user-4 small')).toHaveText('1');
   await page.locator('.song-timing-field [role="radio"][data-value="original"]').click();
   await expect(page.locator('#song-duration')).toContainText('Seconds total: 2.67 s');
-  await expect(page.locator('#song-duration')).not.toContainText('Bars USER');
-  await expect(page.locator('#song-duration')).toContainText('Song USER 1, 2, 3, 4');
+  await expect(page.locator('#song-duration')).not.toContainText('Bars Pattern');
+  await expect(page.locator('#song-duration')).toContainText('Song: Pattern 1, Pattern 2, Pattern 3, Pattern 4');
   await page.locator('#song-toggle').click();
   await expect(page.locator('#song-toggle')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#song-clock')).toContainText('User 1 · 00:00 / 00:00');
+  await expect(page.locator('#song-clock')).toContainText('Pattern 1 · 00:00 / 00:00');
+  await page.locator('.song-summary').click();
+  await expect(page.locator('.song-controls')).not.toHaveAttribute('open');
+  await expect(page.locator('#song-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await page.locator('.song-summary').click();
+  await expect(page.locator('#song-toggle')).toBeVisible();
   await page.locator('#song-toggle').click();
   await page.locator('.song-timing-field [role="radio"][data-value="bars"]').click();
   await expect(page.locator('#song-timing')).toHaveValue('bars');
   await page.locator('#song-toggle').click();
   await expect(page.locator('#song-toggle')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#song-clock')).toContainText('User 1 · Bar 1');
+  await expect(page.locator('#song-clock')).toContainText('Pattern 1 · Bar 1');
   await page.locator('#song-toggle').click();
   session = await saveSession(page);
   expect(session.song).toEqual({ bpm: 130, speed: 1.5, bars: [1, 1, 1, 2, 1, 1, 1, 1], timingMode: 'bars' });
@@ -79,7 +97,29 @@ test('build identity remains visible on a narrow screen', async ({ page }) => {
   expect(bounds.y + bounds.height <= transport.y || bounds.x + bounds.width <= transport.x).toBe(true);
 });
 
-test('Song follows AEnv for three USERs: enabled Gates rest and bypass continues', async ({ page }) => {
+test('eight Pattern names remain inside SONG without page overflow', async ({ page }) => {
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  const session = await saveSession(page);
+  for (const pattern of session.channels[0].timbre.gatePatterns) {
+    pattern.recording = { durationSec: 1, selectionStartSec: 0, selectionEndSec: 1, gates: [{ onSec: .1, offSec: .2 }] };
+  }
+  await page.locator('#patch-file').setInputFiles({ name: 'eight-patterns.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) });
+  await expect(page.locator('#patch-status')).toContainText('Loaded:');
+  await page.locator('#trigger-menu').click();
+  for (const width of [1180, 1024, 390, 844]) {
+    await page.setViewportSize({ width, height: 820 });
+    await expect(page.locator('#song-duration')).toContainText('Pattern 1');
+    await expect(page.locator('#song-duration')).toContainText('Pattern 8');
+    const geometry = await page.locator('.song-controls').evaluate(card => ({
+      localWidth: card.clientWidth, contentWidth: card.scrollWidth,
+      pageWidth: document.documentElement.scrollWidth, viewport: innerWidth
+    }));
+    expect(geometry.contentWidth).toBeLessThanOrEqual(geometry.localWidth + 1);
+    expect(geometry.pageWidth).toBeLessThanOrEqual(geometry.viewport + 1);
+  }
+});
+
+test('Song follows AEnv for three Patterns: enabled Gates rest and bypass continues', async ({ page }) => {
   await page.goto('/');
   const results = await page.evaluate(async () => {
     const { AudioEngine } = await import('/src/audio/core/AudioEngine.ts');
@@ -229,7 +269,7 @@ test('Song Speed stays compact and Fit to Bars is exclusive to Bars timing', asy
   await expect(page.locator('#record-bpm')).toHaveValue('150');
   await page.locator('#song-user').selectOption('3');
   await page.locator('#song-bars').fill('2'); await page.locator('#song-bars').dispatchEvent('change');
-  await expect(page.locator('#song-duration')).toContainText('Bars USER 3: 3.20 s');
+  await expect(page.locator('#song-duration')).toContainText('Bars Pattern 3: 3.20 s');
   await expect(page.locator('#song-duration')).not.toContainText('Seconds total');
   await page.locator('.song-timing-field [role="radio"][data-value="original"]').click();
   await expect(page.locator('#song-bpm')).toBeDisabled();
@@ -244,13 +284,24 @@ test('Song controls fit their groups and the play action uses a red accent', asy
     const layout = await page.locator('.song-controls').evaluate(card => {
       const bounds = selector => card.querySelector(selector).getBoundingClientRect();
       const song = card.getBoundingClientRect(), group = bounds('#song-bars-group');
+      const record = card.parentElement.querySelector('.trigger-user-group').getBoundingClientRect();
+      const control = card.parentElement.querySelector('.record-performance').getBoundingClientRect();
+      const title = bounds('.song-summary');
       const copy = bounds('.song-copy'), from = bounds('#copy-from'), to = bounds('#copy-to');
       const color = getComputedStyle(card.querySelector('#song-toggle')).backgroundColor;
-      return { songRight: song.right, groupRight: group.right, copyRight: copy.right,
+      return { songLeft: song.left, songTop: song.top, songRight: song.right, songBottom: song.bottom,
+        recordTop: record.top, controlTop: control.top,
+        titleLeft: title.left, titleTop: title.top, titleRight: title.right,
+        groupRight: group.right, copyRight: copy.right,
         copyWidth: copy.width, fromWidth: from.width, toWidth: to.width, color,
         pageWidth: document.documentElement.scrollWidth, viewport: innerWidth };
     });
     expect(layout.groupRight).toBeLessThanOrEqual(layout.songRight + 1);
+    expect(layout.titleLeft).toBeGreaterThanOrEqual(layout.songLeft);
+    expect(layout.titleRight).toBeLessThanOrEqual(layout.songRight);
+    expect(layout.titleTop).toBeGreaterThanOrEqual(layout.songTop);
+    expect(layout.songBottom).toBeLessThan(layout.recordTop);
+    expect(layout.songBottom).toBeLessThan(layout.controlTop);
     expect(layout.copyRight).toBeLessThanOrEqual(layout.songRight + 1);
     expect(layout.copyWidth).toBeLessThan(440);
     expect(layout.fromWidth).toBeGreaterThanOrEqual(104);
@@ -260,6 +311,24 @@ test('Song controls fit their groups and the play action uses a red accent', asy
     expect(red).toBeGreaterThan(green);
     expect(red).toBeGreaterThan(blue);
   }
+});
+
+test('SONG group folds with keyboard and preserves its controls', async ({ page }) => {
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  await page.locator('#trigger-menu').click();
+  const song = page.locator('.song-controls');
+  const summary = song.locator('summary');
+  await expect(song).toHaveAttribute('open', '');
+  await page.locator('#song-speed').fill('1.5');
+  await page.locator('#song-speed').press('Tab');
+  await summary.focus();
+  await summary.press('Enter');
+  await expect(song).not.toHaveAttribute('open');
+  await expect(page.locator('#song-toggle')).toBeHidden();
+  await summary.focus();
+  await summary.press(' ');
+  await expect(song).toHaveAttribute('open', '');
+  await expect(page.locator('#song-speed')).toHaveValue('1.5');
 });
 
 test('Fit to Bars sets linked Gate and Pitch selection lengths atomically', async ({ page }) => {
@@ -286,7 +355,7 @@ test('Fit to Bars sets linked Gate and Pitch selection lengths atomically', asyn
   await expect(page.locator('#pitch-end-value')).toHaveText('2.50 s');
 });
 
-test('a successful Bars recording initializes that USER playback length', async ({ page }) => {
+test('a successful Bars recording initializes that Pattern playback length', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   await page.locator('#trigger-menu').click();
   await page.locator('#record-length-mode').selectOption('bars');
@@ -297,7 +366,7 @@ test('a successful Bars recording initializes that USER playback length', async 
   await page.locator('#source-user-2').click();
   await page.locator('#record-length').fill('1'); await page.locator('#record-length').dispatchEvent('change');
   await page.locator('#record-toggle').click();
-  await expect(page.locator('#record-status')).toContainText('Recording · One take');
+  await expect(page.locator('#record-status')).toContainText('Recording · Loop');
   await page.locator('#record-gate').scrollIntoViewIfNeeded();
   const box = await page.locator('#record-gate').boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
@@ -309,17 +378,48 @@ test('a successful Bars recording initializes that USER playback length', async 
   expect(saved.song.bars[1]).toBe(1);
 });
 
-test('record length, unit, timer and record button occupy separate cells at tablet width', async ({ page }) => {
-  await page.setViewportSize({ width: 1024, height: 768 });
-  await page.goto('/');
-  await page.locator('#trigger-menu').click();
-  const boxes = await page.locator('.record-controls').evaluate(node => Object.fromEntries(
-    ['.record-length-label', '.record-bars-label', '#record-counter', '#record-toggle'].map(selector => {
-      const rect = node.querySelector(selector).getBoundingClientRect();
-      return [selector, { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom }];
-    })
-  ));
-  expect(boxes['.record-length-label'].bottom).toBeLessThanOrEqual(boxes['.record-bars-label'].top + 1);
-  expect(boxes['#record-counter'].bottom).toBeLessThanOrEqual(boxes['#record-toggle'].top + 1);
-  expect(boxes['.record-bars-label'].right).toBeLessThanOrEqual(boxes['#record-toggle'].left + 1);
+test('New Pattern Length stays in one row below the controls and switching Unit keeps panel heights fixed', async ({ page }) => {
+  for (const width of [1024, 390, 844]) {
+    await page.setViewportSize({ width, height: 768 });
+    await page.goto('/');
+    await expect(page.locator('#play-1')).toBeEnabled();
+    await page.locator('#trigger-menu').click();
+    const layout = () => page.locator('.trigger-top-row').evaluate(row => {
+      const bounds = selector => row.querySelector(selector).getBoundingClientRect();
+      const record = row.querySelector('.trigger-user-group');
+      const counter = row.querySelector('#record-counter');
+      return { unit: bounds('.record-bars-label'), length: bounds('.record-length-label'),
+        bpm: bounds('.record-bpm-label'), counter: bounds('#record-counter'), button: bounds('#record-toggle'),
+        record: bounds('.trigger-user-group'), control: bounds('.record-performance'),
+        recordOverflow: record.scrollWidth > record.clientWidth + 1,
+        counterOverflow: counter.scrollWidth > counter.clientWidth + 1,
+        counterFont: parseFloat(getComputedStyle(counter).fontSize),
+        buttonFont: parseFloat(getComputedStyle(row.querySelector('#record-toggle')).fontSize) };
+    });
+    const seconds = await layout();
+    await expect(page.locator('#record-bpm')).toBeVisible();
+    await expect(page.locator('#record-bpm')).toBeDisabled();
+    await expect(page.locator('.record-bpm-label')).toHaveCSS('opacity', '0.5');
+    await page.locator('#record-length-mode').selectOption('bars');
+    await expect(page.locator('#record-bpm')).toBeEnabled();
+    const bars = await layout();
+    for (const state of [seconds, bars]) {
+      expect(state.unit.right).toBeLessThanOrEqual(state.length.left + 1);
+      expect(state.length.right).toBeLessThanOrEqual(state.bpm.left + 1);
+      expect(state.unit.top).toBe(state.length.top);
+      expect(state.length.top).toBe(state.bpm.top);
+      expect(state.counter.bottom).toBeLessThanOrEqual(state.unit.top + 1);
+      expect(state.counter.bottom).toBeLessThanOrEqual(state.button.top + 1);
+      expect(state.recordOverflow).toBe(false);
+      expect(state.counterOverflow).toBe(false);
+      expect(state.counterFont).toBeGreaterThanOrEqual(state.buttonFont * 1.25);
+    }
+    expect(bars.record.height).toBeCloseTo(seconds.record.height, 2);
+    expect(bars.control.height).toBeCloseTo(seconds.control.height, 2);
+    await page.locator('#record-length-mode').selectOption('seconds');
+    await expect(page.locator('#record-bpm')).toBeDisabled();
+    const restored = await layout();
+    expect(restored.record.height).toBeCloseTo(seconds.record.height, 2);
+    expect(restored.control.height).toBeCloseTo(seconds.control.height, 2);
+  }
 });

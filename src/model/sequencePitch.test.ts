@@ -14,7 +14,7 @@ describe('sequence pitch data boundary', () => {
   it('provides the accepted defaults and normalizes bounded settings', () => {
     expect(defaultAutoSequence()).toEqual({ pitchRecording: null, settings: defaultSequenceSettings() });
     expect(defaultSequenceSettings()).toEqual({
-      pitchScaleCent: 200, filterAmountCent: 0, filterAmountWide: false, pitchMode: { kind: 'smooth' }, recordSpeed: 1, playSpeed: 1
+      pitchScaleCent: 1200, filterAmountCent: 0, filterAmountWide: false, pitchMode: { kind: 'smooth' }, recordSpeed: 1, playSpeed: 1
     });
     expect(normalizeSequenceSettings({ pitchScaleCent: 3000,
       pitchMode: { kind: 'stepped', stepsPerSide: 12, portamentoSec: 10 }, recordSpeed: .1, playSpeed: 8 })).toEqual({

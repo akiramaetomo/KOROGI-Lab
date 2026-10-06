@@ -232,6 +232,14 @@ export class AudioEngine {
   gateOff(id: string, time = this.context.currentTime): void { if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.gateOff(time); }
   triggerGateOn(id: string): void { this.assertReady(); const strip = this.strip(id); strip.activate(); strip.synth.triggerGateOn(); }
   triggerGateOff(id: string): void { if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.triggerGateOff(); }
+  controllerGateOn(id: string): void { this.assertReady(); const strip = this.strip(id); strip.activate(); strip.synth.controllerGateOn(); }
+  controllerGateOff(id: string): void { if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.controllerGateOff(); }
+  controllerPitchOn(id: string): void { this.assertReady(); const strip = this.strip(id); strip.activate(); strip.synth.controllerPitchOn(); }
+  controllerPitchOff(id: string): void { if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.controllerPitchOff(); }
+  setControllerPitch(id: string, normalized: number, pitchScaleCent: number, filterAmountCent: number,
+    time = this.context.currentTime, portamentoSec = 0): void {
+    this.assertReady(); this.strip(id).synth.setControllerPitch(normalized, pitchScaleCent, filterAmountCent, time, portamentoSec);
+  }
   setSequencePitch(id: string, normalized: number, pitchScaleCent: number, filterAmountCent: number, time = this.context.currentTime, portamentoSec = 0): void {
     this.assertReady(); const strip = this.strip(id); strip.activate();
     strip.synth.setSequencePitch(normalized, pitchScaleCent, filterAmountCent, time, portamentoSec);
@@ -313,12 +321,12 @@ export class AudioEngine {
   private strip(id: string): ChannelStrip { const strip = this.graph.strips.get(id); if (!strip) throw new Error(`Empty channel: ${id}`); return strip; }
   private gatePattern(strip: ChannelStrip, id: UserPatternId): GatePattern {
     const pattern = strip.gatePatterns.find(item => item.id === id);
-    if (!pattern) throw new Error(`Unknown Gate User: ${id}`);
+    if (!pattern) throw new Error(`Unknown Gate Pattern: ${id}`);
     return pattern;
   }
   private pitchPattern(strip: ChannelStrip, id: UserPatternId): PitchPattern {
     const pattern = strip.pitchPatterns.find(item => item.id === id);
-    if (!pattern) throw new Error(`Unknown Pitch User: ${id}`);
+    if (!pattern) throw new Error(`Unknown Pitch Pattern: ${id}`);
     return pattern;
   }
   private effectSlot(bus: BusAssignment, slot: BusEffectSlotIndex): EffectSlot {

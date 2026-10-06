@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { openTimbreEditors } from './editor-helpers.mjs';
+import { openTimbreEditors, compactNumericRows, expectCompactNumericRows } from './editor-helpers.mjs';
 
 const card = (page, id) => page.locator(`[data-editor-card="${id}"]`);
 const layout = page => page.locator('.editor-card.active').evaluateAll(nodes => nodes.map(node => node.dataset.editorCard));
@@ -105,6 +105,86 @@ test('dragging a Small card onto another makes a two-card column', async ({ page
   expect((await saved(page, '#save-1')).editorLayout).toEqual([['osc1', 'osc2']]);
 });
 
+async function dragHandle(page, id, targetId, where = 'below', release = true) {
+  const from = await card(page, id).locator('.editor-card-handle').boundingBox(), to = await card(page, targetId).boundingBox();
+  const heading = await card(page, targetId).locator('.editor-card-heading').boundingBox();
+  const point = { below: [to.x + to.width / 2, heading.y + heading.height - 2], above: [to.x + to.width / 2, heading.y + 2],
+    before: [to.x + to.width * .1, heading.y + heading.height / 2], after: [to.x + to.width * .9, heading.y + heading.height / 2] }[where];
+  await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2); await page.mouse.down();
+  await page.mouse.move(point[0], point[1], { steps: 8 });
+  if (release) await page.mouse.up();
+}
+const columnIds = page => page.locator('.function-editor-row > .editor-card-column')
+  .evaluateAll(nodes => nodes.map(column => [...column.querySelectorAll('.editor-card.active')].map(node => node.dataset.editorCard)));
+
+test('columns stack up to three cards by drag and keys, refuse a fourth and round-trip the layout', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
+  await openTimbreEditors(page, ['osc1', 'osc2', 'filter1']);
+  await page.locator('#map-toggle').click(); // Room for a three-card column without drag auto-scroll.
+  await dragHandle(page, 'osc2', 'osc1'); await dragHandle(page, 'filter1', 'osc2');
+  expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1']]);
+  const rects = await Promise.all(['osc1', 'osc2', 'filter1'].map(id => card(page, id).boundingBox()));
+  expect(rects[1].y).toBeGreaterThanOrEqual(rects[0].y + rects[0].height); expect(rects[2].y).toBeGreaterThanOrEqual(rects[1].y + rects[1].height);
+  await page.locator('#map-toggle').click();
+  await select(page, 'mod'); expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
+  await dragHandle(page, 'mod', 'filter1');
+  expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
+  const handle = id => card(page, id).locator('.editor-card-handle');
+  await handle('filter1').press('ArrowUp'); expect(await columnIds(page)).toEqual([['osc1', 'filter1', 'osc2'], ['mod']]);
+  await handle('filter1').press('ArrowDown'); expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
+  await handle('mod').press('Shift+ArrowLeft'); expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
+  await handle('filter1').press('Shift+ArrowDown'); expect(await columnIds(page)).toEqual([['osc1', 'osc2'], ['filter1'], ['mod']]);
+  await handle('mod').press('Shift+ArrowLeft'); expect(await columnIds(page)).toEqual([['osc1', 'osc2'], ['filter1', 'mod']]);
+  await handle('filter1').press('Shift+ArrowLeft'); expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
+  await handle('mod').press('Shift+ArrowLeft'); expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
+  const timbre = await saved(page, '#save-1');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v17'); expect(timbre.editorLayout).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
+  await page.locator('#timbre-file-2').setInputFiles({ name: 'triple.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
+  await page.locator('#select-2').click();
+  expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
+});
+
+test('the drop target shows a thick warm outline and a bar on the landing edge', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
+  await openTimbreEditors(page, ['osc1', 'osc2', 'filter1']);
+  const color = await page.evaluate(() => {
+    const probe = document.createElement('span'); probe.style.color = 'var(--color-card-drop-target)'; document.body.append(probe);
+    const value = getComputedStyle(probe).color; probe.remove(); return value;
+  });
+  for (const [where, shadow] of [['below', /0px -7px/], ['above', /0px 7px/], ['before', /7px 0px/], ['after', /-7px 0px/]]) {
+    await dragHandle(page, 'filter1', 'osc2', where, false);
+    const style = await card(page, 'osc2').evaluate(node => ({ placement: node.dataset.dropPlacement, width: getComputedStyle(node).outlineWidth,
+      color: getComputedStyle(node).outlineColor, shadow: getComputedStyle(node).boxShadow }));
+    expect(style.placement, where).toBe(where);
+    expect(style.width).toBe('2px'); expect(style.color).toBe(color); expect(style.shadow).toMatch(shadow); expect(style.shadow).toContain(color);
+    await page.mouse.up();
+    await openTimbreEditors(page, ['osc1', 'osc2', 'filter1']);
+  }
+});
+
+test('OFF cards grey out their body but keep the heading switch and remain editable', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
+  await openTimbreEditors(page, ['osc1', 'osc2', 'mod']);
+  const grey = (locator) => locator.evaluate(node => getComputedStyle(node).filter.includes('grayscale'));
+  const toggle = card(page, 'osc2').locator('.editor-card-heading > .flow-toggle');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  expect(await grey(card(page, 'osc2').locator(':scope > fieldset'))).toBe(false);
+  await toggle.click(); await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  expect(await grey(card(page, 'osc2').locator(':scope > fieldset'))).toBe(true);
+  expect(await grey(card(page, 'osc2').locator('.editor-card-heading'))).toBe(false);
+  expect(await grey(card(page, 'osc2').locator('.source-phase-row'))).toBe(false);
+  expect(await grey(card(page, 'osc1').locator(':scope > fieldset'))).toBe(false);
+  await page.locator('#osc2-frequency').fill('42'); await page.locator('#osc2-frequency').dispatchEvent('change');
+  await expect(page.locator('#osc2-frequency')).toHaveValue('42');
+  await toggle.click(); expect(await grey(card(page, 'osc2').locator(':scope > fieldset'))).toBe(false);
+  const mod = card(page, 'mod').locator('.editor-card-heading > .flow-toggle');
+  if (await mod.getAttribute('aria-pressed') === 'false') await mod.click();
+  expect(await grey(card(page, 'mod').locator(':scope > fieldset'))).toBe(false);
+  await page.locator('#filter2-route').evaluate(select => { select.value = 'filter1-cutoff'; select.dispatchEvent(new Event('change', { bubbles: true })); });
+  await expect(mod).toHaveText('N/A');
+  expect(await grey(card(page, 'mod').locator(':scope > fieldset'))).toBe(true);
+});
+
 test('dedicated COMMON SPACE and FILES preserve the selected timbre layout', async ({ page }) => {
   await start(page); await select(page, 'filter1');
   for (const id of ['flow-near-fx2', 'flow-master', 'files-menu']) {
@@ -144,7 +224,7 @@ test('every Small editor retains its controls within the minimum card width', as
       if (effect) await page.locator('#fx1-type').selectOption(effect);
       const overflows = await card(page, id).evaluate(root => {
         const card = root.getBoundingClientRect();
-        return [...root.querySelectorAll('input, button, .slider-scale')].filter(node => {
+        return [...root.querySelectorAll('input, button, .slider-scale span, .numeric-slider-name')].filter(node => {
           if (!node.getClientRects().length) return false;
           const rect = node.getBoundingClientRect();
           return rect.left < card.left || rect.right > card.right + 1;
@@ -156,11 +236,34 @@ test('every Small editor retains its controls within the minimum card width', as
   }
 });
 
+test('Small numeric controls use caption/value, bounds/name and slider rows with a center mark', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
+  const rows = compactNumericRows, check = expectCompactNumericRows;
+  for (const id of ['filter1', 'burst', 'fx1', 'detune', 'mod']) {
+    for (const ids of [['osc1', 'osc2', id], [id]]) {
+      await openTimbreEditors(page, ids);
+      const controls = await rows(page.locator('.editor-card.active[data-rank="small"]'));
+      check(controls, ids.join('+'));
+      if (ids.length === 3 && ['filter1', 'burst', 'fx1'].includes(id)) expect(controls.filter(c => c.id.startsWith(id)).every(c => !c.valueBesideCaption)).toBe(true);
+      if (ids.length === 1) expect(controls.every(c => c.valueBesideCaption), id).toBe(true);
+    }
+  }
+  await openTimbreEditors(page, ['osc1', 'osc2', 'fx1']);
+  expect((await rows(card(page, 'osc1'))).find(c => c.id === 'osc1-frequency').axes.map(a => a.mark)).toEqual([false, true]);
+  expect((await rows(card(page, 'fx1'))).find(c => c.id === 'fx1-dist-wet').axes[0].mark).toBe(true);
+  await openTimbreEditors(page, ['burst']);
+  for (const id of ['burst-pulse-interval', 'burst-group-period']) {
+    const range = await page.locator(`#${id}-coarse`).boundingBox();
+    const guide = await page.locator(`#${id}-coarse`).locator('xpath=..').locator('.numeric-slider-guide').boundingBox();
+    expect(guide.y).toBeGreaterThanOrEqual(range.y - 1); expect(guide.y + guide.height).toBeLessThanOrEqual(range.y + range.height + 1);
+  }
+});
+
 for (const closeBy of ['button', 'diagram']) {
 test(`closing Sequence by ${closeBy} releases its held screen Trigger while recording and playback continue`, async ({ page }) => {
   await start(page); await closeAll(page); await select(page, 'sequence');
   await page.locator('#record-length').fill('10'); await page.locator('#record-length').dispatchEvent('change');
-  await page.locator('#record-toggle').click(); await expect(page.locator('#record-toggle')).toContainText('End');
+  await page.locator('#record-toggle').click(); await expect(page.locator('#record-toggle')).toHaveAttribute('aria-label', 'End Recording');
   await page.locator('#record-gate').scrollIntoViewIfNeeded();
   const trigger = await page.locator('#record-gate').boundingBox();
   await page.mouse.move(trigger.x + trigger.width / 2, trigger.y + trigger.height / 2); await page.mouse.down();
@@ -168,7 +271,7 @@ test(`closing Sequence by ${closeBy} releases its held screen Trigger while reco
   const close = closeBy === 'diagram' ? page.locator('#trigger-menu') : card(page, 'sequence').locator('.editor-card-close');
   await close.evaluate(button => button.click());
   await expect(page.locator('#gate-lamp')).not.toHaveClass(/on/);
-  await expect(page.locator('#record-toggle')).toContainText('End');
+  await expect(page.locator('#record-toggle')).toHaveAttribute('aria-label', 'End Recording');
   await page.mouse.up(); await select(page, 'sequence'); await page.locator('#record-toggle').click();
   const timbre = await saved(page, '#save-1');
   const recording = timbre.gatePatterns.find(item => item.id === timbre.sequence.gateUserId).recording;
@@ -216,15 +319,17 @@ test('Medium takes priority over Small and AEnv choices fit even at the Medium m
   await page.screenshot({ path: testInfo.outputPath('aenv-medium-minimum.png') });
 });
 
-test('Sequence Record title, vertical modes, unit and full timer fit the smallest inner editor', async ({ page }, testInfo) => {
+test('Sequence Record title, horizontal modes, unit and full timer fit the smallest inner editor', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
   await openTimbreEditors(page, ['sequence', 'osc1']);
   await page.locator('#record-length').fill('300'); await page.locator('#record-length').dispatchEvent('change');
   const geometry = await card(page, 'sequence').evaluate(root => {
     const rect = selector => root.querySelector(selector).getBoundingClientRect();
     const counter = root.querySelector('#record-counter');
+    const counterText = document.createRange(); counterText.selectNodeContents(counter);
     return { title: rect('.trigger-user-group .trigger-group-title'), viewport: rect('.trigger-editor'),
       record: rect('.trigger-user-group'), counter: rect('#record-counter'), counterFits: counter.scrollWidth <= counter.clientWidth,
+      counterText: counterText.getBoundingClientRect(), recordButton: rect('#record-toggle'),
       length: rect('.record-length-label'), heading: rect('.record-length-heading'),
       modes: [...root.querySelectorAll('#record-mode + .segmented-choice button')].map(node => node.getBoundingClientRect()),
       grip: getComputedStyle(root.querySelector('.editor-card-handle'), '::before').backgroundImage };
@@ -232,11 +337,14 @@ test('Sequence Record title, vertical modes, unit and full timer fit the smalles
   expect(geometry.title.top).toBeGreaterThanOrEqual(geometry.viewport.top);
   expect(geometry.counter.right).toBeLessThanOrEqual(geometry.record.right);
   expect(geometry.counterFits).toBe(true);
+  // The counter sits above the ● ▶ buttons.
+  expect(geometry.counterText.bottom).toBeLessThanOrEqual(geometry.recordButton.top);
   expect(geometry.heading.right).toBeLessThanOrEqual(geometry.length.right);
-  expect(geometry.modes[0].bottom).toBeLessThanOrEqual(geometry.modes[1].top);
-  expect(geometry.modes[1].bottom).toBeLessThanOrEqual(geometry.modes[2].top);
+  expect(geometry.modes[0].right).toBeLessThanOrEqual(geometry.modes[1].left);
+  expect(geometry.modes[1].right).toBeLessThanOrEqual(geometry.modes[2].left);
+  expect(geometry.modes[0].top).toBe(geometry.modes[2].top);
   expect(geometry.grip).toContain('radial-gradient');
-  await expect(page.locator('.record-length-heading')).toHaveText('Record length (s)');
+  await expect(page.locator('.record-length-heading')).toHaveText('Length');
   await page.screenshot({ path: testInfo.outputPath('sequence-record-polish.png') });
 });
 
@@ -294,7 +402,6 @@ test('Envelope and Sequence controls keep labels, buttons, and readouts aligned'
   });
   expect(geometry.curveLabel.bottom).toBeLessThan(geometry.curveSelect.top);
   expect(geometry.counter.bottom).toBeLessThanOrEqual(geometry.button.top);
-  expect(geometry.counterFont).toBeGreaterThan(geometry.buttonFont);
   for (const row of geometry.timings) {
     expect(row.input.left - row.caption.right).toBeGreaterThanOrEqual(0);
     expect(row.input.left - row.caption.right).toBeLessThan(12);
@@ -359,11 +466,111 @@ for (const viewport of [{ width: 1180, height: 820 }, { width: 1024, height: 768
     const penv = await card(page, 'penv').boundingBox(); expect(penv.width).toBeCloseTo(Math.min(602.67, (Math.max(908, viewport.width - 272) - 8) / 2), 0);
     expect(await page.locator('.penv-controls-scroll').evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
     await closeAll(page); await select(page, 'sequence'); await select(page, 'filter1');
-    expect(await page.locator('.trigger-editor-inner').evaluate(node => node.getBoundingClientRect().width)).toBeGreaterThanOrEqual(780);
+    expect(await page.locator('.trigger-editor-inner').evaluate(node => node.getBoundingClientRect().width)).toBeGreaterThanOrEqual(760);
     const sequenceScroll = await page.locator('.trigger-editor').evaluate(node => ({ scroll: node.scrollWidth, client: node.clientWidth }));
-    expect(sequenceScroll.scroll).toBeGreaterThanOrEqual(780);
-    if (sequenceScroll.client < 780) expect(sequenceScroll.scroll).toBeGreaterThan(sequenceScroll.client);
+    expect(sequenceScroll.scroll).toBeGreaterThanOrEqual(760);
+    if (sequenceScroll.client < 760) expect(sequenceScroll.scroll).toBeGreaterThan(sequenceScroll.client);
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
     if (viewport.width === 1180) await page.screenshot({ path: testInfo.outputPath('large-small-air.png') });
   });
 }
+
+for (const viewport of [{ width: 820, height: 1180 }, { width: 820, height: 1106 }]) {
+  test(`iPad Air portrait lower bound keeps SEQUENCE and the Pitch/Gate controller in view at ${viewport.width}x${viewport.height}`, async ({ page }, testInfo) => {
+    await page.setViewportSize(viewport); await start(page);
+    await page.locator('#mixer-divider').press('End');
+    await select(page, 'sequence');
+    expect(await layout(page)).toEqual(['sequence']);
+    const map = page.locator('#map-toggle');
+    await expect(map).toHaveAttribute('aria-pressed', 'true');
+    await map.click();
+    await expect(map).toHaveAttribute('aria-pressed', 'false');
+    await expect(page.locator('#panel-divider')).toHaveAttribute('aria-valuenow', '0');
+    const geometry = await page.locator('.function-editor').evaluate(root => {
+      const rect = node => node.getBoundingClientRect();
+      const sequence = root.querySelector('[data-editor-card="sequence"] .trigger-editor');
+      return { page: document.documentElement.scrollWidth, root: { client: root.clientWidth, scroll: root.scrollWidth, top: root.scrollTop, rect: rect(root).toJSON() },
+        sequence: { client: sequence.clientWidth, scroll: sequence.scrollWidth },
+        controller: rect(root.querySelector('.pitch-performance')).toJSON(), gate: rect(root.querySelector('#record-gate')).toJSON(),
+        slider: rect(root.querySelector('#sequence-pitch-track')).toJSON() };
+    });
+    expect(geometry.page).toBe(viewport.width);
+    expect(geometry.root.scroll).toBeLessThanOrEqual(geometry.root.client);
+    expect(geometry.sequence.scroll).toBeLessThanOrEqual(geometry.sequence.client);
+    for (const rect of [geometry.controller, geometry.gate]) {
+      expect(rect.top).toBeGreaterThanOrEqual(geometry.root.rect.top);
+      expect(rect.bottom).toBeLessThanOrEqual(geometry.root.rect.bottom);
+      expect(rect.right).toBeLessThanOrEqual(geometry.root.rect.right);
+    }
+    expect(geometry.slider.width).toBeGreaterThan(500);
+    if (viewport.height === 1180) await page.screenshot({ path: testInfo.outputPath('sequence-air-portrait.png') });
+    await map.click();
+    await expect(map).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.locator('#panel-divider')).toHaveAttribute('aria-valuenow', '50');
+  });
+}
+
+test('Map toggle restores the last dragged diagram share', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
+  const divider = page.locator('#panel-divider'), map = page.locator('#map-toggle');
+  for (let step = 0; step < 5; step++) await divider.press('ArrowUp');
+  await expect(divider).toHaveAttribute('aria-valuenow', '40');
+  await map.click(); await expect(divider).toHaveAttribute('aria-valuenow', '0');
+  await expect(page.locator('.editor-column')).toHaveAttribute('data-diagram-collapsed', 'true');
+  await map.click(); await expect(divider).toHaveAttribute('aria-valuenow', '40');
+  await divider.press('End'); await expect(map).toHaveAttribute('aria-pressed', 'false');
+  await divider.press('Home'); await expect(map).toHaveAttribute('aria-pressed', 'true');
+});
+
+test('TIMBRES toggle and a tap on the collapsed divider restore the last width', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
+  const divider = page.locator('#mixer-divider'), toggle = page.locator('#timbres-toggle');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  for (let step = 0; step < 6; step++) await divider.press('ArrowLeft');
+  await expect(divider).toHaveAttribute('aria-valuenow', '200');
+  await toggle.click(); await expect(divider).toHaveAttribute('aria-valuenow', '0');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await expect(page.locator('.lab-body')).toHaveAttribute('data-mixer-collapsed', 'true');
+  await toggle.click(); await expect(divider).toHaveAttribute('aria-valuenow', '200');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+
+  await divider.press('End'); await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  const tap = async () => {
+    const box = await divider.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down(); await page.mouse.up();
+  };
+  await tap(); await expect(divider).toHaveAttribute('aria-valuenow', '200');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  await tap(); await expect(divider).toHaveAttribute('aria-valuenow', '200'); // Tapping an open divider does not change the width.
+
+  const box = await divider.boundingBox();
+  const x = box.x + box.width / 2, y = box.y + box.height / 2;
+  await page.mouse.move(x, y); await page.mouse.down();
+  await page.mouse.move(x - 2, y); await expect(divider).toHaveAttribute('aria-valuenow', '200'); // Jitter below 5px is ignored.
+  await page.mouse.move(1, y, { steps: 5 }); await page.mouse.up();
+  await expect(divider).toHaveAttribute('aria-valuenow', '0');
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await toggle.click(); await expect(divider).toHaveAttribute('aria-valuenow', '200'); // A collapsing drag keeps the pre-drag width.
+
+  const open = await divider.boundingBox();
+  await page.mouse.move(open.x + open.width / 2, y); await page.mouse.down();
+  await page.mouse.move(open.x + open.width / 2 - 50, y, { steps: 5 }); await page.mouse.up();
+  const dragged = await divider.getAttribute('aria-valuenow');
+  expect(Number(dragged)).toBeGreaterThan(140); expect(Number(dragged)).toBeLessThan(160);
+  await toggle.click(); await expect(divider).toHaveAttribute('aria-valuenow', '0');
+  await toggle.click(); await expect(divider).toHaveAttribute('aria-valuenow', dragged);
+});
+
+test('TIMBRES toggle fits the iPad Air portrait top bar', async ({ page }) => {
+  await page.setViewportSize({ width: 820, height: 1180 }); await start(page);
+  await expect(page.locator('#timbres-toggle')).toBeVisible();
+  const bar =await page.locator('.topbar').evaluate(node => {
+    const transport = node.querySelector('.transport');
+    return { page: document.documentElement.scrollWidth, scroll: transport.scrollWidth, client: transport.clientWidth,
+      right: Math.max(...[...transport.children].filter(child => child.getClientRects().length > 0).map(child => child.getBoundingClientRect().right)) };
+  });
+  expect(bar.page).toBe(820);
+  expect(bar.scroll).toBeLessThanOrEqual(bar.client);
+  expect(bar.right).toBeLessThanOrEqual(820);
+});

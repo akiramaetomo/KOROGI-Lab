@@ -224,7 +224,6 @@ const songTimingSelect = requireElement<HTMLSelectElement>('#song-timing');
 const songBarsGroup = requireElement<HTMLFieldSetElement>('#song-bars-group');
 const songBpmInput = requireElement<HTMLInputElement>('#song-bpm');
 const recordBpmInput = requireElement<HTMLInputElement>('#record-bpm');
-const recordBpmLabel = requireElement<HTMLLabelElement>('.record-bpm-label');
 const recordLengthMode = requireElement<HTMLSelectElement>('#record-length-mode');
 const songSpeedInput = requireElement<HTMLInputElement>('#song-speed');
 const songSpeedSlider = requireElement<HTMLInputElement>('#song-speed-slider');
@@ -303,7 +302,7 @@ const transport = new SequenceTransport(() => engine, ensureAudioRunning,
 const songTransport = new SongTransport(() => engine, ensureAudioRunning, syncTransportControls, () => transport.stopAll());
 const mixer = new MixerPanel(requireElement('#mixer-slots'), () => engine, ensureAudioRunning, syncSelectedSource,
   message => { patchStatus.textContent = message; }, saveTimbre,
-  id => { songTransport.stop(); transport.beforeReplace(id); recorder.releaseSource(id); if (recorder.lockedId() === id) recorder.cancel(); }, () => transport);
+  id => { songTransport.stop(); transport.beforeReplace(id); recorder.releaseSource(id); recorder.discardQuantizeHistory(); if (recorder.lockedId() === id) recorder.cancel(); }, () => transport);
 const recorder = new TriggerRecorder(() => engine, () => mixer.selectedId, ensureAudioRunning,
   id => {
     mixer.manual.forgetSource(id);
@@ -336,8 +335,8 @@ function animateGate(): void {
   const song = songTransport.position();
   if (song) {
     songClock.textContent = song.bar === undefined
-      ? `User ${song.user} · ${songTime(song.userElapsedSec)} / ${songTime(song.userDurationSec)} · Total ${songTime(song.elapsedSec)}`
-      : `User ${song.user} · Bar ${song.bar} · Beat ${song.beat} · ${songTime(song.elapsedSec)}`;
+      ? `Pattern ${song.user} · ${songTime(song.userElapsedSec)} / ${songTime(song.userDurationSec)} · Total ${songTime(song.elapsedSec)}`
+      : `Pattern ${song.user} · Bar ${song.bar} · Beat ${song.beat} · ${songTime(song.elapsedSec)}`;
   } else songClock.textContent = 'Song stopped';
   syncTransportControls();
   window.requestAnimationFrame(animateGate);
@@ -345,22 +344,29 @@ function animateGate(): void {
 function syncTransportControls(): void {
   const id = mixer.selectedId;
   const running = transport.isPlaying(id);
-  sequencePanelButton.textContent = running ? '■ Stop' : '▶ Play';
+  const playIcon = running ? '■' : '▶';
+  if (sequencePanelButton.textContent !== playIcon) sequencePanelButton.textContent = playIcon;
+  sequencePanelButton.setAttribute('aria-label', running ? 'Stop' : 'Play'); sequencePanelButton.title = running ? 'Stop' : 'Play';
   sequencePanelButton.setAttribute('aria-pressed', String(running));
   const source = transport.source(id);
   sourceAutoButton.setAttribute('aria-pressed', String(source.gateMode === 'auto'));
   recordedGateButton.setAttribute('aria-pressed', String(source.gateMode === 'user'));
+  syncAutoTimingAvailability(source.gateMode === 'auto');
   gateUserButtons.forEach((button, index) => {
     const patternId = `user-${index + 1}` as typeof source.gateUserId;
     const gate = engine?.getChannel(id) ? engine.getGateRecording(id, patternId) : null;
     button.setAttribute('aria-pressed', String(source.gateUserId === patternId));
-    button.querySelector('small')!.textContent = gate ? engine!.getGateMuted(id, patternId) ? '0' : '1' : 'Null';
+    const state = gate ? engine!.getGateMuted(id, patternId) ? '0' : '1' : 'Null';
+    button.querySelector('small')!.textContent = state;
+    button.setAttribute('aria-label', `Gate Pattern ${index + 1}, ${state === 'Null' ? 'no recording' : state === '0' ? 'muted' : 'recorded'}`);
   });
   pitchUserButtons.forEach((button, index) => {
     const patternId = `user-${index + 1}` as typeof source.pitchUserId;
     const pitch = engine?.getChannel(id) ? engine.getPitchRecording(id, patternId) : null;
     button.setAttribute('aria-pressed', String(source.pitchUserId === patternId));
-    button.querySelector('small')!.textContent = pitch ? engine!.getPitchMuted(id, patternId) ? '0' : '1' : 'Null';
+    const state = pitch ? engine!.getPitchMuted(id, patternId) ? '0' : '1' : 'Null';
+    button.querySelector('small')!.textContent = state;
+    button.setAttribute('aria-label', `Pitch Pattern ${index + 1}, ${state === 'Null' ? 'no recording' : state === '0' ? 'muted' : 'recorded'}`);
   });
   const any = transport.anyPlaying();
   playAllButton.textContent = any ? 'Stop All' : 'Play All';
@@ -488,10 +494,18 @@ const mixerPanel = requireElement<HTMLElement>('.mixer-panel');
 const mixerDivider = requireElement<HTMLElement>('#mixer-divider');
 const MIXER_DEFAULT_WIDTH = 248;
 const MIXER_STEP = 8;
+const timbresToggle = requireElement<HTMLButtonElement>('#timbres-toggle');
+let restoreMixerWidth = MIXER_DEFAULT_WIDTH;
 let mixerDragOffset = 0;
+// A tap on the collapsed divider restores TIMBRES; iPad edge swipes cannot be relied on to drag it back.
+let mixerTap: { x: number; y: number; collapsed: boolean; moved: boolean } | null = null;
 function setMixerWidth(width: number): void {
   const next = Math.max(0, Math.min(MIXER_DEFAULT_WIDTH, width));
   const rounded = Math.round(next);
+  // While dragging, keep the pre-drag width so a drag that collapses TIMBRES restores to it.
+  if (rounded > 0 && !mixerTap?.moved) restoreMixerWidth = rounded;
+  timbresToggle.setAttribute('aria-pressed', String(rounded > 0));
+  timbresToggle.title = rounded > 0 ? 'Hide TIMBRES' : 'Show TIMBRES';
   labBody.style.setProperty('--mixer-width', `${rounded}px`);
   labBody.dataset.mixerCollapsed = String(rounded === 0);
   mixerPanel.inert = rounded === 0;
@@ -502,6 +516,7 @@ function setMixerWidth(width: number): void {
 mixerDivider.addEventListener('pointerdown', event => {
   const dividerRect = mixerDivider.getBoundingClientRect();
   mixerDragOffset = event.clientX - dividerRect.left;
+  mixerTap = { x: event.clientX, y: event.clientY, collapsed: mixerDivider.getAttribute('aria-valuenow') === '0', moved: false };
   mixerDivider.setPointerCapture(event.pointerId);
   document.body.classList.add('mixer-resizing');
   document.getSelection()?.removeAllRanges();
@@ -509,11 +524,23 @@ mixerDivider.addEventListener('pointerdown', event => {
 });
 mixerDivider.addEventListener('pointermove', event => {
   if (!mixerDivider.hasPointerCapture(event.pointerId)) return;
+  if (mixerTap && !mixerTap.moved) {
+    if (Math.hypot(event.clientX - mixerTap.x, event.clientY - mixerTap.y) < 5) return;
+    mixerTap.moved = true;
+  }
   const bodyRect = labBody.getBoundingClientRect();
   setMixerWidth(event.clientX - bodyRect.left - mixerDragOffset);
 });
-const endMixerResize = (): void => { document.body.classList.remove('mixer-resizing'); };
-mixerDivider.addEventListener('pointerup', endMixerResize);
+const endMixerResize = (): void => {
+  const width = Number(mixerDivider.getAttribute('aria-valuenow'));
+  if (mixerTap?.moved && width > 0) restoreMixerWidth = width;
+  mixerTap = null;
+  document.body.classList.remove('mixer-resizing');
+};
+mixerDivider.addEventListener('pointerup', () => {
+  if (mixerTap && mixerTap.collapsed && !mixerTap.moved) setMixerWidth(restoreMixerWidth);
+  endMixerResize();
+});
 mixerDivider.addEventListener('pointercancel', endMixerResize);
 mixerDivider.addEventListener('lostpointercapture', endMixerResize);
 mixerDivider.addEventListener('keydown', event => {
@@ -525,11 +552,18 @@ mixerDivider.addEventListener('keydown', event => {
       : current + (event.key === 'ArrowRight' ? MIXER_STEP : -MIXER_STEP);
   setMixerWidth(width);
 });
+timbresToggle.addEventListener('click', () => {
+  setMixerWidth(timbresToggle.getAttribute('aria-pressed') === 'true' ? 0 : restoreMixerWidth);
+});
 
 const editorColumn = requireElement<HTMLElement>('.editor-column');
 const panelDivider = requireElement<HTMLElement>('#panel-divider');
+const mapToggle = requireElement<HTMLButtonElement>('#map-toggle');
+const PANEL_DEFAULT_SHARE = 50;
+let restorePanelShare = PANEL_DEFAULT_SHARE;
 function setPanelShare(percent: number): void {
   const share = Math.max(0, Math.min(75, percent));
+  if (share > 0) restorePanelShare = share;
   editorColumn.style.setProperty('--diagram-share', `${share}fr`);
   editorColumn.style.setProperty('--edit-share', `${100 - share}fr`);
   editorColumn.dataset.diagramCollapsed = String(share === 0);
@@ -537,8 +571,13 @@ function setPanelShare(percent: number): void {
   diagram.inert = share === 0;
   diagram.setAttribute('aria-hidden', String(share === 0));
   panelDivider.setAttribute('aria-valuenow', String(Math.round(share)));
+  mapToggle.setAttribute('aria-pressed', String(share > 0));
+  mapToggle.title = share > 0 ? 'Hide signal map' : 'Show signal map';
   window.dispatchEvent(new Event('resize'));
 }
+mapToggle.addEventListener('click', () => {
+  setPanelShare(mapToggle.getAttribute('aria-pressed') === 'true' ? 0 : restorePanelShare);
+});
 panelDivider.addEventListener('pointerdown', event => {
   panelDivider.setPointerCapture(event.pointerId);
   document.body.classList.add('panel-resizing');
@@ -561,7 +600,7 @@ document.addEventListener('selectstart', event => {
 panelDivider.addEventListener('keydown', event => {
   if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown' && event.key !== 'Home' && event.key !== 'End') return;
   event.preventDefault();
-  setPanelShare(event.key === 'Home' ? 50 : event.key === 'End' ? 0 : Number(panelDivider.getAttribute('aria-valuenow')) + (event.key === 'ArrowDown' ? 2 : -2));
+  setPanelShare(event.key === 'Home' ? PANEL_DEFAULT_SHARE : event.key === 'End' ? 0 : Number(panelDivider.getAttribute('aria-valuenow')) + (event.key === 'ArrowDown' ? 2 : -2));
 });
 
 function applyAutoTrigger(): void {
@@ -573,13 +612,21 @@ function applyAutoTrigger(): void {
 
 function refreshAutoTriggerControls(): void {
   const settings = selectedChannel()?.getSettings();
-  const ton = requireElement<HTMLInputElement>('#ton');
   requireElement<HTMLElement>('[data-numeric-control="ton"]').hidden = false;
-  ton.disabled = !settings || loadingSession || recorder.isBusy();
-  numericSliders.get(ton)?.sync();
-  const warning = requireElement<HTMLElement>('#auto-timing-warning');
-  warning.hidden = !settings || settings.autoTrigger.tonSec < settings.autoTrigger.repeatSec;
   if (settings) setValue('#trepeat', Math.round(settings.autoTrigger.repeatSec * 1000));
+  syncAutoTimingAvailability(transport.source(mixer.selectedId).gateMode === 'auto');
+}
+
+function syncAutoTimingAvailability(auto: boolean): void {
+  const disabled = !auto || !selectedChannel() || loadingSession || recorder.isBusy();
+  for (const selector of ['#ton', '#trepeat']) {
+    const input = requireElement<HTMLInputElement>(selector);
+    if (input.disabled === disabled) continue;
+    input.disabled = disabled;
+    numericSliders.get(input)?.sync();
+  }
+  requireElement<HTMLElement>('#auto-timing-warning').hidden = disabled
+    || numberValue('#ton') < numberValue('#trepeat');
 }
 
 function burstSettingsFromUi(enabled: boolean): BurstSettings {
@@ -756,7 +803,7 @@ playAllButton.addEventListener('click', () => { void transport.toggleAll(); });
 songButton.addEventListener('click', () => {
   if (recorder.isBusy()) return;
   if (!songTransport.isPlaying() && !songTransport.preview().length) {
-    patchStatus.textContent = 'Record or load a Gate USER pattern before playing Song.'; return;
+    patchStatus.textContent = 'Record or load a Gate Pattern before playing Song.'; return;
   }
   void songTransport.toggle();
 });
@@ -764,27 +811,27 @@ function songTime(seconds: number): string {
   const whole = Math.floor(Math.max(0, seconds));
   return `${String(Math.floor(whole / 60)).padStart(2, '0')}:${String(whole % 60).padStart(2, '0')}`;
 }
+function patternLabel(id: UserPatternId): string { return `Pattern ${id.slice(-1)}`; }
 function syncSongPreview(): void {
   const settings = engine?.getSongSettings(); if (!settings) return;
   const sections = songTransport.preview();
   const barsTime = settings.bars[Number(songUserSelect.value) - 1]! * 240 / (settings.bpm * settings.speed);
-  const users = sections.map(item => item.user).join(', ');
-  const duration = settings.timingMode === 'bars' ? `Bars USER ${songUserSelect.value}: ${barsTime.toFixed(2)} s`
+  const patterns = sections.map(item => `Pattern ${item.user}`).join(', ');
+  const duration = settings.timingMode === 'bars' ? `Bars Pattern ${songUserSelect.value}: ${barsTime.toFixed(2)} s`
     : `Seconds total: ${sections.length ? `${sections.reduce((sum, section) => sum + section.duration, 0).toFixed(2)} s` : 'empty'}`;
-  songDuration.textContent = `${duration} · ${users ? `Song USER ${users}` : 'No Gate USER'}`;
+  songDuration.textContent = `${duration} · ${patterns ? `Song: ${patterns}` : 'No Gate Pattern'}`;
 }
 function syncSongSettings(): void {
   const settings = engine?.getSongSettings(); if (!settings) return;
   setValue('#song-timing', settings.timingMode);
   songBpmInput.value = String(settings.bpm);
   recordBpmInput.value = String(settings.bpm);
-  recordBpmLabel.hidden = recordLengthMode.value !== 'bars';
   recordBpmInput.disabled = recordLengthMode.value !== 'bars' || recorder.isBusy();
   songBarsGroup.disabled = settings.timingMode !== 'bars' || recorder.isBusy();
   songSpeedInput.value = String(settings.speed);
   songSpeedSlider.value = String(settings.speed);
   songBarsInput.value = String(settings.bars[Number(songUserSelect.value) - 1]);
-  songBarsInput.setAttribute('aria-label', `Bars to fit the selected USER, 1 to ${maxSongBars(settings.bpm)}`);
+  songBarsInput.setAttribute('aria-label', `Bars to fit Pattern ${songUserSelect.value}, 1 to ${maxSongBars(settings.bpm)}`);
   syncSongPreview();
 }
 recordLengthMode.addEventListener('change', syncSongSettings);
@@ -830,10 +877,10 @@ requireElement<HTMLButtonElement>('#copy-user').addEventListener('click', () => 
   const id = mixer.selectedId, from = requireElement<HTMLSelectElement>('#copy-from').value as UserPatternId;
   const to = requireElement<HTMLSelectElement>('#copy-to').value as UserPatternId;
   if (!engine?.getChannel(id) || recorder.isBusy()) return;
-  if (from === to) { patchStatus.textContent = 'Choose a different destination USER.'; return; }
-  if (!window.confirm(`Overwrite Timbre ${id} ${to} with ${from}? Gate, Pitch, selections, mute and Pitch settings will be replaced.`)) return;
-  songTransport.stop(); transport.stop(id); engine.copyUserPattern(id, from, to);
-  recorder.refresh(); syncSongPreview(); syncTransportControls(); patchStatus.textContent = `Copied Timbre ${id} ${from} → ${to}.`;
+  if (from === to) { patchStatus.textContent = 'Choose a different destination Pattern.'; return; }
+  if (!window.confirm(`Overwrite Timbre ${id} ${patternLabel(to)} with ${patternLabel(from)}? Gate, Pitch, selections, mute and Pitch settings will be replaced.`)) return;
+  songTransport.stop(); transport.stop(id); recorder.discardQuantizeHistory(); engine.copyUserPattern(id, from, to);
+  recorder.refresh(); syncSongPreview(); syncTransportControls(); patchStatus.textContent = `Copied Timbre ${id} ${patternLabel(from)} → ${patternLabel(to)}.`;
 });
 sourceAutoButton.addEventListener('click', () => transport.setSelection(mixer.selectedId, { gateMode: 'auto' }));
 recordedGateButton.addEventListener('click', () => transport.setSelection(mixer.selectedId, { gateMode: 'user' }));
@@ -1225,6 +1272,7 @@ async function loadSessionSource(source: string, loadingMessage: string, loadedP
     songTransport.stop();
     transport.stopAll();
     recorder.cancel();
+    recorder.discardQuantizeHistory();
     loadingSession = true;
     mixer.setEnabled(false, false);
     // Disable gestures without releasing them until the candidate commits.
@@ -1324,6 +1372,7 @@ function refreshBlockSwitches(): void {
       : blocks?.[block as ChannelBlock] ?? true;
     const unavailable = block === 'mod' && requireElement<HTMLSelectElement>('#filter2-route').value === 'filter1-cutoff';
     button.textContent = unavailable ? 'N/A' : enabled ? 'ON' : 'OFF';
+    button.toggleAttribute('data-unavailable', unavailable);
     button.setAttribute('aria-pressed', String(enabled));
     button.title = unavailable ? 'FILTER2 is routed to F1 CUTOFF; MOD settings are retained'
       : block === 'aenv' ? 'OFF: unity bypass / continuous sound' : 'ON/OFF (settings retained)';

@@ -72,7 +72,8 @@ test('UI FEnv Amount reaches the live Filter1 detune after first audio resume', 
   await page.locator('[data-editor-card="fenv"] [data-block-toggle="fenv"]').click();
   await page.evaluate(() => {
     const meter = window.__fenvContext.createAnalyser(); meter.fftSize = 256;
-    window.__detuneSources[2].connect(meter);
+    // The FEnv connection is last; Sequence and controller Filter controls have separate gains.
+    window.__detuneSources.at(-1).connect(meter);
     window.__fenvRead = () => { const data = new Float32Array(256); meter.getFloatTimeDomainData(data); return data[128]; };
   });
   const gate = await page.locator('#gate-1').boundingBox();

@@ -13,7 +13,8 @@ type GateRun = { recording: TriggerRecording; events: Event[]; startedAt: number
   cycle: number; index: number; pending: PendingGate | null };
 type PitchRun = { recording: PitchRecording; settings: SequenceSettings; operations: PitchOperation[]; startedAt: number;
   period: number; speed: number; cycle: number; index: number; pending: PendingPitch | null };
-type Run = { source: SequenceSelection; synth: ChannelSynth; autoGate: boolean; gate?: GateRun; pitch?: PitchRun; timer: number };
+type Run = { source: SequenceSelection; synth: ChannelSynth; autoGate: boolean; gate?: GateRun; pitch?: PitchRun;
+  pitchPunch?: boolean; timer: number };
 type LanePosition = { elapsed: number; period: number; start: number; duration: number };
 
 const EPSILON = 1e-9;
@@ -35,11 +36,11 @@ export class SequenceTransport {
     if (id && id !== previous) this.stop(id);
     this.changed();
   }
-  playRetained(id: string, speedOverride?: number, monitorGate = false, startAt?: number): void {
+  playRetained(id: string, speedOverride?: number, monitorGate = false, monitorPitch = false, startAt?: number): void {
     const engine = this.engine();
     if (!engine?.getChannel(id) || this.blocked?.id !== id || engine.context.state !== 'running') return;
     this.stopRun(id);
-    this.start(id, startAt ?? engine.context.currentTime + .02, this.blocked.lane, speedOverride, monitorGate);
+    this.start(id, startAt ?? engine.context.currentTime + .02, this.blocked.lane, speedOverride, monitorGate, monitorPitch);
   }
   isRecordingTarget(id: string): boolean { return this.blocked?.id === id; }
   isPlaying(id: string): boolean {
@@ -102,7 +103,7 @@ export class SequenceTransport {
     run.gate.pending = { recording: engine.getGateRecording(id, patternId), boundary };
     this.tick(id, run);
   }
-  setGateMonitorRecording(id: string, recording: TriggerRecording): void {
+  setGateMonitorRecording(id: string, recording: TriggerRecording, boundary?: number): void {
     let run = this.runs.get(id); const engine = this.engine();
     if (!engine || !this.blocked || this.blocked.id !== id) return;
     const hasEvents = selectedTriggerGates(recording).length > 0;
@@ -113,12 +114,96 @@ export class SequenceTransport {
       this.runs.set(id, run);
     }
     if (!run.gate) {
-      run.gate = this.createGateRun(recording, this.source(id).playSpeed, engine.context.currentTime + .02);
+      run.gate = this.createGateRun(recording, this.source(id).playSpeed, boundary ?? engine.context.currentTime + .02);
+      if (boundary !== undefined && boundary <= engine.context.currentTime) {
+        const phase = this.phase(run.gate, engine.context.currentTime);
+        if (selectedTriggerGates(recording).some(gate => gate.onSec <= phase && phase < gate.offSec)) engine.gateOn(id, engine.context.currentTime);
+        this.seekAfter(run.gate, phase, run.gate.events);
+      }
       this.ensureTimer(id, run); this.tick(id, run); return;
     }
-    const boundary = this.nextBoundary(run.gate, engine.context.currentTime);
-    engine.cancelScheduledGatesFrom(id, boundary);
-    run.gate.pending = { recording: hasEvents ? recording : null, boundary };
+    const switchAt = boundary ?? this.nextBoundary(run.gate, engine.context.currentTime);
+    engine.cancelScheduledGatesFrom(id, switchAt);
+    if (switchAt <= engine.context.currentTime) {
+      if (!hasEvents) run.gate = undefined;
+      else {
+        const next = this.createGateRun(recording, run.gate.speed, switchAt);
+        const phase = this.phase(next, engine.context.currentTime);
+        if (selectedTriggerGates(recording).some(gate => gate.onSec <= phase && phase < gate.offSec)) engine.gateOn(id, engine.context.currentTime);
+        this.seekAfter(next, phase, next.events);
+        run.gate = next;
+      }
+      this.tick(id, run);
+    } else run.gate.pending = { recording: hasEvents ? recording : null, boundary: switchAt };
+  }
+  /** The first Gate input of a Replace lap takes ownership from the old monitor immediately. */
+  suppressGateMonitor(id: string): void {
+    if (this.blocked?.id !== id) return;
+    const run = this.runs.get(id), engine = this.engine();
+    if (!engine) return;
+    run && (run.gate = undefined);
+    engine.cancelScheduledGates(id);
+  }
+  setPitchMonitorRecording(id: string, recording: PitchRecording, boundary?: number): void {
+    let run = this.runs.get(id); const engine = this.engine();
+    if (!engine || this.blocked?.id !== id) return;
+    if (!run) {
+      const synth = engine.getChannel(id); if (!synth) return;
+      run = { source: this.source(id), synth, autoGate: false, timer: 0 };
+      this.runs.set(id, run);
+    }
+    const settings = engine.getSequenceSettings(id, run.source.pitchUserId);
+    if (!run.pitch) {
+      run.pitch = this.createPitchRun(recording, settings, boundary ?? engine.context.currentTime + .02);
+      if (!run.pitchPunch && boundary !== undefined && boundary <= engine.context.currentTime)
+        this.retimePitch(id, run.pitch, settings, engine.context.currentTime);
+      this.ensureTimer(id, run); this.tick(id, run); return;
+    }
+    if (run.pitchPunch) {
+      run.pitch.recording = recording;
+      run.pitch.operations = this.pitchOperations(recording, settings);
+      return;
+    }
+    const switchAt = boundary ?? this.nextBoundary(run.pitch, engine.context.currentTime);
+    if (switchAt <= engine.context.currentTime) {
+      run.pitch.recording = recording;
+      this.retimePitch(id, run.pitch, settings, engine.context.currentTime);
+      this.tick(id, run);
+    } else {
+      engine.holdSequencePitch(id, switchAt);
+      run.pitch.pending = { recording, settings, boundary: switchAt };
+    }
+  }
+  beginPitchPunch(id: string): void {
+    let run = this.runs.get(id); const engine = this.engine();
+    if (!engine || this.blocked?.id !== id || run?.pitchPunch) return;
+    if (!run) {
+      const synth = engine.getChannel(id); if (!synth) return;
+      run = { source: this.source(id), synth, autoGate: false, timer: 0 };
+      this.runs.set(id, run);
+    }
+    run.pitchPunch = true;
+    if (run.pitch) engine.holdSequencePitch(id);
+  }
+  endPitchPunch(id: string, recording: PitchRecording, absolutePosition: number): void {
+    const run = this.runs.get(id), engine = this.engine();
+    if (!engine || this.blocked?.id !== id) return;
+    if (!run?.pitch) {
+      const settings = engine.getSequenceSettings(id, this.source(id).pitchUserId);
+      if (run) {
+        const phase = absolutePosition - recording.selectionStartSec;
+        run.pitchPunch = false;
+        run.pitch = this.createPitchRun(recording, settings, engine.context.currentTime - phase / settings.playSpeed);
+        this.retimePitch(id, run.pitch, settings, engine.context.currentTime);
+        this.ensureTimer(id, run); this.tick(id, run);
+      } else engine.setSequencePitch(id, pitchValueAt(recording.points, Math.min(recording.durationSec, absolutePosition + .001)), settings.pitchScaleCent,
+        settings.filterAmountCent, engine.context.currentTime, 0);
+      return;
+    }
+    run.pitchPunch = false;
+    run.pitch.recording = recording;
+    this.retimePitch(id, run.pitch, engine.getSequenceSettings(id, run.source.pitchUserId), engine.context.currentTime);
+    this.tick(id, run);
   }
   laneMutedChanged(id: string, lane: 'gate' | 'pitch'): void {
     const run = this.runs.get(id), engine = this.engine(); if (!run || !engine) return;
@@ -126,14 +211,14 @@ export class SequenceTransport {
     if (lane === 'gate' && run.source.gateMode === 'user') {
       engine.cancelScheduledGates(id); run.gate = undefined;
       const recording = engine.getGateMuted(id, run.source.gateUserId) ? null : engine.getGateRecording(id, run.source.gateUserId);
-      if (recording && selectedTriggerGates(recording).length) run.gate = this.createGateRun(recording, run.source.playSpeed, now + .02);
+      if (recording) run.gate = this.createGateRun(recording, run.source.playSpeed, now + .02);
     }
     if (lane === 'pitch') {
       engine.resetSequencePitch(id); run.pitch = undefined;
       const recording = engine.getPitchMuted(id, run.source.pitchUserId) ? null : engine.getPitchRecording(id, run.source.pitchUserId);
       if (recording) run.pitch = this.createPitchRun(recording, engine.getSequenceSettings(id, run.source.pitchUserId), now + .02);
     }
-    if (!run.autoGate && !run.gate && !run.pitch) this.stop(id);
+    if (!run.autoGate && !run.gate && !run.pitch && !run.pitchPunch) this.stop(id);
     else { this.ensureTimer(id, run); this.tick(id, run); this.changed(); }
   }
   /** Compatibility name retained until the Phase 3 recorder is split into lanes. */
@@ -176,20 +261,22 @@ export class SequenceTransport {
     const engine = this.engine(); if (!engine) return false;
     const gate = engine.getGateMuted(id, source.gateUserId) ? null : engine.getGateRecording(id, source.gateUserId);
     const pitch = engine.getPitchMuted(id, source.pitchUserId) ? null : engine.getPitchRecording(id, source.pitchUserId);
-    return (!!gate && selectedTriggerGates(gate).length > 0) || !!pitch;
+    return !!gate || !!pitch;
   }
-  private start(id: string, startAt: number, blockedLane?: RecordingLane, speedOverride?: number, monitorGate = false): void {
+  private start(id: string, startAt: number, blockedLane?: RecordingLane, speedOverride?: number,
+    monitorGate = false, monitorPitch = false): void {
     const engine = this.engine(), synth = engine?.getChannel(id); if (!engine || !synth) return;
     const source = this.source(id); const settings = engine.getSequenceSettings(id, source.pitchUserId);
     const speed = speedOverride ?? settings.playSpeed;
     const allowGate = blockedLane !== 'gate' && blockedLane !== 'both';
     const allowPitch = blockedLane !== 'pitch' && blockedLane !== 'both';
-    const autoGate = source.gateMode === 'auto' && allowGate;
     const gateRecording = (allowGate && source.gateMode === 'user' || monitorGate) && !engine.getGateMuted(id, source.gateUserId)
       ? engine.getGateRecording(id, source.gateUserId) : null;
-    const gate = gateRecording && selectedTriggerGates(gateRecording).length
-      ? this.createGateRun(gateRecording, speed, startAt) : undefined;
-    const pitchRecording = allowPitch && !engine.getPitchMuted(id, source.pitchUserId) ? engine.getPitchRecording(id, source.pitchUserId) : null;
+    const autoGate = source.gateMode === 'auto' && allowGate && !(monitorGate && gateRecording);
+    // A selection without Gates still runs as a silent loop clock.
+    const gate = gateRecording ? this.createGateRun(gateRecording, speed, startAt) : undefined;
+    const pitchRecording = (allowPitch || monitorPitch) && !engine.getPitchMuted(id, source.pitchUserId)
+      ? engine.getPitchRecording(id, source.pitchUserId) : null;
     const pitch = pitchRecording ? this.createPitchRun(pitchRecording, { ...settings, playSpeed: speed }, startAt) : undefined;
     if (!autoGate && !gate && !pitch) return;
     if (!pitch && allowPitch) engine.resetSequencePitch(id, startAt, 0);
@@ -253,15 +340,22 @@ export class SequenceTransport {
     const horizon = engine.context.currentTime + .05;
     if (run.gate) this.tickGate(id, run, horizon);
     if (run.pitch) this.tickPitch(id, run, horizon);
-    if (!run.autoGate && !run.gate && !run.pitch) this.stop(id);
+    if (!run.autoGate && !run.gate && !run.pitch && !run.pitchPunch) this.stop(id);
   }
   private tickGate(id: string, run: Run, horizon: number): void {
     const engine = this.engine(); let gate = run.gate;
     if (!engine || !gate) return;
     while (gate) {
+      if (!gate.events.length) {
+        if (!gate.pending || gate.pending.boundary > horizon) break;
+        gate = this.applyPendingGate(run, gate.pending); run.gate = gate;
+        continue;
+      }
       const event = gate.events[gate.index]!;
       const time = gate.startedAt + (gate.cycle * gate.period + event.time) / gate.speed;
       if (gate.pending && time >= gate.pending.boundary - EPSILON) {
+        // Keep the current loop (and its progress) until the switch boundary is near.
+        if (gate.pending.boundary > horizon) break;
         gate = this.applyPendingGate(run, gate.pending); run.gate = gate;
         continue;
       }
@@ -271,16 +365,18 @@ export class SequenceTransport {
     }
   }
   private applyPendingGate(run: Run, pending: PendingGate): GateRun | undefined {
-    if (!pending.recording || !this.events(pending.recording).length) return undefined;
+    if (!pending.recording) return undefined;
     return this.createGateRun(pending.recording, run.gate?.speed ?? run.source.playSpeed, pending.boundary);
   }
   private tickPitch(id: string, run: Run, horizon: number): void {
+    if (run.pitchPunch) return;
     const engine = this.engine(); let pitch = run.pitch;
     if (!engine || !pitch) return;
     while (pitch) {
       const operation = pitch.operations[pitch.index]!;
       const time = pitch.startedAt + (pitch.cycle * pitch.period + operation.time) / pitch.speed;
       if (pitch.pending && time >= pitch.pending.boundary - EPSILON) {
+        if (pitch.pending.boundary > horizon) break;
         pitch = this.applyPendingPitch(id, pitch.pending); run.pitch = pitch;
         continue;
       }

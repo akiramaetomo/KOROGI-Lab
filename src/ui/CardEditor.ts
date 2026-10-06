@@ -1,4 +1,4 @@
-import { rankedEditorWidths, editorCapacity, EDITOR_REFERENCE_WIDTH, EDITOR_UNIT_PX, EDITOR_CARD_GAP, type EditorRank } from '../model/editorLayout';
+import { rankedEditorWidths, editorCapacity, EDITOR_REFERENCE_WIDTH, EDITOR_UNIT_PX, EDITOR_CARD_GAP, MAX_STACK, type EditorRank } from '../model/editorLayout';
 
 export interface CardDefinition { label: string; rank: EditorRank }
 type Layout<T> = T[][];
@@ -70,14 +70,21 @@ export class CardEditor<T extends string> {
   private without(id: T): Layout<T> { return this.layout.map(column => column.filter(item => item !== id)).filter(column => column.length); }
   private add(id: T): Layout<T> {
     if (this.ids.includes(id)) return clone(this.layout);
-    const fits = (layout: Layout<T>) => this.minimumWidth(layout) <= editorCapacity(this.availableWidth()) * EDITOR_UNIT_PX - EDITOR_CARD_GAP + 1e-6;
+    const placed = this.place(id);
+    return this.definitions[id].rank === 'large' && this.minimumWidth(placed) > this.visibleWidth() + 1e-6 ? [[id]] : placed;
+  }
+  private place(id: T): Layout<T> {
+    const fits = (layout: Layout<T>) => this.minimumWidth(layout) <= editorCapacity(this.visibleWidth()) * EDITOR_UNIT_PX - EDITOR_CARD_GAP + 1e-6;
     const added = [...clone(this.layout), [id]]; if (fits(added)) return added;
     if (this.definitions[id].rank !== 'large') {
-      for (let index = this.layout.length - 1; index >= 0; index--) {
-        const column = this.layout[index]!;
-        if (column.length !== 1 || this.definitions[column[0]!].rank === 'large') continue;
-        const stacked = this.layout.map((entry, at) => at === index ? [...entry, id] : [...entry]);
-        if (fits(stacked)) return stacked;
+      // Shallow columns fill first, matching placeEditorCard in the layout model.
+      for (let depth = 1; depth < MAX_STACK; depth++) {
+        for (let index = this.layout.length - 1; index >= 0; index--) {
+          const column = this.layout[index]!;
+          if (column.length !== depth || this.definitions[column[0]!].rank === 'large') continue;
+          const stacked = this.layout.map((entry, at) => at === index ? [...entry, id] : [...entry]);
+          if (fits(stacked)) return stacked;
+        }
       }
     }
     const replaced = [...clone(this.layout.slice(0, -1)), [id]];
@@ -107,7 +114,7 @@ export class CardEditor<T extends string> {
     this.layout = layout; this.changed(clone(layout)); this.render();
   }
   private render(): void {
-    const available = this.availableWidth();
+    const available = this.visibleWidth();
     const ranks = this.layout.map(column => column.reduce<EditorRank>((rank, id) =>
       units[this.definitions[id].rank] > units[rank] ? this.definitions[id].rank : rank, 'small'));
     const widths = rankedEditorWidths(ranks, available);
@@ -126,7 +133,8 @@ export class CardEditor<T extends string> {
     this.row.replaceChildren(...columns);
     this.empty.hidden = this.ids.length > 0; this.refreshNodes();
   }
-  private availableWidth(): number { return Math.max(EDITOR_REFERENCE_WIDTH, this.root.clientWidth - 16); }
+  /** Visible card-row width; narrow screens shrink columns to their minimum before scrolling. */
+  private visibleWidth(): number { return this.root.clientWidth > 0 ? Math.max(0, this.root.clientWidth - 16) : EDITOR_REFERENCE_WIDTH; }
   private reveal(id: T, focus: boolean): void {
     const card = this.cards.get(id)!;
     const rootRect = this.root.getBoundingClientRect(), rect = card.getBoundingClientRect();
@@ -143,22 +151,19 @@ export class CardEditor<T extends string> {
   }
   private canStack(id: T, target: T): boolean {
     const [column] = this.location(target);
-    return this.definitions[id].rank !== 'large' && this.definitions[target].rank !== 'large' && this.layout[column]!.length === 1;
+    return this.definitions[id].rank !== 'large' && this.definitions[target].rank !== 'large' && this.layout[column]!.length < MAX_STACK;
   }
   private move(id: T, target: T, placement: 'before' | 'after' | 'above' | 'below'): void {
     if (id === target) return;
     const [sourceColumn] = this.location(id), [targetColumn] = this.location(target);
     if (sourceColumn < 0 || targetColumn < 0) return;
-    if (sourceColumn === targetColumn && this.layout[sourceColumn]!.length === 2 &&
-      (placement === 'above' || placement === 'below')) {
-      const result = clone(this.layout);
-      result[sourceColumn] = placement === 'above' ? [id, target] : [target, id];
-      this.update(result); this.reveal(id, true); return;
-    }
-    if ((placement === 'above' || placement === 'below') && !this.canStack(id, target)) return;
+    const stack = placement === 'above' || placement === 'below';
+    // Reordering within a column never changes its depth, so only other columns check the limit.
+    if (stack && sourceColumn !== targetColumn && !this.canStack(id, target)) return;
     const result = this.without(id);
     const destination = result.findIndex(column => column.includes(target));
-    if (placement === 'above' || placement === 'below') result[destination]!.splice(placement === 'above' ? 0 : 1, 0, id);
+    const column = result[destination]!;
+    if (stack) column.splice(column.indexOf(target) + (placement === 'below' ? 1 : 0), 0, id);
     else result.splice(destination + (placement === 'after' ? 1 : 0), 0, [id]);
     this.update(result); this.reveal(id, true);
   }
@@ -178,19 +183,21 @@ export class CardEditor<T extends string> {
       event.preventDefault();
       const [column, row] = this.location(id);
       if (event.shiftKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
-        const adjacent = this.layout[column + (event.key === 'ArrowLeft' ? -1 : 1)]?.[0];
-        if (adjacent && this.canStack(id, adjacent)) this.move(id, adjacent, event.key === 'ArrowLeft' ? 'below' : 'above');
+        // Stacking left joins the bottom of that column; stacking right joins the top.
+        const left = event.key === 'ArrowLeft', adjacent = this.layout[column + (left ? -1 : 1)];
+        const target = adjacent?.[left ? adjacent.length - 1 : 0];
+        if (target && this.canStack(id, target)) this.move(id, target, left ? 'below' : 'above');
       } else if (event.shiftKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
-        if (this.layout[column]!.length === 2) {
-          const other = this.layout[column]![1 - row]!;
-          this.move(id, other, event.key === 'ArrowUp' ? 'before' : 'after');
-        }
+        const other = this.layout[column]!.find(item => item !== id);
+        if (other) this.move(id, other, event.key === 'ArrowUp' ? 'before' : 'after');
       } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
         const neighbor = this.layout[column + (event.key === 'ArrowLeft' ? -1 : 1)]?.[0];
         if (neighbor) this.move(id, neighbor, event.key === 'ArrowLeft' ? 'before' : 'after');
-      } else if (this.layout[column]!.length === 2 &&
-        ((event.key === 'ArrowUp' && row === 1) || (event.key === 'ArrowDown' && row === 0))) {
-        const result = clone(this.layout); result[column]!.reverse(); this.update(result); this.reveal(id, true);
+      } else {
+        const next = row + (event.key === 'ArrowUp' ? -1 : 1), neighbor = this.layout[column]![next];
+        if (!neighbor) return;
+        const result = clone(this.layout); result[column]![next] = id; result[column]![row] = neighbor;
+        this.update(result); this.reveal(id, true);
       }
     });
     handle.addEventListener('pointerdown', event => {

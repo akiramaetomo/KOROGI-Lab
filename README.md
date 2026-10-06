@@ -1,8 +1,8 @@
-# KOROGI-Lab 0.2.0-rc.1
+# KOROGI-Lab 0.3.0-rc.1
 
 KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するWeb Audio研究用アプリです。8つの独立したTimbreを、共通のNear／Far空間処理へ送って重ねられます。
 
-現在の公開候補は **0.2.0-rc.1** です。実機操作・聴感の受入前のため、安定版0.2.0とは区別します。[GitHub PagesでKOROGI-Labを開く](https://akiramaetomo.github.io/KOROGI-Lab/)。
+現在の公開候補は **0.3.0-rc.1** です。実機操作・聴感の受入前のため、安定版とは区別します。[GitHub PagesでKOROGI-Labを開く](https://akiramaetomo.github.io/KOROGI-Lab/)。
 
 ## 特徴
 - 秋の虫の鳴き声に寄せた目的指向のシンセサイザ
@@ -26,8 +26,11 @@ KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するW
 - 共通Near／Farバス、各FX2／FX3、Bus Gain、Output Balance、Master、Limiter
 - Manual／Auto／USER 1～8のGate・Pitch再生と記録、SongのSeconds／Bars再生
 - Song Speed、BPMと小節数による選択区間の比例配置、USERパターンのコピー
-- Timbre保存 `timbre-v17`、Session保存 `session-v20`。対応する旧形式は読込時に正規化
-- PC、タブレット、スマートフォン向けの固定viewportと領域別スクロール
+- Bars方式のGateクオンタイズ（1/4～1/32、ONのみ／ON-OFF、Gap、Undo／Redo）
+- SEQUENCEのSeparate（独立GateボタンとPitch専用スライダ）
+- エディットカードを1列に最大3枚まで縦積み、OFFのカードはグレー表示
+- Timbre保存 `timbre-v17`、Session保存 `session-v20`。対応する旧形式は読込時に正規化。3段の列を含むファイルは0.2.0-rc.1では読込めません
+- PC、タブレット、スマートフォン向けの固定viewportと領域別スクロール。iPad Air縦向き（820×1180）を下限とし、上部の`TIMBRES`／`Map`で各領域を開閉
 
 ## ローカル実行
 

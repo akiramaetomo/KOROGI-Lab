@@ -77,4 +77,64 @@ describe('SequenceTransport timing', () => {
     expect(transport.position('1', 'pitch')?.elapsed).toBeCloseTo(.4, 9);
     transport.stop('1');
   });
+  it('keeps looping a Gate selection that contains no Gates', async () => {
+    const ticks: Array<() => void> = [];
+    vi.stubGlobal('window', { setInterval: (tick: () => void) => { ticks.push(tick); return 1; }, clearInterval: () => {} });
+    const context = { currentTime: 0, state: 'running' };
+    const synth = { isAutoTriggerRunning: () => false } as ChannelSynth;
+    const gateOns: number[] = [];
+    let recording = { durationSec: 4, selectionStartSec: 0, selectionEndSec: 2, gates: [{ onSec: .5, offSec: .7 }] };
+    const engine = {
+      context, getChannelIds: () => ['1'], getChannel: (id: string) => id === '1' ? synth : undefined,
+      getSequenceSelection: () => ({ gateMode: 'user', gateUserId: 'user-1', pitchUserId: 'user-1', recordSpeed: 1, playSpeed: 1 }),
+      getSequenceSettings: () => ({ pitchMode: { kind: 'smooth' }, pitchScaleCent: 200, filterAmountCent: 0, filterAmountWide: false, recordSpeed: 1, playSpeed: 1 }),
+      getGateMuted: () => false, getPitchMuted: () => false,
+      getGateRecording: () => recording, getPitchRecording: () => null,
+      gateOn: (_id: string, time: number) => gateOns.push(time), gateOff: () => {},
+      cancelScheduledGates: () => {}, cancelScheduledGatesFrom: () => {}, resetSequencePitch: () => {}
+    } as unknown as AudioEngine;
+    const transport = new SequenceTransport(() => engine, async () => {}, () => {}, () => {}, () => {});
+
+    await transport.play('1');
+    context.currentTime = 1;
+    recording = { ...recording, selectionStartSec: 2.5, selectionEndSec: 3.5 };
+    transport.gateRecordingChanged('1', 'user-1');
+    const onsBefore = gateOns.length;
+    context.currentTime = 1.9;
+    ticks.forEach(tick => tick());
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(1.82, 9);
+    context.currentTime = 2.38;
+    ticks.forEach(tick => tick());
+    expect(transport.isPlaying('1')).toBe(true);
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.3, 9);
+    expect(transport.position('1', 'gate')?.start).toBe(2.5);
+    context.currentTime = 3.18;
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.1, 9);
+    expect(gateOns.length).toBe(onsBefore);
+    transport.stop('1');
+  });
+  it('starts Play on a Gate selection that contains no Gates', async () => {
+    vi.stubGlobal('window', { setInterval: () => 1, clearInterval: () => {} });
+    const context = { currentTime: 0, state: 'running' };
+    const synth = { isAutoTriggerRunning: () => false } as ChannelSynth;
+    const gateOns: number[] = [];
+    const engine = {
+      context, getChannelIds: () => ['1'], getChannel: (id: string) => id === '1' ? synth : undefined,
+      getSequenceSelection: () => ({ gateMode: 'user', gateUserId: 'user-1', pitchUserId: 'user-1', recordSpeed: 1, playSpeed: 1 }),
+      getSequenceSettings: () => ({ pitchMode: { kind: 'smooth' }, pitchScaleCent: 200, filterAmountCent: 0, filterAmountWide: false, recordSpeed: 1, playSpeed: 1 }),
+      getGateMuted: () => false, getPitchMuted: () => false,
+      getGateRecording: () => ({ durationSec: 4, selectionStartSec: 1, selectionEndSec: 2, gates: [{ onSec: 3, offSec: 3.5 }] }),
+      getPitchRecording: () => null,
+      gateOn: (_id: string, time: number) => gateOns.push(time), gateOff: () => {},
+      cancelScheduledGates: () => {}, resetSequencePitch: () => {}
+    } as unknown as AudioEngine;
+    const transport = new SequenceTransport(() => engine, async () => {}, () => {}, () => {}, () => {});
+
+    await transport.play('1');
+    context.currentTime = 1.58;
+    expect(transport.isPlaying('1')).toBe(true);
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.5, 9);
+    expect(gateOns).toEqual([]);
+    transport.stop('1');
+  });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addEditorCard, editorCardWidths, normalizeEditorLayout, minimumEditorWidth, EDITOR_CARDS } from './editorLayout';
+import { addEditorCard, editorCardWidths, normalizeEditorLayout, minimumEditorWidth, EDITOR_CARDS, EDITOR_CARD_GAP, EDITOR_UNIT_PX } from './editorLayout';
 import { defaultTimbre, normalizeTimbre, normalizeSession, defaultBus, DEFAULT_CHANNEL_MIX } from './documents';
 
 describe('editor columns and file boundary', () => {
@@ -10,12 +10,18 @@ describe('editor columns and file boundary', () => {
     expect(addEditorCard([['osc1'], ['osc2']], 'filter1')).toEqual([['osc1'], ['osc2'], ['filter1']]);
     expect(addEditorCard([['osc1'], ['osc2'], ['filter1']], 'mod')).toEqual([['osc1'], ['osc2'], ['filter1', 'mod']]);
     expect(addEditorCard([['osc1'], ['osc2'], ['filter1', 'mod']], 'burst')).toEqual([['osc1'], ['osc2', 'burst'], ['filter1', 'mod']]);
-    expect(addEditorCard([['sequence'], ['osc1', 'filter1']], 'mod')).toEqual([['sequence'], ['mod']]);
+    // Single columns fill before any column takes a third card.
+    expect(addEditorCard([['osc1', 'osc2'], ['filter1', 'mod'], ['burst']], 'fx1')).toEqual([['osc1', 'osc2'], ['filter1', 'mod'], ['burst', 'fx1']]);
+    expect(addEditorCard([['osc1', 'osc2'], ['filter1', 'mod'], ['burst', 'fx1']], 'detune')).toEqual([['osc1', 'osc2'], ['filter1', 'mod'], ['burst', 'fx1', 'detune']]);
+    expect(addEditorCard([['sequence'], ['osc1', 'filter1']], 'mod')).toEqual([['sequence'], ['osc1', 'filter1', 'mod']]);
+    expect(addEditorCard([['sequence'], ['osc1', 'filter1', 'mod']], 'burst')).toEqual([['sequence'], ['burst']]);
     expect(addEditorCard([['osc1'], ['filter1'], ['mod']], 'sequence')).toEqual([['sequence']]);
   });
-  it('validates unique cards, nonempty columns, two-card depth and Large isolation', () => {
+  it('validates unique cards, nonempty columns, three-card depth and Large isolation', () => {
     expect(normalizeEditorLayout([['sequence'], ['osc1', 'filter1']])).toEqual([['sequence'], ['osc1', 'filter1']]);
-    for (const raw of [null, ['osc1'], [[]], [['bad']], [['osc1', 'osc1']], [['osc1', 'osc2', 'mod']], [['sequence', 'osc1']], [['osc1'], ['osc1']]])
+    expect(normalizeEditorLayout([['osc1', 'osc2', 'mod'], ['aenv']])).toEqual([['osc1', 'osc2', 'mod'], ['aenv']]);
+    for (const raw of [null, ['osc1'], [[]], [['bad']], [['osc1', 'osc1']], [['osc1', 'osc2', 'mod', 'filter1']],
+      [['sequence', 'osc1']], [['osc1', 'osc2', 'sequence']], [['osc1'], ['osc1']]])
       expect(() => normalizeEditorLayout(raw)).toThrow();
   });
   it('round-trips stacked Timbre and Session layouts and migrates flat v14 layouts', () => {
@@ -35,5 +41,18 @@ describe('editor columns and file boundary', () => {
     expect(editorCardWidths([['sequence'], ['osc1']], 1366)).toEqual([6, 3]);
     expect(editorCardWidths([['sequence'], ['osc1']], 2400)).toEqual([6, 3]);
     expect(editorCardWidths(layout, 320)).toHaveLength(layout.length);
+  });
+  it('shrinks columns toward their minimum below the reference width and isolates Large cards that overflow', () => {
+    const portrait = 796; // iPad Air portrait, TIMBRES collapsed: 820 - 8 divider - 16 padding.
+    const units = (portrait + EDITOR_CARD_GAP) / EDITOR_UNIT_PX;
+    expect(editorCardWidths([['sequence']], portrait)[0]).toBeCloseTo(units);
+    expect(editorCardWidths([['sequence']], 600)).toEqual([4]);
+    editorCardWidths([['osc1'], ['osc2']], portrait).forEach(width => expect(width).toBeCloseTo(units / 2));
+    expect(editorCardWidths([['penv'], ['osc1']], portrait)[0]).toBeCloseTo(units - 2);
+    expect(editorCardWidths([['osc1'], ['osc2'], ['filter1']], portrait)).toEqual([2, 2, 2]);
+    expect(editorCardWidths([['sequence'], ['osc1']])).toEqual([4, 2]);
+    expect(addEditorCard([['osc1']], 'sequence', portrait)).toEqual([['sequence']]);
+    expect(addEditorCard([['osc1']], 'sequence')).toEqual([['osc1'], ['sequence']]);
+    expect(addEditorCard([['osc1'], ['osc2']], 'filter1', portrait)).toEqual([['osc1'], ['osc2'], ['filter1']]);
   });
 });

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.3.0-rc.1 — 2026-10-07 — Sequence editing and layout Pages candidate
+
+- Add Gate quantization (Bars timing), Separate Gate control with controller lane ownership, and refined loop recording takes.
+- Reorganize SEQUENCE into one PATTERN / RECORD / PLAY panel; default Record to Both and fold Gate Quantize.
+- Support iPad Air portrait (820×1180) as the lower display bound with a Map toggle for the signal map.
+- Compact Small, Near and Far numeric controls into caption/value, bounds and slider rows.
+- Stack up to three cards per column, emphasize the drop target, and grey out OFF cards.
+- Add a TIMBRES toggle and tap-to-restore on the collapsed TIMBRES divider.
+- Keep timbre-v17 / session-v20; files with three-card columns are rejected by 0.2.0-rc.1.
+- Publish as a release candidate pending real-device and listening acceptance.
+
 ## 0.2.0-rc.1 — 2026-10-02 — Sequence and Song Pages candidate
 
 - Add USER 1–8 Gate/Pitch patterns, recording, copying, and cyclic Song playback.

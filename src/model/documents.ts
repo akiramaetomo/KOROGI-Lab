@@ -78,7 +78,7 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
     playbackSource: legacySource,
     settings: { ...(rawRecord.settings as Record<string, unknown>), phaseMode: 'free',
       ...(old ? { filter2Route: 'mod', filter1CutoffDepthCent: P['filter1-cutoff-depth'].defaultValue } : {}) } } : rawRecord) as Record<string, any>;
-  if (!modern && !Array.isArray(sequenced.patterns)) throw new Error('User 1 and User 2 patterns are required.');
+  if (!modern && !Array.isArray(sequenced.patterns)) throw new Error('Pattern 1 and Pattern 2 are required.');
   const withSequencePitch: Record<string, any> = modern || format === 'KOROGI-Lab/timbre-v8' ? sequenced : {
     ...sequenced,
     autoSequence: defaultAutoSequence(),
@@ -90,9 +90,9 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
     }))
   };
   const oldPatterns = withSequencePitch.patterns as UserPattern[] | undefined;
-  if (!modern && (!oldPatterns || oldPatterns.length !== LEGACY_USER_PATTERN_IDS.length)) throw new Error('User 1 and User 2 patterns are required.');
+  if (!modern && (!oldPatterns || oldPatterns.length !== LEGACY_USER_PATTERN_IDS.length)) throw new Error('Pattern 1 and Pattern 2 are required.');
   if (!modern && oldPatterns && (new Set(oldPatterns.map(item => item.id)).size !== LEGACY_USER_PATTERN_IDS.length ||
-    LEGACY_USER_PATTERN_IDS.some(id => !oldPatterns.some(item => item.id === id)))) throw new Error('User pattern IDs must be unique and complete.');
+    LEGACY_USER_PATTERN_IDS.some(id => !oldPatterns.some(item => item.id === id)))) throw new Error('Pattern IDs must be unique and complete.');
   const oldPattern = (id: UserPatternId) => oldPatterns?.find(item => item.id === id);
   const oldPlayback = (withSequencePitch.playbackSource ?? { kind: 'auto' }) as PlaybackSource;
   if (!modern) {
@@ -107,7 +107,8 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
     gatePatterns: USER_PATTERN_IDS.map(id => ({ id, recording: oldPattern(id)?.gateRecording ?? null, muted: false })),
     pitchPatterns: USER_PATTERN_IDS.map((id, index) => ({ id, recording: legacyPitch[index]?.pitchRecording ?? null,
       muted: false, pitchMode: legacyPitch[index]?.settings?.pitchMode ?? { kind: 'smooth' },
-      pitchScaleCent: legacyPitch[index]?.settings?.pitchScaleCent ?? P['sequence-pitch-scale'].defaultValue })),
+      // Legacy files predate the 1200-cent default; keep their original 200-cent fallback.
+      pitchScaleCent: legacyPitch[index]?.settings?.pitchScaleCent ?? 200 })),
     sequence: { gateMode: oldPlayback.kind === 'auto' ? 'auto' : 'user', gateUserId: oldPlayback.kind === 'auto' ? 'user-1' : oldPlayback.patternId,
       pitchUserId: oldPlayback.kind === 'auto' ? 'user-3' : oldPlayback.patternId,
       recordSpeed: selectedSettings?.recordSpeed ?? 1, playSpeed: selectedSettings?.playSpeed ?? 1 }
@@ -116,7 +117,7 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
     const patterns = migrated[lane] as Array<{ id: string }> | undefined;
     if (!Array.isArray(patterns) || patterns.length !== 3 ||
       USER_PATTERN_IDS.slice(0, 3).some(id => !patterns.some(item => item.id === id)) ||
-      new Set(patterns.map(item => item.id)).size !== 3) throw new Error(`Old ${lane} must contain User 1–3 exactly once.`);
+      new Set(patterns.map(item => item.id)).size !== 3) throw new Error(`Old ${lane} must contain Pattern 1–3 exactly once.`);
   }
   const editorLayout = ['KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format)
     ? normalizeEditorLayout(rawRecord.editorLayout, !['KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format)) : DEFAULT_EDITOR_LAYOUT.map(column => [...column]);
@@ -164,10 +165,10 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
   checkShape(withCurves, template, 'timbre');
   const selection = withCurves.sequence;
   checkChoice(selection.gateMode, ['auto', 'user'], 'Gate mode');
-  checkChoice(selection.gateUserId, USER_PATTERN_IDS, 'Gate User'); checkChoice(selection.pitchUserId, USER_PATTERN_IDS, 'Pitch User');
+  checkChoice(selection.gateUserId, USER_PATTERN_IDS, 'Gate Pattern'); checkChoice(selection.pitchUserId, USER_PATTERN_IDS, 'Pitch Pattern');
   const normalizePatterns = <T extends { id: string }>(items: T[], lane: 'Gate' | 'Pitch') => {
     const ids = new Set(items.map(item => item.id));
-    if (ids.size !== USER_PATTERN_IDS.length || USER_PATTERN_IDS.some(id => !ids.has(id))) throw new Error(`${lane} User IDs must be unique and complete.`);
+    if (ids.size !== USER_PATTERN_IDS.length || USER_PATTERN_IDS.some(id => !ids.has(id))) throw new Error(`${lane} Pattern IDs must be unique and complete.`);
   };
   normalizePatterns(withCurves.gatePatterns, 'Gate'); normalizePatterns(withCurves.pitchPatterns, 'Pitch');
   const gatePatterns = withCurves.gatePatterns.map(item => ({ id: item.id, recording: normalizeTriggerRecording(item.recording), muted: item.muted }));

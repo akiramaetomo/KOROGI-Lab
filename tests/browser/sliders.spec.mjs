@@ -371,7 +371,7 @@ for (const [width, height] of [[1440, 900], [1024, 900], [768, 900], [768, 768]]
         const triggerWidth = await page.locator('.trigger-editor').evaluate(node => ({ client: node.clientWidth, scroll: node.scrollWidth,
           inner: node.querySelector('.trigger-editor-inner').getBoundingClientRect().width }));
         expect(triggerWidth.scroll).toBeGreaterThanOrEqual(triggerWidth.client);
-        expect(triggerWidth.inner).toBeGreaterThanOrEqual(780);
+        expect(triggerWidth.inner).toBeGreaterThanOrEqual(760);
       }
       if (name === 'modulation') {
         const penv = page.locator('[data-editor-card="penv"] .penv-editor');

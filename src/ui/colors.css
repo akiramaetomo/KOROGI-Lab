@@ -158,6 +158,12 @@ button:focus-visible / outline */
   --color-audio-status-disabled-background: #283139;
   /* 対象: .audio-status:not(:disabled) / color */
   --color-audio-status-disabled-text: #dce6ec;
+  /* 対象: .map-toggle[aria-pressed="true"]（信号図／TIMBRES表示中） / border-color */
+  --color-map-toggle-pressed-border: #a9c4aa;
+  /* 対象: .map-toggle[aria-pressed="true"] / color */
+  --color-map-toggle-pressed-text: #d7ebd7;
+  /* 対象: .map-toggle[aria-pressed="true"] / background */
+  --color-map-toggle-pressed-background: #344750;
   /* 対象: .fullscreen-toggle[aria-pressed="true"] / border-color */
   --color-fullscreen-toggle-pressed-border: #a9c4aa;
   /* 対象: .fullscreen-toggle[aria-pressed="true"] / color */
@@ -246,6 +252,8 @@ button:focus-visible / outline */
   --color-editor-card-handle-focus-visible-focus: #b0d2df;
   /* 対象: :is(.editor-card, .space-card).drop-target / outline */
   --color-editor-card-focus: #b0d2df;
+  /* 対象: .editor-card.drop-target / outline・挿入辺の帯（ドラッグ中の移動先） */
+  --color-card-drop-target: #f2994a;
 
   /* === 編集操作・スライダ === */
   /* 対象: .unit / color */
@@ -268,6 +276,8 @@ button:focus-visible / outline */
   --color-burst-timing-warnings-text: #d4b078;
   /* 対象: .numeric-slider-axis .slider-scale / color */
   --color-numeric-slider-axis-slider-scale-text: #9aa6ae;
+  /* 対象: Smallカード .numeric-slider-axis::after（中央値の縦線） / background */
+  --color-numeric-slider-center-mark: #9aa6ae;
   /* 対象: .numeric-slider-guide / background */
   --color-numeric-slider-guide-background: #e1ba72;
   /* 対象: .numeric-slider-guide / box-shadow */
@@ -524,16 +534,32 @@ button:focus-visible / outline */
   --color-source-choice-pressed-border: #a9c4aa;
   /* 対象: .source-choice button[aria-pressed="true"] / background */
   --color-source-choice-pressed-background: #344a3a;
-  /* 対象: #record-toggle[aria-pressed="true"] / border-color */
-  --color-record-toggle-pressed-border: #d2a78d;
-  /* 対象: #record-toggle[aria-pressed="true"] / background */
-  --color-record-toggle-pressed-background: #513b34;
+  /* 対象: Play Song / Play All / Timbre Play の共通操作色（Sequenceの●▶は下の専用色） */
   --color-song-button-background: #63343c;
   --color-song-button-border: #bd7881;
   --color-song-button-text: #fff0f1;
   --color-song-button-hover-background: #78414b;
   --color-song-button-active-background: #973e4a;
   --color-song-button-active-border: #eea3ac;
+  --color-song-button-active-shadow: rgba(238, 163, 172, .25);
+  /* 対象: #record-toggle（●録音）待機／hover／録音中 */
+  --color-record-button-background: #3a2326;
+  --color-record-button-border: #b9646d;
+  --color-record-button-icon: #f04a57;
+  --color-record-button-hover-background: #4c2a2f;
+  --color-record-button-active-background: #b8303d;
+  --color-record-button-active-border: #ff9aa3;
+  --color-record-button-active-icon: #fff2f3;
+  --color-record-button-active-shadow: rgba(240, 74, 87, .35);
+  /* 対象: #sequence-panel（▶再生）待機／hover／再生中 */
+  --color-play-button-background: #213528;
+  --color-play-button-border: #6fa77a;
+  --color-play-button-icon: #7fdc8f;
+  --color-play-button-hover-background: #2b4533;
+  --color-play-button-active-background: #3f8a50;
+  --color-play-button-active-border: #b6f0c0;
+  --color-play-button-active-icon: #f2fff4;
+  --color-play-button-active-shadow: rgba(127, 220, 143, .3);
   /* 対象: #record-counter / color */
   --color-record-counter-text: #b9c8cf;
   /* 対象: .record-timeline-label span, .record-ticks, #record-status / color */
@@ -568,6 +594,26 @@ button:focus-visible / outline */
   --color-pitch-step-ticks-background: rgba(221, 226, 229, .32);
   /* 対象: .pitch-step-ticks span.center / background */
   --color-pitch-step-ticks-center-background: rgba(232, 197, 135, .75);
+  /* 対象: .pitch-slider-wrap.pitch-only #record-gate::before（離している: Null） / border-color */
+  --color-pitch-thumb-idle-border: #8a7a4f;
+  /* 対象: .pitch-slider-wrap.pitch-only #record-gate::before（離している: Null） / background */
+  --color-pitch-thumb-idle-background: #3a3122;
+  /* 対象: .pitch-slider-wrap.pitch-only #record-gate::before（離している: Null） / color */
+  --color-pitch-thumb-idle-text: #e2d5b0;
+  /* 対象: .pitch-slider-wrap.pitch-only.pitch-held #record-gate::before（押している: 値が有効） / border-color */
+  --color-pitch-thumb-held-border: #ecd394;
+  /* 対象: .pitch-slider-wrap.pitch-only.pitch-held #record-gate::before（押している: 値が有効） / background */
+  --color-pitch-thumb-held-background: #c7a75a;
+  /* 対象: .pitch-slider-wrap.pitch-only.pitch-held #record-gate::before（押している: 値が有効） / color */
+  --color-pitch-thumb-held-text: #1a1409;
+  /* 対象: .pitch-slider-wrap.pitch-only.pitch-held #record-gate::before / box-shadow */
+  --color-pitch-thumb-held-shadow: rgba(36, 26, 8, .45);
+  /* 対象: .pitch-slider-wrap.pitch-only.disabled #record-gate::before（Gateのみ録音中） / border-color */
+  --color-pitch-thumb-disabled-border: #454c52;
+  /* 対象: .pitch-slider-wrap.pitch-only.disabled #record-gate::before（Gateのみ録音中） / background */
+  --color-pitch-thumb-disabled-background: #252a2e;
+  /* 対象: .pitch-slider-wrap.pitch-only.disabled #record-gate::before（Gateのみ録音中） / color */
+  --color-pitch-thumb-disabled-text: #6d767c;
   /* 対象: .record-lower / border-top */
   --color-record-lower-border: rgba(103, 94, 77, .78);
   /* 対象: .pitch-curve-line / stroke */
@@ -588,14 +634,6 @@ button:focus-visible / outline */
   --color-record-performance-source-choice-text: #d5e0e4;
   /* 対象: .record-performance .source-choice button small / color */
   --color-record-performance-source-choice-text-2: #d8c694;
-  /* 対象: .record-performance #sequence-panel[aria-pressed="true"] / background */
-  --color-record-performance-sequence-panel-pressed-background: #416451;
-  /* 対象: .record-performance #sequence-panel[aria-pressed="true"] / border */
-  --color-record-performance-sequence-panel-pressed-border: #a5deb7;
-  /* 対象: .record-performance #sequence-panel[aria-pressed="true"] / color */
-  --color-record-performance-sequence-panel-pressed-text: #f5fff7;
-  /* 対象: .record-performance #sequence-panel[aria-pressed="true"] / box-shadow */
-  --color-record-performance-sequence-panel-pressed-shadow: rgba(165, 222, 183, .25);
   /* 対象: .gate-mode-choice button[aria-pressed="true"] / border */
   --color-gate-mode-choice-pressed-border: #b8d6b7;
   /* 対象: .gate-mode-choice button[aria-pressed="true"] / background */

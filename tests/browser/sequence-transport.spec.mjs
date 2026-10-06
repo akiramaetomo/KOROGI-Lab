@@ -56,7 +56,7 @@ test('source change, recording another slot, replacement, and saved selection', 
   await page.locator('#trigger-menu').click();
   await page.locator('#source-user-1').click();
   await page.locator('#record-toggle').click();
-  await expect(page.locator('#record-status')).toContainText('Recording · One take');
+  await expect(page.locator('#record-status')).toContainText('Recording · Loop');
   await expect(page.locator('#play-2')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#play-2').click();
   await page.locator('#play-all').click();

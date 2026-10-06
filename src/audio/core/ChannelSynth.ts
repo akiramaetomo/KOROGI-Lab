@@ -52,6 +52,12 @@ export class ChannelSynth {
   private readonly fmDepthGain: GainNode;
   private readonly sequencePitch: SequencePitchControl;
   private readonly sequenceFilter: SequencePitchControl;
+  private readonly controllerPitch: SequencePitchControl;
+  private readonly controllerFilter: SequencePitchControl;
+  private readonly sequencePitchGain: GainNode;
+  private readonly sequenceFilterGain: GainNode;
+  private readonly controllerPitchGain: GainNode;
+  private readonly controllerFilterGain: GainNode;
   private readonly modRouteGain: GainNode;
   private readonly cutoffLimiter: WaveShaperNode;
   private readonly cutoffDepthGain: GainNode;
@@ -72,6 +78,8 @@ export class ChannelSynth {
   private detuneNormalized: number;
   private detuneRangeCent = 0;
   private manualGateActive = false;
+  private controllerGateHeld = false;
+  private controllerPitchHeld = false;
   private disposed = false;
 
   constructor(
@@ -98,6 +106,16 @@ export class ChannelSynth {
     this.fmDepthGain.gain.value = 0;
     this.sequencePitch = new SequencePitchControl(context);
     this.sequenceFilter = new SequencePitchControl(context, P['sequence-filter-amount'].max);
+    this.controllerPitch = new SequencePitchControl(context);
+    this.controllerFilter = new SequencePitchControl(context, P['sequence-filter-amount'].max);
+    this.sequencePitchGain = context.createGain(); this.sequencePitchGain.gain.value = 1;
+    this.sequenceFilterGain = context.createGain(); this.sequenceFilterGain.gain.value = 1;
+    this.controllerPitchGain = context.createGain(); this.controllerPitchGain.gain.value = 0;
+    this.controllerFilterGain = context.createGain(); this.controllerFilterGain.gain.value = 0;
+    this.sequencePitch.output.connect(this.sequencePitchGain);
+    this.sequenceFilter.output.connect(this.sequenceFilterGain);
+    this.controllerPitch.output.connect(this.controllerPitchGain);
+    this.controllerFilter.output.connect(this.controllerFilterGain);
 
     this.osc1 = new SourceUnit(
       context,
@@ -105,7 +123,7 @@ export class ChannelSynth {
       this.pEnv.output,
       this.settings.osc1.sourceType,
       this.settings.osc1.baseFrequencyHz,
-      [this.fmDepthGain, this.sequencePitch.output],
+      [this.fmDepthGain, this.sequencePitchGain, this.controllerPitchGain],
       this.settings.osc1.dutyRatio
     );
     this.osc2 = new SourceUnit(
@@ -114,7 +132,7 @@ export class ChannelSynth {
       this.pEnv.output,
       this.settings.osc2.sourceType,
       this.settings.osc2.baseFrequencyHz,
-      [this.sequencePitch.output],
+      [this.sequencePitchGain, this.controllerPitchGain],
       this.settings.osc2.dutyRatio
     );
 
@@ -143,8 +161,10 @@ export class ChannelSynth {
     this.filter1 = new FilterChain(context, this.settings.filter1);
     this.amGain.connect(this.filter1.input);
     this.filter1.connectDetune(this.cutoffDepthGain);
-    this.filter1.connectDetune(this.sequenceFilter.output);
-    this.filter2.connectDetune(this.sequenceFilter.output);
+    this.filter1.connectDetune(this.sequenceFilterGain);
+    this.filter2.connectDetune(this.sequenceFilterGain);
+    this.filter1.connectDetune(this.controllerFilterGain);
+    this.filter2.connectDetune(this.controllerFilterGain);
     this.fEnv = new FilterEnvelopeControl(context, this.settings.filterEnvelope);
     this.filter1.connectDetune(this.fEnv.output);
 
@@ -210,6 +230,13 @@ export class ChannelSynth {
   cancelScheduledGates(): void {
     const now = this.context.currentTime;
     this.scheduler.stop(false);
+    if (this.controllerGateHeld) {
+      this.manualGateActive = false;
+      this.baseGateEvents = [{ kind: 'off', time: now }];
+      this.emitGate({ kind: 'reset', time: now });
+      this.emitGate({ kind: 'on', time: now });
+      return;
+    }
     if (this.burstActive()) {
       this.manualGateActive = false;
       this.baseGateEvents = [{ kind: 'off', time: now }];
@@ -229,6 +256,11 @@ export class ChannelSynth {
   /** Replace only events at or after a future loop boundary. */
   cancelScheduledGatesFrom(time: number): void {
     const boundary = Math.max(time, this.context.currentTime);
+    if (this.controllerGateHeld) {
+      this.baseGateEvents = this.baseGateEvents.filter(event => event.time < boundary);
+      this.rememberBaseGate({ kind: 'off', time: boundary });
+      return;
+    }
     if (this.burstActive()) {
       this.baseGateEvents = this.baseGateEvents.filter(event => event.time < boundary);
       this.rememberBaseGate({ kind: 'off', time: boundary });
@@ -248,6 +280,7 @@ export class ChannelSynth {
   cancelSongFuture(time = this.context.currentTime): void {
     const boundary = Math.max(time, this.context.currentTime);
     this.baseGateEvents = this.baseGateEvents.filter(event => event.time <= boundary);
+    if (this.controllerGateHeld) return;
     if (this.burstActive()) {
       this.burstScheduler.retimeFrom(boundary);
       this.emitGate({ kind: 'cancel', time: boundary });
@@ -305,6 +338,45 @@ export class ChannelSynth {
   private baseGateEvents: BaseGateEvent[] = [];
   private triggerHeld = false;
 
+  /** The SEQUENCE controller takes the Gate lane exclusively while held. */
+  controllerGateOn(): void {
+    this.assertUsable();
+    if (this.controllerGateHeld) return;
+    const now = this.context.currentTime;
+    const future = this.futureBaseGates(now);
+    this.cancelSongFuture(now);
+    this.baseGateEvents.push(...future);
+    this.controllerGateHeld = true;
+    if (this.burstActive()) {
+      this.burstScheduler.gateOff(now);
+      this.burstScheduler.gateOn(now);
+    } else {
+      this.syncPhaseIfSilent(now);
+      this.performGateOn(now);
+    }
+  }
+
+  controllerGateOff(): void {
+    this.assertUsable();
+    if (!this.controllerGateHeld) return;
+    const now = this.context.currentTime;
+    const baseOn = this.baseGateIsOn(now);
+    const future = this.futureBaseGates(now);
+    this.controllerGateHeld = false;
+    this.baseGateEvents = this.baseGateEvents.filter(event => event.time <= now);
+    if (this.burstActive()) {
+      this.burstScheduler.gateOff(now);
+      if (baseOn) this.burstScheduler.gateOn(now);
+    } else {
+      this.performGateOff(now);
+      if (baseOn) this.performGateOn(now);
+    }
+    for (const event of future) {
+      if (event.kind === 'on') this.scheduleInputGateOn(event.time);
+      else this.scheduleInputGateOff(event.time);
+    }
+  }
+
   private futureBaseGates(now: number): BaseGateEvent[] {
     return this.baseGateEvents.filter(event => event.time > now).sort((a, b) => a.time - b.time || (a.kind === 'off' ? -1 : 1));
   }
@@ -330,6 +402,11 @@ export class ChannelSynth {
   }
 
   private scheduleInputGateOn(time: number): void {
+    if (this.controllerGateHeld) {
+      this.rememberBaseGate({ kind: 'on', time, amp: { ...this.settings.ampEnvelope },
+        pitch: { ...this.settings.pitchEnvelope }, filter: { ...this.settings.filterEnvelope } });
+      return;
+    }
     if (!this.burstActive()) { this.scheduleGateOn(time); return; }
     const wasOn = this.baseGateIsOn(Math.max(this.context.currentTime, time - 1e-9));
     const event: BaseGateEvent = { kind: 'on', time, amp: { ...this.settings.ampEnvelope }, pitch: { ...this.settings.pitchEnvelope }, filter: { ...this.settings.filterEnvelope } };
@@ -338,6 +415,7 @@ export class ChannelSynth {
   }
 
   private scheduleInputGateOff(time: number): void {
+    if (this.controllerGateHeld) { this.rememberBaseGate({ kind: 'off', time }); return; }
     if (!this.burstActive()) { this.scheduleGateOff(time); return; }
     this.rememberBaseGate({ kind: 'off', time });
     if (!this.triggerHeld) this.burstScheduler.gateOff(time);
@@ -362,6 +440,7 @@ export class ChannelSynth {
   private scheduleGateOn(time: number): void {
     const event: BaseGateEvent = { kind: 'on', time, amp: { ...this.settings.ampEnvelope }, pitch: { ...this.settings.pitchEnvelope }, filter: { ...this.settings.filterEnvelope } };
     this.rememberBaseGate(event);
+    if (this.controllerGateHeld) return;
     this.syncPhaseIfSilent(time);
     this.performGateOn(time, event.amp, event.pitch, event.filter);
   }
@@ -385,6 +464,7 @@ export class ChannelSynth {
 
   private scheduleGateOff(time: number): void {
     this.rememberBaseGate({ kind: 'off', time });
+    if (this.controllerGateHeld) return;
     if (!this.triggerHeld) this.performGateOff(time);
   }
 
@@ -427,7 +507,7 @@ export class ChannelSynth {
     this.scheduler.stop(true);
     if (!burst) { this.ampEnvelope.preserveCurrent(this.context.currentTime); this.pEnv.preserveCurrent(this.context.currentTime); this.fEnv.preserveCurrent(this.context.currentTime); }
     this.emitGate({ kind: 'reset', time: this.context.currentTime });
-    if (this.triggerHeld) this.emitGate({ kind: 'on', time: this.context.currentTime });
+    if (this.triggerHeld || this.controllerGateHeld) this.emitGate({ kind: 'on', time: this.context.currentTime });
   }
 
   isAutoTriggerRunning(): boolean {
@@ -679,7 +759,41 @@ export class ChannelSynth {
     this.sequenceFilter.setTarget(value * clamp(filterAmountCent, P['sequence-filter-amount'].min, P['sequence-filter-amount'].max), time, portamentoSec);
   }
 
-  getSequenceFilterCent(time = this.context.currentTime): number { return this.sequenceFilter.valueAt(time); }
+  /** The sequencer continues its automation behind the controller's exclusive Pitch output. */
+  controllerPitchOn(): void {
+    this.assertUsable();
+    if (this.controllerPitchHeld) return;
+    this.controllerPitchHeld = true;
+    const now = this.context.currentTime;
+    this.sequencePitchGain.gain.setValueAtTime(0, now);
+    this.sequenceFilterGain.gain.setValueAtTime(0, now);
+    this.controllerPitchGain.gain.setValueAtTime(1, now);
+    this.controllerFilterGain.gain.setValueAtTime(1, now);
+  }
+
+  setControllerPitch(normalized: number, pitchScaleCent: number, filterAmountCent: number,
+    time = this.context.currentTime, portamentoSec = 0): void {
+    this.assertUsable();
+    if (![normalized, pitchScaleCent, filterAmountCent, time, portamentoSec].every(Number.isFinite)) throw new Error('Invalid controller pitch.');
+    const value = clamp(normalized, -1, 1);
+    this.controllerPitch.setTarget(value * clamp(pitchScaleCent, 0, P['sequence-pitch-scale'].max), time, portamentoSec);
+    this.controllerFilter.setTarget(value * clamp(filterAmountCent, P['sequence-filter-amount'].min, P['sequence-filter-amount'].max), time, portamentoSec);
+  }
+
+  controllerPitchOff(): void {
+    this.assertUsable();
+    if (!this.controllerPitchHeld) return;
+    this.controllerPitchHeld = false;
+    const now = this.context.currentTime;
+    this.controllerPitchGain.gain.setValueAtTime(0, now);
+    this.controllerFilterGain.gain.setValueAtTime(0, now);
+    this.sequencePitchGain.gain.setValueAtTime(1, now);
+    this.sequenceFilterGain.gain.setValueAtTime(1, now);
+  }
+
+  getSequenceFilterCent(time = this.context.currentTime): number {
+    return this.controllerPitchHeld ? this.controllerFilter.valueAt(time) : this.sequenceFilter.valueAt(time);
+  }
 
   /** Legacy OSC-only cent entry; Sequence UI/transport use the normalized entry above. */
   setSequencePitchCent(cents: number, time = this.context.currentTime, portamentoSec = 0): void {
@@ -697,7 +811,7 @@ export class ChannelSynth {
   }
 
   getSequencePitchCent(time = this.context.currentTime): number {
-    return this.sequencePitch.valueAt(time);
+    return this.controllerPitchHeld ? this.controllerPitch.valueAt(time) : this.sequencePitch.valueAt(time);
   }
 
   getDetunedFrequencyHz(oscillator: 1 | 2): number | null {
@@ -789,6 +903,9 @@ export class ChannelSynth {
     this.pEnv.dispose();
     this.sequencePitch.dispose();
     this.sequenceFilter.dispose();
+    this.controllerPitch.dispose(); this.controllerFilter.dispose();
+    this.sequencePitchGain.disconnect(); this.sequenceFilterGain.disconnect();
+    this.controllerPitchGain.disconnect(); this.controllerFilterGain.disconnect();
     this.gateListeners.clear();
     this.disposed = true;
   }

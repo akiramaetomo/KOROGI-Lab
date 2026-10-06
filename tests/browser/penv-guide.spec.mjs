@@ -25,7 +25,8 @@ for (const viewport of [{ width: 1024, height: 768 }, { width: 1194, height: 834
     });
     expect(geometry.pageWidth).toBe(viewport.width);
     expect(geometry.widths[0]).toBeLessThanOrEqual(450);
-    expect(geometry.widths[1]).toBeCloseTo(602.67, 0);
+    // Below the 908 px reference, Medium shrinks toward its 450 px minimum before the AoE scrolls.
+    expect(geometry.widths[1]).toBeCloseTo(Math.min(602.67, Math.max(450, viewport.width - 272 - 297.33 - 8)), 0);
     expect(geometry.widths[0] + geometry.widths[1] + 8).toBeLessThanOrEqual(geometry.layout + 1);
     expect(geometry.widths[1]).toBeGreaterThan(geometry.widths[0]);
     expect(geometry.columns.split(' ')).toHaveLength(4);

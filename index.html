@@ -36,6 +36,8 @@
         </div>
 
         <div class="transport">
+          <button id="timbres-toggle" class="map-toggle" type="button" aria-label="TIMBRES panel" aria-pressed="true" title="Hide TIMBRES">TIMBRES</button>
+          <button id="map-toggle" class="map-toggle" type="button" aria-label="Signal map" aria-pressed="true" title="Hide signal map">Map</button>
           <button id="fullscreen-toggle" class="fullscreen-toggle" type="button" aria-label="Enter fullscreen" aria-pressed="false" title="Fullscreen" hidden>⛶</button>
           <button id="files-menu" data-panel-target="patch">FILES</button>
           <button id="play-all" disabled>Play All</button>
@@ -349,49 +351,60 @@
             </div>
             <div class="trigger-editor">
               <div class="trigger-editor-inner">
-                <div class="trigger-top-row">
-                  <div class="trigger-user-group trigger-group" role="group" aria-label="Sequence recording">
-                    <strong class="trigger-group-title">RECORD</strong>
-                    <div class="record-controls">
-                      <label class="choice-field record-mode-field"><span>Record</span><select id="record-mode" hidden><option value="gate" selected>Gate</option><option value="pitch">Pitch</option><option value="both">Both</option></select></label>
-                      <label class="record-length-label"><span class="record-length-heading">Record length <span class="unit" id="record-length-unit">(s)</span></span><input id="record-length" type="text" inputmode="decimal" value="30" aria-label="Record length in seconds, 1 to 300"></label>
-                      <label class="record-bars-label"><span>Unit</span><select id="record-length-mode"><option value="seconds">Seconds</option><option value="bars">Bars</option></select></label>
-                      <label class="record-bpm-label" hidden><span>BPM</span><input id="record-bpm" type="text" inputmode="numeric" value="120" aria-label="Recording BPM, 40 to 240"></label>
-                      <output id="record-counter" aria-live="off">00:00.00 / 00:30.00</output>
-                      <button id="record-toggle" type="button" disabled>Start Recording</button>
-                    </div>
-                    <output id="record-status" role="status">Ready</output>
-                    <details class="record-log-details"><summary>Record log</summary><ol id="record-log"></ol></details>
-                  </div>
-                  <div class="record-performance trigger-group" role="group" aria-label="Sequence control">
-                    <strong class="trigger-group-title">CONTROL</strong>
-                    <div class="preset-rows">
-                      <div class="source-choice" role="group" aria-label="Gate User"><span>Gate</span><button id="source-user-1" type="button">User 1 <small>Null</small></button><button id="source-user-2" type="button">User 2 <small>Null</small></button><button id="source-user-3" type="button">User 3 <small>Null</small></button><button id="source-user-4" type="button">User 4 <small>Null</small></button><button id="source-user-5" type="button">User 5 <small>Null</small></button><button id="source-user-6" type="button">User 6 <small>Null</small></button><button id="source-user-7" type="button">User 7 <small>Null</small></button><button id="source-user-8" type="button">User 8 <small>Null</small></button></div>
-                      <div class="source-choice" role="group" aria-label="Pitch User"><span>Pitch</span><button id="pitch-user-1" type="button">User 1 <small>Null</small></button><button id="pitch-user-2" type="button">User 2 <small>Null</small></button><button id="pitch-user-3" type="button">User 3 <small>Null</small></button><button id="pitch-user-4" type="button">User 4 <small>Null</small></button><button id="pitch-user-5" type="button">User 5 <small>Null</small></button><button id="pitch-user-6" type="button">User 6 <small>Null</small></button><button id="pitch-user-7" type="button">User 7 <small>Null</small></button><button id="pitch-user-8" type="button">User 8 <small>Null</small></button></div>
-                    </div>
-                    <button id="sequence-panel" type="button" disabled aria-pressed="false">▶ Play</button>
-                    <label>Play Speed<input id="sequence-play-speed" data-audio-control type="number" value="1" disabled></label>
-                  </div>
-                </div>
-                <div class="song-controls trigger-group" role="group" aria-label="Song transport">
-                  <strong class="trigger-group-title">SONG</strong>
+                <details class="song-controls trigger-group" open>
+                  <summary class="song-summary">SONG</summary>
+                  <div class="song-controls-body">
                   <button id="song-toggle" type="button" aria-pressed="false">▶ Play Song</button>
                   <label class="choice-field song-timing-field"><span>Timing</span><select id="song-timing" hidden><option value="original">Seconds</option><option value="bars">Bars</option></select></label>
                   <fieldset id="song-bars-group" class="song-bars-group" disabled><legend>Fit to Bars</legend>
                     <label>BPM <input id="song-bpm" type="text" inputmode="numeric" value="120" aria-label="Bars BPM, 40 to 240"></label>
-                    <label>USER <select id="song-user" aria-label="USER to fit to bars"><option value="1">User 1</option><option value="2">User 2</option><option value="3">User 3</option><option value="4">User 4</option><option value="5">User 5</option><option value="6">User 6</option><option value="7">User 7</option><option value="8">User 8</option></select></label>
-                    <label>Bars <input id="song-bars" type="text" inputmode="numeric" value="1" aria-label="Bars to fit the selected USER"></label>
+                    <label>PATTERN <select id="song-user" aria-label="Pattern to fit to bars"><option value="1">Pattern 1</option><option value="2">Pattern 2</option><option value="3">Pattern 3</option><option value="4">Pattern 4</option><option value="5">Pattern 5</option><option value="6">Pattern 6</option><option value="7">Pattern 7</option><option value="8">Pattern 8</option></select></label>
+                    <label>Bars <input id="song-bars" type="text" inputmode="numeric" value="1" aria-label="Bars to fit the selected Pattern"></label>
                   </fieldset>
                   <div class="song-speed-row"><label>Song Speed <input id="song-speed" type="text" inputmode="decimal" value="1" aria-label="Song Speed multiplier, 0.25 to 4"></label><input id="song-speed-slider" type="range" min="0.25" max="4" step="0.01" value="1" aria-label="Song Speed slider"></div>
                   <output id="song-duration">Seconds: empty · Bars: 2.00 s</output>
                   <output id="song-clock">Song stopped</output>
-                  <div class="song-copy"><label>Copy <select id="copy-from"><option value="user-1">User 1</option><option value="user-2">User 2</option><option value="user-3">User 3</option><option value="user-4">User 4</option><option value="user-5">User 5</option><option value="user-6">User 6</option><option value="user-7">User 7</option><option value="user-8">User 8</option></select></label>
-                    <span>→</span><select id="copy-to" aria-label="Copy destination"><option value="user-1">User 1</option><option value="user-2">User 2</option><option value="user-3">User 3</option><option value="user-4">User 4</option><option value="user-5">User 5</option><option value="user-6">User 6</option><option value="user-7">User 7</option><option value="user-8">User 8</option></select>
+                  <div class="song-copy"><label>Copy <select id="copy-from"><option value="user-1">Pattern 1</option><option value="user-2">Pattern 2</option><option value="user-3">Pattern 3</option><option value="user-4">Pattern 4</option><option value="user-5">Pattern 5</option><option value="user-6">Pattern 6</option><option value="user-7">Pattern 7</option><option value="user-8">Pattern 8</option></select></label>
+                    <span>→</span><select id="copy-to" aria-label="Copy destination Pattern"><option value="user-1">Pattern 1</option><option value="user-2">Pattern 2</option><option value="user-3">Pattern 3</option><option value="user-4">Pattern 4</option><option value="user-5">Pattern 5</option><option value="user-6">Pattern 6</option><option value="user-7">Pattern 7</option><option value="user-8">Pattern 8</option></select>
                     <button id="copy-user" type="button">Copy Pattern</button></div>
+                  </div>
+                </details>
+                <div class="trigger-top-row">
+                  <div class="trigger-user-group trigger-group" role="group" aria-label="Sequence patterns, record and play">
+                    <strong class="trigger-group-title">PATTERN / RECORD / PLAY</strong>
+                    <div class="record-controls">
+                      <div class="record-performance">
+                        <div class="preset-rows">
+                          <div class="source-choice" role="group" aria-label="Gate Patterns"><span>Gate</span><button id="source-user-1" type="button">1 <small>Null</small></button><button id="source-user-2" type="button">2 <small>Null</small></button><button id="source-user-3" type="button">3 <small>Null</small></button><button id="source-user-4" type="button">4 <small>Null</small></button><button id="source-user-5" type="button">5 <small>Null</small></button><button id="source-user-6" type="button">6 <small>Null</small></button><button id="source-user-7" type="button">7 <small>Null</small></button><button id="source-user-8" type="button">8 <small>Null</small></button></div>
+                          <div class="source-choice" role="group" aria-label="Pitch Patterns"><span>Pitch</span><button id="pitch-user-1" type="button">1 <small>Null</small></button><button id="pitch-user-2" type="button">2 <small>Null</small></button><button id="pitch-user-3" type="button">3 <small>Null</small></button><button id="pitch-user-4" type="button">4 <small>Null</small></button><button id="pitch-user-5" type="button">5 <small>Null</small></button><button id="pitch-user-6" type="button">6 <small>Null</small></button><button id="pitch-user-7" type="button">7 <small>Null</small></button><button id="pitch-user-8" type="button">8 <small>Null</small></button></div>
+                        </div>
+                      </div>
+                      <div class="record-options">
+                        <label class="choice-field record-mode-field"><span>Record</span><select id="record-mode" hidden><option value="gate">Gate</option><option value="pitch">Pitch</option><option value="both" selected>Both</option></select></label>
+                        <label class="choice-field record-write-field"><span>Write</span><select id="record-write-mode" hidden><option value="replace" selected>Replace</option><option value="overdub">Overdub</option></select></label>
+                      </div>
+                      <div class="control-transport">
+                        <output id="record-counter" aria-live="off">00:00.00 / 00:30.00</output>
+                        <div class="transport-buttons">
+                          <button id="record-toggle" type="button" aria-label="Start Recording" title="Start Recording" disabled>●</button>
+                          <button id="sequence-panel" type="button" aria-label="Play" title="Play" disabled aria-pressed="false">▶</button>
+                        </div>
+                        <label class="play-speed-label">Play/Rec Speed<input id="sequence-play-speed" data-audio-control data-numeric-stops="0.25,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2,2.1,2.2,2.3,2.4,2.5,2.6,2.7,2.8,2.9,3,3.1,3.2,3.3,3.4,3.5,3.6,3.7,3.8,3.9,4" type="number" value="1" disabled></label>
+                      </div>
+                      <fieldset id="record-new-length" class="record-settings" aria-labelledby="record-new-length-title" title="Used only when the selected Gate and Pitch Patterns are both Null. A recorded Pattern keeps its length; edit its selection on the timeline.">
+                          <span id="record-new-length-title" class="record-new-length-title">New Pattern Length</span>
+                          <label class="record-bars-label"><span>Unit</span><select id="record-length-mode"><option value="seconds">Seconds</option><option value="bars">Bars</option></select></label>
+                          <label class="record-length-label"><span class="record-length-heading">Length</span><input id="record-length" type="text" inputmode="decimal" value="30" aria-label="Record length in seconds, 1 to 300"></label>
+                          <label class="record-bpm-label"><span>BPM (Song)</span><input id="record-bpm" type="text" inputmode="numeric" value="120" aria-label="Recording BPM, 40 to 240" disabled></label>
+                      </fieldset>
+                      <!-- Status and Record log stay in the DOM for debugging but are not shown. -->
+                      <div class="record-footer" hidden><output id="record-status" role="status">Ready</output><details class="record-log-details"><summary>Record log</summary><ol id="record-log"></ol></details></div>
+                    </div>
+                  </div>
                 </div>
                 <div class="sequence-perform trigger-group" role="group" aria-label="Sequence performance">
                   <strong class="trigger-group-title">PERFORM</strong>
-                  <div class="auto-perform-row"><div class="gate-mode-choice" role="group" aria-label="Gate playback source"><button id="source-auto" type="button" aria-pressed="true">Auto</button><button id="source-recorded" type="button" aria-pressed="false">Recorded Gate</button></div><div class="timing-controls"><label>Ton <span class="unit">ms</span><input id="ton" data-audio-control type="number" min="5" max="3000" step="1" value="250" disabled /></label><label>T repeat <span class="unit">ms</span><input id="trepeat" data-audio-control type="number" min="10" max="6000" step="1" value="500" disabled /></label><span id="auto-timing-warning" class="mode-readout" hidden>Ton ≥ T repeat: the next ON supersedes the earlier OFF.</span></div></div>
+                  <div class="auto-perform-row"><div class="gate-mode-choice" role="group" aria-label="Gate playback source"><button id="source-recorded" type="button" aria-pressed="false">Manual</button><button id="source-auto" type="button" aria-pressed="true">Auto</button></div><div class="timing-controls"><label>Ton <span class="unit">ms</span><input id="ton" data-audio-control type="number" min="5" max="3000" step="1" value="250" disabled /></label><label>T repeat <span class="unit">ms</span><input id="trepeat" data-audio-control type="number" min="10" max="6000" step="1" value="500" disabled /></label><span id="auto-timing-warning" class="mode-readout" hidden>Ton ≥ T repeat: the next ON supersedes the earlier OFF.</span></div></div>
                   <div class="sequence-timelines">
                     <div class="timeline-row gate-timeline-row"><button id="gate-mute" type="button">Mute</button><div class="record-timeline-area gate-timeline-area">
                       <div class="record-timeline-label"><strong>Gate timeline</strong><span id="record-target">Timbre 1 · No recording</span><button id="gate-clear" type="button">Clear</button></div>
@@ -399,6 +412,10 @@
                       <div class="record-ticks"><span>0</span><span id="record-midpoint">15 s</span><span id="record-endpoint">30 s</span></div>
                       <div class="record-selection-values"><span>Start <output id="record-start-value">0.00 s</output></span><span>End <output id="record-end-value">30.00 s</output></span><span>dt <output id="record-duration-value">30.00 s</output></span></div>
                       <button id="gate-apply-bars" class="selection-bars-action" type="button" disabled>Match Fit to Bars length</button>
+                      <details class="gate-quantize-details"><summary>Quantize</summary>
+                        <div class="gate-quantize-controls" role="group" aria-label="Gate quantize controls"><label>Grid <select id="gate-quantize-grid"><option value="4">1/4</option><option value="8">1/8</option><option value="16" selected>1/16</option><option value="32">1/32</option></select></label><label>Edges <select id="gate-quantize-mode"><option value="on">ON · keep length</option><option value="on-off">ON/OFF</option></select></label><label>Gap <select id="gate-quantize-gap" aria-label="Gate quantize Gap in milliseconds"></select> ms</label><button id="gate-quantize" type="button" disabled>Quantize</button><button id="gate-quantize-undo" type="button" disabled>Undo</button><button id="gate-quantize-redo" type="button" disabled>Redo</button></div>
+                        <div class="gate-edit-range-area"><span>Quantize range <output id="gate-edit-start-value">0.00 s</output>–<output id="gate-edit-end-value">0.00 s</output></span><div id="gate-edit-timeline" class="gate-edit-timeline" role="group" aria-label="Gate quantize edit range"><div id="gate-edit-selection" class="gate-edit-selection"></div><button id="gate-edit-start-handle" class="gate-edit-handle start" type="button" role="slider" aria-label="Quantize range start" disabled></button><button id="gate-edit-end-handle" class="gate-edit-handle end" type="button" role="slider" aria-label="Quantize range end" disabled></button></div></div>
+                      </details>
                     </div></div>
                     <div class="timeline-row pitch-timeline-row"><button id="pitch-mute" type="button">Mute</button><div class="record-timeline-area pitch-timeline-area">
                       <div class="record-timeline-label"><strong>Pitch timeline</strong><button id="sequence-link" type="button" aria-pressed="false">Link OFF</button><button id="sequence-length-lock" type="button" aria-label="Length Lock" aria-pressed="false">Lock OFF</button><span id="pitch-record-target">Timbre 1 · No recording</span><button id="pitch-clear" type="button">Clear</button></div>
@@ -411,10 +428,10 @@
                   <div class="sequence-pitch-controls" role="group" aria-label="Pitch recording controls">
                     <div class="pitch-mode-config"><label class="pitch-scale-choice"><span>Pitch curve</span><select id="sequence-pitch-mode" data-audio-control disabled><option value="equal">Equal division</option><option value="just-major">Just major</option><option value="major">Major</option><option value="natural-minor">Natural minor</option><option value="dorian">Dorian</option><option value="major-blues">Major blues</option><option value="minor-blues">Minor blues</option></select></label><label>Steps / side<input id="sequence-pitch-steps" data-audio-control data-display-only="true" type="number" value="0" disabled></label></div>
                     <label>Portamento<input id="sequence-portamento" data-audio-control data-display-only="true" data-allow-legacy-overflow="true" type="number" value="0" disabled></label>
-                    <label>Pitch Scale<input id="sequence-pitch-scale" data-audio-control data-display-only="true" data-numeric-stops="0,200,400,600,1200,2400" type="number" value="200" disabled></label><output id="sequence-scale-custom"></output>
+                    <label>Pitch Scale<input id="sequence-pitch-scale" data-audio-control data-display-only="true" data-numeric-stops="0,200,400,600,1200,2400" type="number" value="1200" disabled></label><output id="sequence-scale-custom"></output>
                     <label title="Pitch → Filter1 / Filter2 cutoff / center frequency">Filter Amount<button id="sequence-filter-wide" class="flow-toggle range-wide-toggle" type="button" data-audio-control aria-label="Sequence Filter Amount Wide" aria-pressed="false" disabled>Wide</button><input id="sequence-filter-amount" data-audio-control data-display-only="true" type="number" value="0" disabled></label>
                   </div>
-                  <div class="pitch-performance"><label for="sequence-pitch-input">Pitch <output id="sequence-pitch-readout">0 cent</output></label><div id="sequence-pitch-track" class="pitch-slider-wrap"><input id="sequence-pitch-input" data-audio-control type="range" min="-1" max="1" step="0.001" value="0" disabled aria-label="Sequence pitch"><div id="sequence-pitch-ticks" class="pitch-step-ticks" aria-hidden="true"></div><button id="record-gate" type="button" disabled aria-label="Hold slide Gate" aria-pressed="false"></button></div><button id="sequence-pitch-center" data-audio-control type="button" disabled>Center</button><button id="sequence-motion" type="button" aria-pressed="true">Motion ON</button><details class="sequence-motion-options"><summary>Options</summary><label for="sequence-motion-stop">Stop time <output id="sequence-motion-stop-value">150 ms</output></label><input id="sequence-motion-stop" type="range" min="50" max="400" step="10" value="150" aria-label="Motion stop time in milliseconds"></details></div>
+                  <div class="pitch-performance"><label for="sequence-pitch-input">Pitch <output id="sequence-pitch-readout">0 cent</output></label><button id="sequence-separate-gate" class="separate-gate" type="button" disabled aria-label="Hold separate Gate" aria-pressed="false">Gate</button><div id="sequence-pitch-track" class="pitch-slider-wrap"><input id="sequence-pitch-input" data-audio-control type="range" min="-1" max="1" step="0.001" value="0" disabled aria-label="Sequence pitch"><div id="sequence-pitch-ticks" class="pitch-step-ticks" aria-hidden="true"></div><button id="record-gate" type="button" disabled aria-label="Hold slide Gate" aria-pressed="false"></button></div><button id="sequence-separate" type="button" aria-label="Separate Gate and Pitch" aria-pressed="false">Separate</button><button id="sequence-pitch-center" data-audio-control type="button" disabled>Center</button><button id="sequence-motion" type="button" aria-pressed="true">Motion ON</button><details class="sequence-motion-options"><summary aria-label="Options" title="Options"><span aria-hidden="true">⚙</span></summary><label for="sequence-motion-stop">Stop time <output id="sequence-motion-stop-value">150 ms</output></label><input id="sequence-motion-stop" type="range" min="50" max="400" step="10" value="150" aria-label="Stop time in milliseconds"></details></div>
                   <div class="record-playback"><span class="space-trigger-hint">PC: Space = Gate · Drag Pitch + Gate · Filter Amount → F1 / F2 cutoff / center</span></div>
                 </div>
               </div>
@@ -534,7 +551,7 @@
               <fieldset>
                 <legend>Status</legend>
                 <div class="patch-status" id="patch-status">No patch operation yet.</div>
-                <div class="readout-line">Use Load and Save in TIMBRES for individual timbres. Session files include all eight slots, independent Gate and Pitch User presets, Song settings, and COMMON SPACE. New files use timbre-v17 / session-v20; supported older files can be loaded. Legacy PEnv Amount/Time is ignored on import.</div>
+                <div class="readout-line">Use Load and Save in TIMBRES for individual timbres. Session files include all eight slots, independent Gate and Pitch Patterns, Song settings, and COMMON SPACE. New files use timbre-v17 / session-v20; supported older files can be loaded. Legacy PEnv Amount/Time is ignored on import.</div>
               </fieldset>
             </div>
           </section>

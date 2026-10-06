@@ -123,6 +123,8 @@ test('manual, recorded and live edited Pitch keep both outputs synchronized acro
     const { ChannelSynth } = await import('/src/audio/core/ChannelSynth.ts');
     const original = ChannelSynth.prototype.setSequencePitch;
     ChannelSynth.prototype.setSequencePitch = function (...args) { window.__sequenceSynth = this; return original.apply(this, args); };
+    const controller = ChannelSynth.prototype.setControllerPitch;
+    ChannelSynth.prototype.setControllerPitch = function (...args) { window.__sequenceSynth = this; return controller.apply(this, args); };
   });
   await page.locator('#trigger-menu').click();
   const number = async (selector, value) => {

@@ -22,9 +22,12 @@ test('separate preset states, pitch-only Play, mute, Clear, and manual Trigger',
   await loadTimbre(page, timbre); await page.locator('#trigger-menu').click();
   await expect(page.locator('#source-user-1 small')).toHaveText('1');
   await expect(page.locator('#pitch-user-1 small')).toHaveText('1');
+  await expect(page.locator('#source-user-1')).toHaveAttribute('aria-label', 'Gate Pattern 1, recorded');
+  await expect(page.locator('#pitch-user-1')).toHaveAttribute('aria-label', 'Pitch Pattern 1, recorded');
   await expect(page.locator('#pitch-record-target')).toContainText('Constant Pitch');
   await page.locator('#gate-mute').click();
   await expect(page.locator('#source-user-1 small')).toHaveText('0');
+  await expect(page.locator('#source-user-1')).toHaveAttribute('aria-label', 'Gate Pattern 1, muted');
   await page.evaluate(async () => {
     const { AudioEngine } = await import('/src/audio/core/AudioEngine.ts');
     window.sequenceGateOns = 0; window.sequencePitchCalls = 0;
@@ -40,8 +43,9 @@ test('separate preset states, pitch-only Play, mute, Clear, and manual Trigger',
   let confirmation;
   page.once('dialog', async dialog => { confirmation = dialog.message(); await dialog.accept(); });
   await page.locator('#gate-clear').click();
-  expect(confirmation).toContain('Gate User 1');
+  expect(confirmation).toContain('Gate Pattern 1');
   await expect(page.locator('#source-user-1 small')).toHaveText('Null');
+  await expect(page.locator('#source-user-1')).toHaveAttribute('aria-label', 'Gate Pattern 1, no recording');
   expect((await saveTimbre(page)).pitchPatterns[0].recording).toEqual(timbre.pitchPatterns[0].recording);
   await page.locator('#pitch-mute').click();
   await expect(page.locator('#pitch-user-1 small')).toHaveText('0');
@@ -58,7 +62,7 @@ test('separate preset states, pitch-only Play, mute, Clear, and manual Trigger',
   expect(saved.pitchPatterns[0].muted).toBe(true);
 });
 
-test('Gate User mute is editable while Auto is selected and never mutes Auto', async ({ page }) => {
+test('Gate Pattern mute is editable while Auto is selected and never mutes Auto', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   const timbre = await saveTimbre(page);
   timbre.gatePatterns[0].recording = { durationSec: .4, selectionStartSec: 0, selectionEndSec: .4,
@@ -101,7 +105,7 @@ test('Both recording without Trigger or Pitch input preserves both lanes across 
   expect(saved.gatePatterns[0].recording).toEqual(timbre.gatePatterns[0].recording);
 });
 
-test('one-take Both recording without input leaves the previous recordings and Gate source intact', async ({ page }) => {
+test('Both loop recording without input leaves the previous recordings and Gate source intact', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   const timbre = await saveTimbre(page);
   timbre.sequence.gateMode = 'user';
@@ -111,9 +115,9 @@ test('one-take Both recording without input leaves the previous recordings and G
     points: [{ timeSec: 0, valueNormalized: .2 }, { timeSec: 1, valueNormalized: .2 }] };
   await loadTimbre(page, timbre); await page.locator('#trigger-menu').click();
   await page.locator('#record-mode + .segmented-choice [data-value="both"]').click();
-  await page.locator('#record-length').fill('1');
+  await expect(page.locator('#record-length')).toBeDisabled();
   await page.locator('#record-toggle').click();
-  await expect(page.locator('#record-status')).toContainText('Recording · One take');
+  await expect(page.locator('#record-status')).toContainText('Recording · Loop');
   await page.locator('#record-toggle').click();
   await expect(page.locator('#record-status')).toContainText('previous Gate and Pitch preserved');
   const saved = await saveTimbre(page);
@@ -122,21 +126,25 @@ test('one-take Both recording without input leaves the previous recordings and G
   expect(saved.sequence.gateMode).toBe('user');
 });
 
-test('Play resets a prior manual Pitch gesture when the selected Pitch User is Null', async ({ page }) => {
+test('Play keeps held controller Pitch until release, then returns to Center for a Null Pattern', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   await page.locator('#trigger-menu').click();
   await page.evaluate(async () => {
     const { AudioEngine } = await import('/src/audio/core/AudioEngine.ts');
-    const original = AudioEngine.prototype.setSequencePitch;
-    AudioEngine.prototype.setSequencePitch = function (...args) {
+    const original = AudioEngine.prototype.setControllerPitch;
+    AudioEngine.prototype.setControllerPitch = function (...args) {
       window.pitchEngine = this;
       return original.apply(this, args);
     };
   });
-  await page.locator('#sequence-pitch-input').fill('0.5');
+  await page.locator('#sequence-pitch-input').evaluate(node => {
+    node.value = '0.5'; node.dispatchEvent(new Event('input', { bubbles: true }));
+  });
   await expect.poll(() => page.evaluate(() => window.pitchEngine?.getSequencePitchCent('1') ?? 0)).toBeGreaterThan(0);
   await page.locator('#sequence-panel').click();
   await expect(page.locator('#sequence-panel')).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => page.evaluate(() => window.pitchEngine.getSequencePitchCent('1'))).toBe(600);
+  await page.locator('#sequence-pitch-input').dispatchEvent('change');
   await expect.poll(() => page.evaluate(() => window.pitchEngine.getSequencePitchCent('1'))).toBe(0);
 });
 
@@ -148,8 +156,9 @@ test('Link uses an existing Gate length while a new Pitch lane starts at zero', 
   await loadTimbre(page, timbre); await page.locator('#trigger-menu').click();
   await page.locator('#sequence-link').click();
   await expect(page.locator('#sequence-link')).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.locator('#record-length')).toHaveValue('0.4');
-  await expect(page.locator('#record-length')).toBeDisabled();
+  await expect(page.locator('#record-new-length')).toHaveJSProperty('disabled', true);
+  await expect(page.locator('#record-length')).toHaveValue('30');
+  await expect(page.locator('#record-duration-value')).toHaveText('0.40 s');
   await page.locator('#record-mode + .segmented-choice [data-value="both"]').click();
   await page.locator('#record-toggle').click();
   await expect(page.locator('#record-status')).toContainText('Recording · Loop');
@@ -173,9 +182,14 @@ test('Link matches interval lengths while Pitch start remains independent', asyn
     points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: 1.5, valueNormalized: 0 }] };
   await loadTimbre(page, timbre); await page.locator('#trigger-menu').click();
   await page.locator('#sequence-link').click();
+  await expect(page.locator('#record-new-length')).toHaveJSProperty('disabled', true);
+  await expect(page.locator('#record-length')).toHaveValue('30');
+  await page.locator('#record-mode + .segmented-choice [data-value="both"]').click();
   await page.locator('#record-toggle').click();
-  await expect(page.locator('#record-status')).toContainText('lengths differ');
-  await expect(page.locator('#record-log li').first()).toContainText('lengths differ');
+  await expect(page.locator('#record-status')).toContainText('Recording · Loop');
+  await expect(page.locator('#record-counter')).toContainText('Gate');
+  await expect(page.locator('#record-counter')).toContainText('Pitch');
+  await page.locator('#record-toggle').click();
   await page.locator('#record-start-handle').focus(); await page.keyboard.press('Home');
   let saved = await saveTimbre(page);
   expect(saved.gatePatterns[0].recording.selectionStartSec).toBe(0);
@@ -187,7 +201,8 @@ test('Link matches interval lengths while Pitch start remains independent', asyn
   expect(saved.gatePatterns[0].recording.selectionEndSec).toBe(1.2);
   expect(saved.pitchPatterns[0].recording.selectionStartSec).toBe(0);
   expect(saved.pitchPatterns[0].recording.selectionEndSec).toBe(1.2);
-  await expect(page.locator('#record-length')).toHaveValue('1.2');
+  await expect(page.locator('#pitch-duration-value')).toHaveText('1.20 s');
+  await expect(page.locator('#record-length')).toHaveValue('30');
 });
 
 test('Length Lock shifts each interval, Link shifts both, and dt tracks edits', async ({ page }) => {
@@ -220,7 +235,8 @@ test('Length Lock shifts each interval, Link shifts both, and dt tracks edits', 
 
   await page.locator('#sequence-link').click();
   await page.locator('#record-toggle').click();
-  await expect(page.locator('#record-status')).toContainText('lengths differ');
+  await expect(page.locator('#record-status')).toContainText('Recording · Loop');
+  await page.locator('#record-toggle').click();
   await page.locator('#pitch-end-handle').focus(); await page.keyboard.press('ArrowRight');
   saved = await saveTimbre(page);
   expect(saved.gatePatterns[0].recording.selectionStartSec).toBeCloseTo(.23);
@@ -290,21 +306,22 @@ test('Length Lock works with one recorded lane and saves its shifted selection',
   await expect(page.locator('#sequence-length-lock')).toHaveAttribute('aria-pressed', 'true');
 });
 
-test('leaving Link restores the original one-take length after timeline refresh', async ({ page }) => {
+test('Link does not change the recording length of an existing Pattern', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   const timbre = await saveTimbre(page);
   timbre.gatePatterns[0].recording = { durationSec: 1, selectionStartSec: .2, selectionEndSec: .6,
     gates: [{ onSec: .25, offSec: .3 }] };
   await loadTimbre(page, timbre); await page.locator('#trigger-menu').click();
-  await page.locator('#record-length').fill('2');
+  await expect(page.locator('#record-duration-value')).toHaveText('0.40 s');
   await page.locator('#sequence-link').click();
-  await expect(page.locator('#record-length')).toHaveValue('0.4');
+  await expect(page.locator('#record-duration-value')).toHaveText('0.40 s');
   await page.locator('#record-end-handle').focus(); await page.keyboard.press('ArrowRight');
-  await expect(page.locator('#record-length')).toHaveValue('0.41');
+  await expect(page.locator('#record-duration-value')).toHaveText('0.41 s');
   await page.locator('#sequence-link').click();
-  await expect(page.locator('#record-length')).toHaveValue('2');
+  await expect(page.locator('#record-duration-value')).toHaveText('0.41 s');
+  await expect(page.locator('#record-new-length')).toHaveJSProperty('disabled', true);
   await page.locator('#record-toggle').click();
-  await expect(page.locator('#record-status')).toContainText('Recording · One take');
+  await expect(page.locator('#record-status')).toContainText('Recording · Loop');
   await page.locator('#record-toggle').click();
 });
 
@@ -361,6 +378,7 @@ test('linked Gate recording reaches another lap and monitors the completed take'
   const saved = await saveTimbre(page);
   expect(saved.gatePatterns[0].recording.gates).toContainEqual({ onSec: .1, offSec: .15 });
   expect(saved.gatePatterns[0].recording.gates).not.toContainEqual({ onSec: .8, offSec: .85 });
+  expect(saved.gatePatterns[0].recording.gates.some(gate => gate.onSec >= .2 && gate.offSec <= 1.2)).toBe(true);
   expect(saved.gatePatterns[0].recording.selectionStartSec).toBe(.2);
   expect(saved.gatePatterns[0].recording.selectionEndSec).toBe(1.2);
 });
@@ -379,7 +397,7 @@ test('legacy Pitch Scale is Custom until the five-stop slider is operated', asyn
   expect((await saveTimbre(page)).pitchPatterns[2].pitchScaleCent).toBe(400);
 });
 
-test('390px viewport keeps vertical Record modes and two-row User choices reachable by local scrolling', async ({ page }) => {
+test('390px viewport keeps horizontal Record modes and eight Pattern choices reachable by local scrolling', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   await page.locator('#trigger-menu').click();
@@ -390,10 +408,49 @@ test('390px viewport keeps vertical Record modes and two-row User choices reacha
       modeTops: mode.map(rect => rect.top), gateTops: gateUsers.map(rect => rect.top) };
   });
   expect(geometry.scrollWidth).toBeGreaterThan(geometry.clientWidth);
-  expect(new Set(geometry.modeTops).size).toBe(3);
-  expect(new Set(geometry.gateTops).size).toBe(2);
+  expect(new Set(geometry.modeTops).size).toBe(1);
+  expect(geometry.gateTops).toHaveLength(8);
+  expect(new Set(geometry.gateTops).size).toBe(1);
   for (const selector of ['#record-toggle', '#sequence-panel', '#record-gate']) {
     await page.locator(selector).scrollIntoViewIfNeeded();
     await expect(page.locator(selector)).toBeVisible();
   }
+});
+
+test('PATTERN / RECORD / PLAY groups the transport, and New Pattern Length is editable only for Null Gate and Pitch', async ({ page }) => {
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  const timbre = await saveTimbre(page);
+  timbre.gatePatterns[0].recording = { durationSec: 1, selectionStartSec: 0, selectionEndSec: .5, gates: [{ onSec: .1, offSec: .2 }] };
+  await page.locator('#trigger-menu').click();
+  const group = page.locator('.trigger-user-group');
+  await expect(group.locator('.trigger-group-title')).toHaveText('PATTERN / RECORD / PLAY');
+  for (const selector of ['#sequence-panel', '#sequence-play-speed', '#record-counter', '#record-toggle', '#record-new-length'])
+    await expect(group.locator(selector)).toHaveCount(1);
+  await expect(group.locator('#source-user-1')).toHaveCount(1);
+  // Status and Record log remain in the DOM for debugging but are not shown.
+  await expect(page.locator('#record-status')).toHaveCount(1);
+  await expect(page.locator('#record-status')).toBeHidden();
+  await expect(page.locator('.record-log-details')).toBeHidden();
+  // The Play/Rec Speed slider moves in 0.1 steps.
+  const speedSlider = page.locator('[data-numeric-control="sequence-play-speed"] input[type="range"]');
+  for (const position of [.37, .52, .81]) {
+    await speedSlider.evaluate((input, ratio) => { input.value = String(Math.round(Number(input.max) * ratio)); input.dispatchEvent(new Event('input', { bubbles: true })); }, position);
+    const value = Number(await page.locator('#sequence-play-speed').inputValue());
+    expect(Math.abs(value * 10 - Math.round(value * 10))).toBeLessThan(1e-9);
+  }
+  const newLength = page.locator('#record-new-length');
+  await expect(newLength).toHaveAccessibleName('New Pattern Length');
+  await expect(newLength).toHaveJSProperty('disabled', false);
+  await page.locator('#record-length').fill('12'); await page.locator('#record-length').dispatchEvent('change');
+
+  await loadTimbre(page, timbre);
+  if (!await group.isVisible()) await page.locator('#trigger-menu').click();
+  await expect(newLength).toHaveJSProperty('disabled', true);
+  await expect(page.locator('#record-length')).toHaveValue('12');
+  await expect(page.locator('#record-duration-value')).toHaveText('0.50 s');
+  await page.locator('#pitch-user-2').click();
+  await expect(newLength).toHaveJSProperty('disabled', true);
+  await page.locator('#source-user-2').click();
+  await expect(newLength).toHaveJSProperty('disabled', false);
+  await expect(page.locator('#record-length')).toHaveValue('12');
 });

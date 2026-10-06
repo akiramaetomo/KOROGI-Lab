@@ -6,6 +6,60 @@ async function start(page) {
   await expect(page.locator('#play-1')).toBeEnabled();
 }
 
+test('Record Write controls and Patterns remain aligned across supported widths', async ({ page }) => {
+  for (const width of [1024, 1180, 768, 820, 390, 844]) {
+    await page.setViewportSize({ width, height: 768 });
+    await start(page);
+    await page.locator('#trigger-menu').click();
+    const boxes = await page.locator('.trigger-top-row').evaluate(row => {
+      const rect = node => node.getBoundingClientRect();
+      const find = selector => rect(row.querySelector(selector));
+      const choices = selector => [...row.querySelectorAll(selector)].map(button => ({ box: rect(button), text: button.firstChild.textContent.trim(), fits: button.scrollWidth <= button.clientWidth + 1 }));
+      const counter = row.querySelector('#record-counter');
+      const counterText = document.createRange(); counterText.selectNodeContents(counter);
+      return { record: find('.trigger-user-group'), control: find('.record-performance'), newLength: find('#record-new-length'),
+        recordButton: find('#record-toggle'), counterText: counterText.getBoundingClientRect(),
+        write: choices('#record-write-mode + .segmented-choice button'), modes: choices('#record-mode + .segmented-choice button'),
+        play: find('#sequence-panel'), speed: find('[data-numeric-control="sequence-play-speed"]'),
+        gateLabel: find('.source-choice:first-child > span'), pitchLabel: find('.source-choice:last-child > span'),
+        gate: choices('.source-choice:first-child button'), pitch: choices('.source-choice:last-child button'),
+        pageWidth: document.documentElement.scrollWidth, viewport: innerWidth };
+    });
+    // One PATTERN / RECORD / PLAY panel: Patterns over Record/Write on the left,
+    // counter over ● ▶ over Speed on the right, New Pattern Length along the bottom.
+    expect(boxes.control.left).toBeGreaterThanOrEqual(boxes.record.left);
+    expect(boxes.control.bottom).toBeLessThanOrEqual(boxes.write[0].box.top);
+    expect(boxes.record.height).toBeLessThanOrEqual(165);
+    expect(boxes.recordButton.width).toBe(64);
+    expect(boxes.counterText.bottom).toBeLessThanOrEqual(boxes.recordButton.top);
+    expect(boxes.play.left).toBeGreaterThanOrEqual(boxes.recordButton.right);
+    expect(boxes.play.top).toBe(boxes.recordButton.top);
+    expect(boxes.speed.top).toBeGreaterThanOrEqual(boxes.recordButton.bottom);
+    expect(boxes.recordButton.left).toBeGreaterThan(boxes.gate[7].box.right);
+    expect(boxes.speed.right).toBeLessThanOrEqual(boxes.record.right);
+    expect(boxes.write).toHaveLength(2);
+    expect(boxes.write[0].box.top).toBe(boxes.write[1].box.top);
+    expect(boxes.write[0].box.top).toBe(boxes.modes[0].box.top);
+    expect(boxes.write[0].box.height).toBeGreaterThan(boxes.gate[0].box.height);
+    expect(boxes.write[1].box.right).toBeLessThanOrEqual(boxes.recordButton.left);
+    expect(boxes.newLength.top).toBeGreaterThanOrEqual(boxes.write[0].box.bottom);
+    expect(boxes.newLength.right).toBeLessThanOrEqual(boxes.record.right);
+    expect(boxes.gate[0].box.width).toBeLessThan(65);
+    expect(boxes.gate).toHaveLength(8); expect(boxes.pitch).toHaveLength(8);
+    for (const [label, buttons] of [[boxes.gateLabel, boxes.gate], [boxes.pitchLabel, boxes.pitch]]) {
+      expect(buttons.map(button => button.text)).toEqual(['1', '2', '3', '4', '5', '6', '7', '8']);
+      expect(buttons.every(button => button.box.top === buttons[0].box.top && button.fits)).toBe(true);
+      expect(label.right).toBeLessThan(buttons[0].box.left);
+      expect(buttons[7].box.right).toBeLessThanOrEqual(boxes.control.right);
+    }
+    expect(boxes.gate[0].box.bottom).toBeLessThan(boxes.pitch[0].box.top);
+    expect(boxes.pageWidth).toBeLessThanOrEqual(boxes.viewport + 1);
+    await expect(page.locator('#record-toggle')).toHaveAttribute('aria-label', 'Start Recording');
+    await expect(page.locator('#source-user-1')).toHaveAttribute('aria-label', 'Gate Pattern 1, no recording');
+    await expect(page.locator('#pitch-user-1')).toHaveAttribute('aria-label', 'Pitch Pattern 1, no recording');
+  }
+});
+
 test('1280x800 fits Sequence without scrolling and keeps controls aligned', async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await start(page);
@@ -61,31 +115,43 @@ test('1280x800 fits Sequence without scrolling and keeps controls aligned', asyn
       length, recording, auto, pitchMode, portamento, pitchScale, pitchPerformance,
       gateTimeline, pitchTimeline, ton, repeat, inner, scrollWidth: editor.scrollWidth, clientWidth: editor.clientWidth,
       gateLabel: rect('.gate-timeline-area .record-timeline-label strong'), pitchLabel: rect('.pitch-timeline-area .record-timeline-label strong'),
-      gateMute: rect('#gate-mute'), pitchMute: rect('#pitch-mute'), link: rect('#sequence-link'), lock: rect('#sequence-length-lock'),
+      gateMute: rect('#gate-mute'), pitchMute: rect('#pitch-mute'), gateStart: rect('#record-start-handle'), pitchStart: rect('#pitch-start-handle'), link: rect('#sequence-link'), lock: rect('#sequence-length-lock'),
       pitchTarget: rect('#pitch-record-target'), gateValues: rect('.gate-timeline-area .record-selection-values'),
       pitchValues: rect('.pitch-timeline-area .record-selection-values'),
       recorded: rect('#source-recorded'), autoButton: rect('#source-auto'),
       tonControl: rect('[data-numeric-control="ton"]'), repeatControl: rect('[data-numeric-control="trepeat"]'),
+      tonSlider: rect('[data-numeric-control="ton"] .numeric-slider-axis'), repeatSlider: rect('[data-numeric-control="trepeat"] .numeric-slider-axis'),
       divider: getComputedStyle(editor.querySelector('.pitch-performance')).borderTopWidth };
   });
-  expect(layout.record.right).toBeLessThan(layout.controls.left);
+  expect(layout.controls.top).toBeGreaterThanOrEqual(layout.record.top);
+  expect(layout.controls.bottom).toBeLessThan(layout.record.bottom);
   expect(layout.perform.top).toBeGreaterThan(Math.max(layout.record.bottom, layout.controls.bottom));
   expect(layout.gateUsers.top).toBeLessThan(layout.pitchUsers.top);
-  expect(layout.play.left).toBeGreaterThan(layout.gateUsers.right);
-  expect(layout.playSpeed.top).toBeGreaterThan(layout.play.bottom);
-  expect(layout.modeButtons[0].bottom).toBeLessThanOrEqual(layout.modeButtons[1].top);
-  expect(layout.modeButtons[1].bottom).toBeLessThanOrEqual(layout.modeButtons[2].top);
-  expect(layout.modeButtons[0].right).toBeLessThan(layout.length.left);
-  expect(layout.length.right).toBeLessThan(layout.recording.left);
+  expect(layout.play.left).toBeGreaterThanOrEqual(layout.recording.right);
+  expect(layout.playSpeed.top).toBeGreaterThanOrEqual(layout.play.bottom);
+  expect(layout.modeButtons[0].top).toBe(layout.modeButtons[1].top);
+  expect(layout.modeButtons[1].top).toBe(layout.modeButtons[2].top);
+  expect(layout.modeButtons[0].right).toBeLessThanOrEqual(layout.modeButtons[1].left);
+  expect(layout.modeButtons[1].right).toBeLessThanOrEqual(layout.modeButtons[2].left);
+  expect(layout.modeButtons[0].top).toBeGreaterThan(layout.pitchUsers.bottom);
+  expect(layout.length.top).toBeGreaterThan(layout.modeButtons[0].bottom);
+  expect(layout.length.bottom).toBeLessThanOrEqual(layout.record.bottom);
   expect(layout.auto.top).toBeLessThan(layout.gateTimeline.top);
   expect(layout.tonControl.top).toBe(layout.repeatControl.top);
   expect(layout.tonControl.right).toBeLessThan(layout.repeatControl.left);
-  expect(layout.autoButton.bottom).toBeLessThan(layout.recorded.top);
+  expect(layout.autoButton.top).toBe(layout.recorded.top);
+  expect(layout.recorded.right).toBeLessThanOrEqual(layout.autoButton.left);
+  expect(layout.tonSlider.width).toBeCloseTo(layout.repeatSlider.width, 0);
   expect(layout.gateTimeline.bottom).toBeLessThan(layout.pitchTimeline.top);
   expect(layout.gateLabel.left).toBe(layout.gateTimeline.left);
   expect(layout.pitchLabel.left).toBe(layout.pitchTimeline.left);
   expect(layout.gateMute.right).toBeLessThan(layout.gateTimeline.left);
   expect(layout.pitchMute.right).toBeLessThan(layout.pitchTimeline.left);
+  // The start handle overhangs the timeline edge; it must not reach the Mute button.
+  expect(layout.gateMute.right).toBeLessThanOrEqual(layout.gateStart.left);
+  expect(Math.abs(layout.gateMute.top - layout.gateStart.top)).toBeLessThanOrEqual(2);
+  expect(Math.abs(layout.pitchMute.top - layout.pitchStart.top)).toBeLessThanOrEqual(2);
+  expect(layout.pitchMute.right).toBeLessThanOrEqual(layout.pitchStart.left);
   expect(layout.link.left).toBeGreaterThan(layout.pitchLabel.right);
   expect(layout.lock.left).toBeGreaterThanOrEqual(layout.link.right);
   expect(layout.lock.right).toBeLessThanOrEqual(layout.pitchTarget.left);
@@ -134,13 +200,14 @@ test('TIMBRES width resizes, scrolls below 65 percent, and collapses without sta
   const divider = page.locator('#mixer-divider');
   const mixer = page.locator('.mixer-panel');
   const width = () => mixer.evaluate(node => node.getBoundingClientRect().width);
-  const headerControls = await page.locator('#fullscreen-toggle, #files-menu, #play-all, #trigger').evaluateAll(nodes => nodes.map(node => {
+  const headerControls = await page.locator('#map-toggle, #fullscreen-toggle, #files-menu, #play-all, #trigger').evaluateAll(nodes => nodes.map(node => {
     const rect = node.getBoundingClientRect(); return { id: node.id, left: rect.left, right: rect.right, visible: rect.width > 0 && rect.height > 0 };
   }));
   const headerLayout = await page.locator('.topbar').evaluate(node => ({ innerWidth, rect: node.getBoundingClientRect().toJSON(),
     grid: getComputedStyle(node).gridTemplateColumns, audio: getComputedStyle(node.querySelector('.audio-state')).display,
     brand: node.querySelector('.brand').getBoundingClientRect().toJSON(), transport: node.querySelector('.transport').getBoundingClientRect().toJSON() }));
   expect(headerControls.every(control => control.visible && control.left >= 0 && control.right <= 390), JSON.stringify({ headerControls, headerLayout })).toBe(true);
+  await expect(page.locator('#timbres-toggle')).toBeHidden(); // Phones restore TIMBRES by tapping the collapsed divider.
   await expect(page.locator('.audio-state')).toBeVisible();
   await expect(page.locator('#status')).toBeVisible();
   await expect(divider).toHaveAttribute('aria-orientation', 'vertical');
@@ -309,7 +376,7 @@ test('1024x768 uses equal diagram/editor heights, permits dragging, and confines
   await page.locator('#fx3-type').selectOption('reverb');
   await expect(page.locator('#fx3-reverb-decay')).toBeEnabled();
   for (const [topId, bottomId] of [['fx2-delay-time', 'fx2-delay-feedback'], ['fx3-reverb-decay', 'fx3-reverb-wet']]) {
-    const top = await page.locator(`#${topId}-coarse + .slider-scale`).boundingBox();
+    const top = await page.locator(`#${topId}-coarse`).boundingBox();
     const bottom = await page.locator(`#${bottomId}-coarse`).boundingBox();
     expect(bottom.y).toBeGreaterThan(top.y + top.height);
   }

@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { openCommonEditors, openTimbreEditors } from './editor-helpers.mjs';
+import { openCommonEditors, openTimbreEditors, compactNumericRows, expectCompactNumericRows } from './editor-helpers.mjs';
 
 const layout = page => page.locator('.space-card.active').evaluateAll(nodes => nodes.map(node => node.dataset.commonCard));
 async function start(page) { await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); }
@@ -74,7 +74,7 @@ for (const viewport of [{ width: 1180, height: 820 }, { width: 1024, height: 768
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(viewport.width);
       const overflow = await page.locator('.space-card.active').evaluateAll(cards => cards.flatMap(card => {
         const bounds = card.getBoundingClientRect();
-        return [...card.querySelectorAll('input, button, select, .slider-scale')].filter(node => {
+        return [...card.querySelectorAll('input, button, select, .slider-scale span, .numeric-slider-name')].filter(node => {
           if (!node.getClientRects().length) return false;
           const rect = node.getBoundingClientRect(); return rect.left < bounds.left || rect.right > bounds.right + 1;
         }).map(node => node.id || node.textContent);
@@ -90,7 +90,7 @@ for (const viewport of [{ width: 1180, height: 820 }, { width: 1024, height: 768
             for (const slot of [2, 3]) await page.locator(`#${prefix}fx${slot}-type`).selectOption(type);
             const escaped = await page.locator(`[data-common-card="${prefix ? 'far' : 'near'}"] .effect-slot`).evaluateAll(fields => fields.flatMap(field => {
               const bounds = field.getBoundingClientRect();
-              return [...field.querySelectorAll('input, select, button, .slider-scale')].filter(node => {
+              return [...field.querySelectorAll('input, select, button, .slider-scale span, .numeric-slider-name')].filter(node => {
                 if (!node.getClientRects().length) return false;
                 const rect = node.getBoundingClientRect(); return rect.left < bounds.left || rect.right > bounds.right + 1;
               }).map(node => node.id || node.textContent);
@@ -158,4 +158,45 @@ test('single-function headings move existing switches outside the drag handle', 
   await openCommonEditors(page, ['near-gain']);
   await expect(page.locator('[data-common-card="near-gain"] legend')).toHaveCount(0);
   await expect(page.locator('[data-common-card="near-gain"] .editor-card-heading > .flow-toggle')).toHaveCount(1);
+});
+
+test('COMMON SPACE stacks three cards by keys and greys only the OFF FX slot', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
+  await openCommonEditors(page, ['near-gain', 'far-gain', 'balance']);
+  const handle = id => page.locator(`[data-common-card="${id}"] .editor-card-handle`);
+  const columns = () => page.locator('.common-editor .function-editor-row > .editor-card-column')
+    .evaluateAll(nodes => nodes.map(column => [...column.querySelectorAll('.space-card.active')].map(node => node.dataset.commonCard)));
+  await handle('far-gain').press('Shift+ArrowLeft'); await handle('balance').press('Shift+ArrowLeft');
+  expect(await columns()).toEqual([['near-gain', 'far-gain', 'balance']]);
+  await openCommonEditors(page, ['near']);
+  const grey = slot => page.locator(`[data-effect-slot="${slot}"] > label`).evaluate(node => getComputedStyle(node).filter.includes('grayscale'));
+  const fx2 = page.locator('[data-effect-slot="fx2"] legend .flow-toggle'), fx3 = page.locator('[data-effect-slot="fx3"] legend .flow-toggle');
+  if (await fx2.getAttribute('aria-pressed') === 'true') await fx2.click();
+  if (await fx3.getAttribute('aria-pressed') === 'true') await fx3.click();
+  expect(await grey('fx2')).toBe(true); expect(await grey('fx3')).toBe(true);
+  await fx2.click(); await expect(fx2).toHaveAttribute('aria-pressed', 'true');
+  expect(await grey('fx2')).toBe(false); expect(await grey('fx3')).toBe(true);
+  expect(await page.locator('[data-effect-slot="fx2"] legend').evaluate(node => getComputedStyle(node).filter)).toBe('none');
+});
+
+test('Near and Far use compact numeric rows while the envelope Medium cards keep their layout', async ({ page }) => {
+  await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
+  await openCommonEditors(page, ['near', 'far']);
+  for (const type of ['distortion', 'delay', 'chorus', 'reverb']) {
+    for (const id of ['fx2-type', 'fx3-type', 'far-fx2-type', 'far-fx3-type']) await page.locator(`#${id}`).selectOption(type);
+    const prefix = { distortion: 'dist', delay: 'delay', chorus: 'chorus', reverb: 'reverb' }[type];
+    // Far may switch its visible parameter set a frame after the select change.
+    await expect.poll(async () => (await compactNumericRows(page.locator('.space-card.active[data-rank="medium"]')))
+      .every(control => control.id.replace(/^far-/, '').startsWith(`fx2-${prefix}-`) || control.id.replace(/^far-/, '').startsWith(`fx3-${prefix}-`)), type).toBe(true);
+    const controls = await compactNumericRows(page.locator('.space-card.active[data-rank="medium"]'));
+    expect(controls.length, type).toBeGreaterThanOrEqual(8);
+    expectCompactNumericRows(controls, type);
+    expect(controls.every(control => control.valueBesideCaption), type).toBe(true);
+    expect(controls.filter(control => control.axes[0].mark).map(control => control.id.replace(/^far-/, '').replace(/^fx\d-/, '')),
+      type).toEqual(Array(4).fill(`${prefix}-wet`));
+  }
+  await openTimbreEditors(page, ['aenv']);
+  const attack = await page.locator('#attack-coarse').boundingBox();
+  const scale = await page.locator('#attack-coarse + .slider-scale').boundingBox();
+  expect(scale.y).toBeGreaterThanOrEqual(attack.y + attack.height - 1);
 });

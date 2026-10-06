@@ -276,7 +276,7 @@ describe('Timbre and session boundaries', () => {
     const user = defaultTimbre(); user.sequence.gateMode = 'user';
     expect(normalizeTimbre(user).sequence.gateMode).toBe('user');
     Reflect.set(user.sequence, 'gateUserId', 'other');
-    expect(() => normalizeTimbre(user)).toThrow('Gate User');
+    expect(() => normalizeTimbre(user)).toThrow('Gate Pattern');
     const duplicate = defaultTimbre(); duplicate.gatePatterns[1]!.id = 'user-1';
     expect(() => normalizeTimbre(duplicate)).toThrow('unique');
     const missing = defaultTimbre(); missing.gatePatterns.pop();
