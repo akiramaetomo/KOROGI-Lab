@@ -135,3 +135,24 @@ test('Gate quantize controls stay reachable at iPad and mobile sizes', async ({ 
     expect(button.x + button.width).toBeLessThanOrEqual(viewport.width + 1);
   }
 });
+
+// Author requirement (2026-10-08): Quantize sits above the Gate timeline. It once drifted below it unnoticed.
+test('Gate Quantize stays above the Gate timeline and Mute stays on the timeline row', async ({ page }) => {
+  for (const viewport of [{ width: 1180, height: 820 }, { width: 1024, height: 768 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+    await page.locator('#trigger-menu').click();
+    const measure = () => page.locator('.gate-timeline-row').evaluate(row => {
+      const rect = selector => row.querySelector(selector).getBoundingClientRect();
+      return { label: rect('.record-timeline-label'), details: rect('.gate-quantize-details'), timeline: rect('#record-timeline'),
+        mute: rect('#gate-mute') };
+    });
+    for (const open of [false, true]) {
+      if (open) await page.locator('.gate-quantize-details > summary').click();
+      const layout = await measure();
+      expect(layout.details.top).toBeGreaterThanOrEqual(layout.label.bottom - 1);
+      expect(layout.details.bottom).toBeLessThanOrEqual(layout.timeline.top + 1);
+      expect(Math.abs(layout.mute.top - layout.timeline.top)).toBeLessThanOrEqual(2);
+    }
+  }
+});

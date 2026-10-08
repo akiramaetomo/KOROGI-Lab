@@ -22,7 +22,7 @@ describe('SongTransport', () => {
       gateOn: (_id: string, time: number) => gates.push({ kind: 'on', time }),
       gateOff: (_id: string, time: number) => gates.push({ kind: 'off', time }),
       setSequencePitch: (_id: string, value: number, _scale: number, _filter: number, time: number, transition: number) => pitches.push({ value, time, transition }),
-      resetSequencePitch: () => {}, cancelScheduledGates: () => {}
+      resetSequencePitch: () => {}, setSequencePitchMuted: () => {}, cancelScheduledGates: () => {}
     } as unknown as AudioEngine;
     const song = new SongTransport(() => engine, async () => {}, () => {}, () => {});
     await song.play(); context.currentTime = 4.1; tick();
@@ -49,7 +49,7 @@ describe('SongTransport', () => {
       getPitchRecording: () => null,
       gateOn: (id: string, time: number) => calls.push({ id, kind: 'on', time }),
       gateOff: (id: string, time: number) => calls.push({ id, kind: 'off', time }),
-      resetSequencePitch: () => {}, cancelScheduledGates: () => {}
+      resetSequencePitch: () => {}, setSequencePitchMuted: () => {}, cancelScheduledGates: () => {}
     } as unknown as AudioEngine;
     const song = new SongTransport(() => engine, async () => {}, () => {}, () => {});
     await song.play();
@@ -84,7 +84,7 @@ describe('SongTransport', () => {
       gateOn: (_id: string, time: number) => gates.push({ kind: 'on', time }),
       gateOff: (_id: string, time: number) => gates.push({ kind: 'off', time }),
       setSequencePitch: (_id: string, value: number, _scale: number, _filter: number, time: number, transition: number) => pitches.push({ value, time, transition }),
-      resetSequencePitch: () => {}, cancelScheduledGates: () => {}
+      resetSequencePitch: () => {}, setSequencePitchMuted: () => {}, cancelScheduledGates: () => {}
     } as unknown as AudioEngine;
     const song = new SongTransport(() => engine, async () => {}, () => {}, () => {});
     expect(song.preview().map(section => section.duration)).toEqual([3, 5]);
@@ -112,7 +112,7 @@ describe('SongTransport', () => {
       getPitchRecording: (_id: string, user: string) => user === 'user-2' ? { durationSec: 4, selectionStartSec: 0, selectionEndSec: 4,
         points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: 4, valueNormalized: 1 }] } : null,
       getGateMuted: () => false, getPitchMuted: () => false, getSequenceSettings: () => ({ pitchMode: { kind: 'smooth' }, pitchScaleCent: 200, filterAmountCent: 0 }),
-      gateOn: () => {}, gateOff: () => {}, resetSequencePitch: () => {}, cancelScheduledGates: () => {}
+      gateOn: () => {}, gateOff: () => {}, resetSequencePitch: () => {}, setSequencePitchMuted: () => {}, cancelScheduledGates: () => {}
     } as unknown as AudioEngine;
     const song = new SongTransport(() => engine, async () => {}, () => {}, () => {});
     expect(song.preview().map(({ user, offset, duration }) => ({ user, offset, duration }))).toEqual([
@@ -124,7 +124,13 @@ describe('SongTransport', () => {
     ]);
     settings.bpm = 60;
     expect(song.preview().map(section => section.duration)).toEqual([4, 8]);
+    settings.speed = 2;
+    expect(song.preview().map(section => section.duration)).toEqual([4, 8]);
+    settings.bpm = 30;
+    expect(song.preview().map(section => section.duration)).toEqual([8, 16]);
     settings.timingMode = 'original';
+    expect(song.preview().map(section => section.duration)).toEqual([.5, 1.5]);
+    settings.speed = 1;
     expect(song.preview().map(section => section.duration)).toEqual([1, 3]);
     song.stop(); vi.unstubAllGlobals();
   });
@@ -151,7 +157,7 @@ describe('SongTransport', () => {
       getGateRecording: (_id: string, user: string) => user === 'user-1' ? { durationSec: 4, selectionStartSec: 0, selectionEndSec: 4,
         gates: [{ onSec: .5, offSec: .7 }, { onSec: 3, offSec: 3.2 }] } : null,
       getPitchRecording: () => null, getGateMuted: () => false, getPitchMuted: () => false,
-      gateOn: (_id: string, time: number) => onTimes.push(time), gateOff: () => {}, resetSequencePitch: () => {},
+      gateOn: (_id: string, time: number) => onTimes.push(time), gateOff: () => {}, resetSequencePitch: () => {}, setSequencePitchMuted: () => {},
       cancelScheduledGates: () => {}
     } as unknown as AudioEngine;
     const song = new SongTransport(() => engine, async () => {}, () => {}, () => {});
@@ -160,7 +166,7 @@ describe('SongTransport', () => {
     expect(onTimes).toEqual([.33, 1.58, 2.33, 3.58]);
     song.stop(); vi.unstubAllGlobals();
   });
-  it('combines BPM and Song Speed and retimes a playing USER without retriggering its held Gate', async () => {
+  it('follows BPM alone in Bars (Song Speed ignored) and retimes a playing USER without retriggering its held Gate', async () => {
     let tick = () => {};
     vi.stubGlobal('window', { setInterval: (callback: () => void) => { tick = callback; return 1; }, clearInterval: () => {} });
     const context = { currentTime: 0, state: 'running' };
@@ -177,7 +183,7 @@ describe('SongTransport', () => {
       getGateMuted: () => false, getPitchMuted: () => false,
       gateOn: (_id: string, time: number) => onTimes.push(time), gateOff: (_id: string, time: number) => offTimes.push(time),
       setSequencePitch: (_id: string, value: number, _scale: number, _filter: number, time: number, transition: number) => pitches.push({ value, time, transition }),
-      resetSequencePitch: () => {}, cancelScheduledGates: () => {},
+      resetSequencePitch: () => {}, setSequencePitchMuted: () => {}, cancelScheduledGates: () => {},
       cancelSongFuture: (_id: string, time: number) => { cancelled.push(time); for (let i = offTimes.length - 1; i >= 0; i -= 1)
         if (offTimes[i]! > time) offTimes.splice(i, 1); }, holdSequencePitch: () => 0
     } as unknown as AudioEngine;
@@ -185,7 +191,7 @@ describe('SongTransport', () => {
     await song.play(); context.currentTime = .04; tick();
     expect(onTimes).toEqual([.08]);
     context.currentTime = .5; tick();
-    settings.bpm = 240; settings.speed = 2;
+    settings.bpm = 480; settings.speed = 2;
     expect(song.preview()[0]!.duration).toBe(.5);
     song.updateTiming();
     expect(song.position()?.user).toBe(1);
@@ -195,6 +201,50 @@ describe('SongTransport', () => {
     expect(pitches.some(pitch => pitch.time === .5 && pitch.value === 1 && Math.abs(pitch.transition - .395) < 1e-9)).toBe(true);
     context.currentTime = .60; tick();
     expect(offTimes).toEqual([.08, .645]);
+    song.stop(); vi.unstubAllGlobals();
+  });
+  it('keeps the Song clock through a live lane Mute and resumes inside a held Gate on unmute', async () => {
+    let tick = () => {};
+    vi.stubGlobal('window', { setInterval: (callback: () => void) => { tick = callback; return 1; }, clearInterval: () => {} });
+    const context = { currentTime: 0, state: 'running' };
+    const muted = { gate: false, pitch: false };
+    const onTimes: number[] = [], offTimes: number[] = [], cancelled: number[] = [];
+    const pitchMute: Array<{ muted: boolean; time?: number }> = [];
+    const engine = {
+      context, getSongSettings: () => ({ bpm: 120, speed: 1, bars: [1, 1, 1, 1, 1, 1, 1, 1], timingMode: 'bars' }),
+      getChannelIds: () => ['1'], getChannel: () => ({}),
+      getGateRecording: (_id: string, user: string) => user === 'user-1' ? { durationSec: 2, selectionStartSec: 0,
+        selectionEndSec: 2, gates: [{ onSec: 0, offSec: 1 }, { onSec: 1.5, offSec: 1.9 }] } : null,
+      getPitchRecording: (_id: string, user: string) => user === 'user-1' ? { durationSec: 2, selectionStartSec: 0,
+        selectionEndSec: 2, points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: 2, valueNormalized: 1 }] } : null,
+      getSequenceSettings: () => ({ pitchMode: { kind: 'smooth' }, pitchScaleCent: 200, filterAmountCent: 0 }),
+      getGateMuted: () => muted.gate, getPitchMuted: () => muted.pitch,
+      gateOn: (_id: string, time: number) => onTimes.push(time), gateOff: (_id: string, time: number) => offTimes.push(time),
+      setSequencePitch: () => {}, resetSequencePitch: () => {}, cancelScheduledGates: () => {},
+      cancelScheduledGatesFrom: (_id: string, time: number) => cancelled.push(time),
+      setSequencePitchMuted: (_id: string, value: boolean, time?: number) => pitchMute.push({ muted: value, time })
+    } as unknown as AudioEngine;
+    const song = new SongTransport(() => engine, async () => {}, () => {}, () => {});
+    await song.play(); context.currentTime = .04; tick();
+    expect(onTimes).toEqual([.08]);
+    context.currentTime = .3; tick();
+    muted.gate = true; muted.pitch = true;
+    song.laneMutedChanged('1', 'gate'); song.laneMutedChanged('1', 'pitch');
+    expect(cancelled).toEqual([.3]);
+    expect(offTimes.at(-1)).toBe(.3);
+    expect(pitchMute.at(-1)).toEqual({ muted: true, time: undefined });
+    context.currentTime = 1.6; tick();
+    // The muted second Gate (1.58 s) is not sent, but the clock and cursor advance.
+    expect(onTimes).toEqual([.08]);
+    expect(song.lanePosition('1', 'gate', 'user-1')?.elapsed).toBeCloseTo(1.52);
+    expect(song.lanePosition('1', 'gate', 'user-2')).toBeNull();
+    // Next lap: the section reset re-applies this Pattern's Pitch Mute at the boundary.
+    context.currentTime = 2.1; tick();
+    expect(onTimes).toEqual([.08]);
+    expect(pitchMute.some(item => item.muted && Math.abs(item.time! - 2.08) < 1e-9)).toBe(true);
+    context.currentTime = 2.2; muted.gate = false;
+    song.laneMutedChanged('1', 'gate');
+    expect(onTimes).toEqual([.08, 2.2]);
     song.stop(); vi.unstubAllGlobals();
   });
 });

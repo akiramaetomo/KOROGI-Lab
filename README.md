@@ -1,8 +1,8 @@
-# KOROGI-Lab 0.3.0-rc.1
+# KOROGI-Lab 0.3.0-rc.2
 
 KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するWeb Audio研究用アプリです。8つの独立したTimbreを、共通のNear／Far空間処理へ送って重ねられます。
 
-現在の公開候補は **0.3.0-rc.1** です。実機操作・聴感の受入前のため、安定版とは区別します。[GitHub PagesでKOROGI-Labを開く](https://akiramaetomo.github.io/KOROGI-Lab/)。
+現在の公開候補は **0.3.0-rc.2** です。実機操作・聴感の受入前のため、安定版とは区別します。[GitHub PagesでKOROGI-Labを開く](https://akiramaetomo.github.io/KOROGI-Lab/)。
 
 ## 特徴
 - 秋の虫の鳴き声に寄せた目的指向のシンセサイザ
@@ -25,7 +25,8 @@ KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するW
 - TimbreごとのL/R Pan、Level、Mute、Near／Far送信
 - 共通Near／Farバス、各FX2／FX3、Bus Gain、Output Balance、Master、Limiter
 - Manual／Auto／USER 1～8のGate・Pitch再生と記録、SongのSeconds／Bars再生
-- Song Speed、BPMと小節数による選択区間の比例配置、USERパターンのコピー
+- BPM（30～480）と小節数による選択区間の比例配置（Bars）、Seconds方式のSong Speed、Patternのコピー
+- Gate／PitchレーンのMute（出力だけを止め、Loopの時計と位置は進め続ける）
 - Bars方式のGateクオンタイズ（1/4～1/32、ONのみ／ON-OFF、Gap、Undo／Redo）
 - SEQUENCEのSeparate（独立GateボタンとPitch専用スライダ）
 - エディットカードを1列に最大3枚まで縦積み、OFFのカードはグレー表示

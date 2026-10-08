@@ -38,6 +38,7 @@ import type {
 
 type BaseGateEvent = { kind: 'on'; time: number; amp: AmplitudeEnvelopeSettings; pitch: PitchEnvelopeSettings; filter: FilterEnvelopeSettings }
   | { kind: 'off'; time: number };
+type StructureItem = 'osc1' | 'osc2' | 'filter1' | 'filter2';
 
 function cloneDefaults(): ChannelSettings {
   return structuredClone(DEFAULT_CHANNEL_SETTINGS);
@@ -66,6 +67,9 @@ export class ChannelSynth {
   private readonly filter2: FilterChain;
   private readonly ampEnvelope: AmplitudeEnvelope;
   private readonly structureFade: GainNode;
+  /** Latest requested structural value per item; one shared fade commits them together. */
+  private readonly pendingStructure = new Map<StructureItem, () => void>();
+  private structureCycle: Promise<void> | null = null;
   private readonly fxInputGain: GainNode;
   private readonly fx1: EffectSlot;
   private readonly osc1: SourceUnit;
@@ -80,6 +84,7 @@ export class ChannelSynth {
   private manualGateActive = false;
   private controllerGateHeld = false;
   private controllerPitchHeld = false;
+  private sequencePitchMuted = false;
   private disposed = false;
 
   constructor(
@@ -611,8 +616,9 @@ export class ChannelSynth {
   }
 
   async setOsc1Type(type: OscSourceType): Promise<void> {
-    if (type === this.settings.osc1.sourceType) return;
-    await this.performStructuralChange(() => {
+    // A pending request must still be replaced when the user returns to the committed type.
+    if (type === this.settings.osc1.sourceType && !this.pendingStructure.has('osc1')) return;
+    await this.requestStructuralChange('osc1', () => {
       this.settings.osc1.sourceType = type;
       this.osc1.setType(type);
       this.applyGlobalDetune(this.context.currentTime);
@@ -620,8 +626,8 @@ export class ChannelSynth {
   }
 
   async setOsc2Type(type: OscSourceType): Promise<void> {
-    if (type === this.settings.osc2.sourceType) return;
-    await this.performStructuralChange(() => {
+    if (type === this.settings.osc2.sourceType && !this.pendingStructure.has('osc2')) return;
+    await this.requestStructuralChange('osc2', () => {
       this.settings.osc2.sourceType = type;
       this.osc2.setType(type);
       this.applyGlobalDetune(this.context.currentTime);
@@ -684,7 +690,7 @@ export class ChannelSynth {
   }
 
   async setFilter1Structure(type: FilterType, order: FilterOrder): Promise<void> {
-    await this.performStructuralChange(() => {
+    await this.requestStructuralChange('filter1', () => {
       this.settings.filter1.type = type;
       this.settings.filter1.order = order;
       this.filter1.setType(type);
@@ -693,7 +699,7 @@ export class ChannelSynth {
   }
 
   async setFilter2Structure(type: FilterType, order: FilterOrder): Promise<void> {
-    await this.performStructuralChange(() => {
+    await this.requestStructuralChange('filter2', () => {
       this.settings.filter2.type = type;
       this.settings.filter2.order = order;
       this.filter2.setType(type);
@@ -755,7 +761,8 @@ export class ChannelSynth {
   setSequencePitch(normalized: number, pitchScaleCent: number, filterAmountCent: number, time = this.context.currentTime, portamentoSec = 0): void {
     if (![normalized, pitchScaleCent, filterAmountCent, time, portamentoSec].every(Number.isFinite)) throw new Error('Invalid sequence pitch automation.');
     const value = clamp(normalized, -1, 1);
-    this.sequencePitch.setTarget(value * clamp(pitchScaleCent, 0, P['sequence-pitch-scale'].max), time, portamentoSec);
+    // A negative Scale inverts the Pitch motion; Filter Amount keeps its own sign.
+    this.sequencePitch.setTarget(value * clamp(pitchScaleCent, P['sequence-pitch-scale'].min, P['sequence-pitch-scale'].max), time, portamentoSec);
     this.sequenceFilter.setTarget(value * clamp(filterAmountCent, P['sequence-filter-amount'].min, P['sequence-filter-amount'].max), time, portamentoSec);
   }
 
@@ -776,7 +783,7 @@ export class ChannelSynth {
     this.assertUsable();
     if (![normalized, pitchScaleCent, filterAmountCent, time, portamentoSec].every(Number.isFinite)) throw new Error('Invalid controller pitch.');
     const value = clamp(normalized, -1, 1);
-    this.controllerPitch.setTarget(value * clamp(pitchScaleCent, 0, P['sequence-pitch-scale'].max), time, portamentoSec);
+    this.controllerPitch.setTarget(value * clamp(pitchScaleCent, P['sequence-pitch-scale'].min, P['sequence-pitch-scale'].max), time, portamentoSec);
     this.controllerFilter.setTarget(value * clamp(filterAmountCent, P['sequence-filter-amount'].min, P['sequence-filter-amount'].max), time, portamentoSec);
   }
 
@@ -787,12 +794,33 @@ export class ChannelSynth {
     const now = this.context.currentTime;
     this.controllerPitchGain.gain.setValueAtTime(0, now);
     this.controllerFilterGain.gain.setValueAtTime(0, now);
-    this.sequencePitchGain.gain.setValueAtTime(1, now);
-    this.sequenceFilterGain.gain.setValueAtTime(1, now);
+    const route = this.sequencePitchMuted ? 0 : 1;
+    this.sequencePitchGain.gain.setValueAtTime(route, now);
+    this.sequenceFilterGain.gain.setValueAtTime(route, now);
   }
 
+  /**
+   * Pitch lane Mute: the sequence automation keeps running (its clock and cursor continue),
+   * but its Pitch and Filter output is disconnected, like Timbre Mute at the fader.
+   * A future time is used by Song at a section boundary; otherwise the change is smoothed now.
+   */
+  setSequencePitchMuted(muted: boolean, time?: number): void {
+    this.assertUsable();
+    this.sequencePitchMuted = muted;
+    if (this.controllerPitchHeld) return;
+    const route = muted ? 0 : 1, now = this.context.currentTime;
+    for (const gain of [this.sequencePitchGain.gain, this.sequenceFilterGain.gain]) {
+      if (time !== undefined && time > now) gain.setValueAtTime(route, time);
+      else smoothAudioParam(gain, route, now, PARAM_SMOOTH_SEC);
+    }
+  }
+
+  isSequencePitchMuted(): boolean { return this.sequencePitchMuted; }
+
+  /** Effective Sequence Filter output: zero while the Pitch lane is muted. */
   getSequenceFilterCent(time = this.context.currentTime): number {
-    return this.controllerPitchHeld ? this.controllerFilter.valueAt(time) : this.sequenceFilter.valueAt(time);
+    if (this.controllerPitchHeld) return this.controllerFilter.valueAt(time);
+    return this.sequencePitchMuted ? 0 : this.sequenceFilter.valueAt(time);
   }
 
   /** Legacy OSC-only cent entry; Sequence UI/transport use the normalized entry above. */
@@ -810,8 +838,10 @@ export class ChannelSynth {
     this.sequenceFilter.reset(time, transitionSec);
   }
 
+  /** Effective Sequence Pitch output: zero while the Pitch lane is muted. */
   getSequencePitchCent(time = this.context.currentTime): number {
-    return this.controllerPitchHeld ? this.controllerPitch.valueAt(time) : this.sequencePitch.valueAt(time);
+    if (this.controllerPitchHeld) return this.controllerPitch.valueAt(time);
+    return this.sequencePitchMuted ? 0 : this.sequencePitch.valueAt(time);
   }
 
   getDetunedFrequencyHz(oscillator: 1 | 2): number | null {
@@ -941,23 +971,36 @@ export class ChannelSynth {
     for (const listener of this.gateListeners) listener(event);
   }
 
-  async performStructuralChange(mutator: () => void): Promise<void> {
-    await this.performFadedChange(this.structureFade, mutator);
+  /**
+   * Requests made during one fade are committed together; a later request for the same item
+   * replaces the earlier one, so the final value always follows the last request.
+   */
+  private requestStructuralChange(item: StructureItem, mutator: () => void): Promise<void> {
+    if (this.disposed) return Promise.resolve();
+    this.pendingStructure.set(item, mutator);
+    this.structureCycle ??= this.runStructureCycle();
+    return this.structureCycle;
   }
 
-  private async performFadedChange(fade: GainNode, mutator: () => void): Promise<void> {
-    if (this.disposed) return;
-    const start = this.context.currentTime;
-    smoothAudioParam(fade.gain, 0, start, STRUCTURE_FADE_SEC);
-    await new Promise<void>((resolve) => globalThis.setTimeout(resolve, STRUCTURE_FADE_SEC * 1000 + 2));
-    if (this.disposed) return;
+  /** The cycle alone owns structureFade: fade out, commit every pending item, fade back in. */
+  private async runStructureCycle(): Promise<void> {
+    try {
+      smoothAudioParam(this.structureFade.gain, 0, this.context.currentTime, STRUCTURE_FADE_SEC);
+      await new Promise<void>((resolve) => globalThis.setTimeout(resolve, STRUCTURE_FADE_SEC * 1000 + 2));
+      if (this.disposed) return;
 
-    mutator();
+      const mutators = [...this.pendingStructure.values()];
+      this.pendingStructure.clear();
+      for (const mutator of mutators) mutator();
 
-    const resume = this.context.currentTime;
-    fade.gain.cancelScheduledValues(resume);
-    fade.gain.setValueAtTime(0, resume);
-    fade.gain.linearRampToValueAtTime(1, resume + STRUCTURE_FADE_SEC);
+      const resume = this.context.currentTime;
+      this.structureFade.gain.cancelScheduledValues(resume);
+      this.structureFade.gain.setValueAtTime(0, resume);
+      this.structureFade.gain.linearRampToValueAtTime(1, resume + STRUCTURE_FADE_SEC);
+    } finally {
+      this.pendingStructure.clear();
+      this.structureCycle = null;
+    }
   }
 
   private assertUsable(): void {

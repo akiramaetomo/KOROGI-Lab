@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.0-rc.2 — 2026-10-09 — Sequence Mute and Song BPM Pages candidate
+
+- Lane Mute silences output only; Gate/Pitch loop clocks, cursors and phase keep running in Play, Play All and Song.
+- Song BPM is 30–480; Bars timing shows a BPM field and slider in place of Song Speed, which now applies to Seconds timing only.
+- Move Copy Pattern into the PATTERN / RECORD / PLAY panel, glow the current Song Pattern, and note when looping timbres drift.
+- Pitch Scale spans −2400…+2400 cent symmetrically; Record Write defaults to Overdub; Gate Quantize returns above the Gate timeline.
+- Keep the last OSC/Filter structure request during the shared fade, and report the legacy PEnv notice only for timbres before v10.
+- Keep timbre-v17 / session-v20.
+- Publish as a release candidate pending real-device and listening acceptance.
+
 ## 0.3.0-rc.1 — 2026-10-07 — Sequence editing and layout Pages candidate
 
 - Add Gate quantization (Bars timing), Separate Gate control with controller lane ownership, and refined loop recording takes.

@@ -49,9 +49,12 @@ test('separate preset states, pitch-only Play, mute, Clear, and manual Trigger',
   expect((await saveTimbre(page)).pitchPatterns[0].recording).toEqual(timbre.pitchPatterns[0].recording);
   await page.locator('#pitch-mute').click();
   await expect(page.locator('#pitch-user-1 small')).toHaveText('0');
+  // A muted lane still plays silently so its cursor keeps moving; its Pitch output is disconnected.
+  await page.locator('#sequence-panel').click();
+  await expect(page.locator('#sequence-panel')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#patch-status')).not.toContainText('no Sequence data');
   await page.locator('#sequence-panel').click();
   await expect(page.locator('#sequence-panel')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#patch-status')).toContainText('no Sequence data');
   await page.locator('#record-gate').scrollIntoViewIfNeeded();
   const box = await page.locator('#record-gate').boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
@@ -74,8 +77,10 @@ test('Gate Pattern mute is editable while Auto is selected and never mutes Auto'
   await page.locator('#sequence-panel').click();
   await expect(page.locator('#sequence-panel')).toHaveAttribute('aria-pressed', 'true');
   await page.locator('#source-recorded').click();
-  await expect(page.locator('#sequence-panel')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#patch-status')).toContainText('no Sequence data');
+  // Manual plays the muted Gate Pattern silently: the clock runs, no Gate ON is sent.
+  await expect(page.locator('#sequence-panel')).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.locator('#patch-status')).not.toContainText('no Sequence data');
+  await page.locator('#sequence-panel').click();
   expect((await saveTimbre(page)).gatePatterns[0].muted).toBe(true);
 });
 
@@ -358,6 +363,8 @@ test('linked Gate recording reaches another lap and monitors the completed take'
   timbre.gatePatterns[0].recording = { durationSec: 2, selectionStartSec: .2, selectionEndSec: 1.2,
     gates: [{ onSec: .1, offSec: .15 }, { onSec: .8, offSec: .85 }] };
   await loadTimbre(page, timbre); await page.locator('#trigger-menu').click();
+  // The completed take replaces the old Gates (Write defaults to Overdub).
+  await page.locator('#record-write-mode + .segmented-choice [data-value="replace"]').click();
   await page.locator('#sequence-link').click();
   await page.evaluate(async () => {
     const { AudioEngine } = await import('/src/audio/core/AudioEngine.ts');

@@ -23,9 +23,9 @@ const SAFETY: Record<ParameterKey, { min: number; max: number }> = {
   'burst-group-period': { min: 10, max: 6_000 }, 'burst-group-jitter': { min: 0, max: 50 },
   'record-length': { min: 1, max: 300 },
   'gate-quantize-gap': { min: 1, max: 20 },
-  'song-bpm': { min: 40, max: 240 }, 'song-speed': { min: .25, max: 4 }, 'song-bars': { min: 1, max: 300 },
+  'song-bpm': { min: 30, max: 480 }, 'song-speed': { min: .25, max: 4 }, 'song-bars': { min: 1, max: 300 },
   'sequence-filter-amount': { min: -7_200, max: 7_200 },
-  'sequence-pitch-input': { min: -1, max: 1 }, 'sequence-pitch-scale': { min: 0, max: 2_400 },
+  'sequence-pitch-input': { min: -1, max: 1 }, 'sequence-pitch-scale': { min: -2_400, max: 2_400 },
   'sequence-pitch-steps': { min: 0, max: 24 }, 'sequence-portamento': { min: 0, max: 1_000 },
   'sequence-record-speed': { min: .25, max: 4 }, 'sequence-play-speed': { min: .25, max: 4 },
   // tanh waveshaping has bounded output even at 48 dB input drive.

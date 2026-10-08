@@ -94,8 +94,10 @@ const SCALE_SEMITONES: Record<Exclude<PitchScaleMode, 'equal' | 'just-major'>, r
 };
 const JUST_MAJOR = [1, 9 / 8, 5 / 4, 4 / 3, 3 / 2, 5 / 3, 15 / 8];
 
-export function pitchPositions(stepsPerSide: number, scale: PitchScaleMode = 'equal', pitchScaleCent = 200): number[] {
+export function pitchPositions(stepsPerSide: number, scale: PitchScaleMode = 'equal', signedScaleCent = 200): number[] {
   const steps = Math.round(clamp(stepsPerSide, 0, 24));
+  // Positions are symmetric, so a negative (inverting) Scale uses the same normalized steps.
+  const pitchScaleCent = Math.abs(signedScaleCent);
   if (steps === 0) return [];
   if (scale === 'equal') return Array.from({ length: steps * 2 + 1 }, (_, i) => (i - steps) / steps);
   // With Scale=0, preserve the independent Filter Amount's normalized motion.

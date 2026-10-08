@@ -22,6 +22,9 @@ describe('sequence pitch data boundary', () => {
       pitchMode: { kind: 'stepped', stepsPerSide: 12, scale: 'equal', portamentoSec: 5 }, recordSpeed: .25, playSpeed: 4
     });
     expect(() => normalizeSequenceSettings({ ...defaultSequenceSettings(), pitchMode: { kind: 'stepped', stepsPerSide: 25, portamentoSec: 0 } })).toThrow('pitch mode');
+    // A negative Scale (inverted Pitch motion) is kept and bounded at −2400.
+    expect(normalizeSequenceSettings({ ...defaultSequenceSettings(), pitchScaleCent: -1200 }).pitchScaleCent).toBe(-1200);
+    expect(normalizeSequenceSettings({ ...defaultSequenceSettings(), pitchScaleCent: -3000 }).pitchScaleCent).toBe(-2400);
   });
 
   it('validates complete ordered pitch takes without changing performance data', () => {
@@ -50,6 +53,9 @@ describe('sequence pitch data boundary', () => {
     expect(quantizePitchValue(.33, 7, 'just-major', 1200)).toBeCloseTo(Math.log2(5 / 4), 8);
     expect(quantizePitchValue(.37, 0, 'minor-blues', 1200)).toBe(.37);
     expect(quantizePitchValue(.37, 7, 'major', 0)).toBe(.37);
+    // An inverting (negative) Scale uses the same symmetric normalized positions.
+    expect(pitchPositions(7, 'major', -1200)).toEqual(pitchPositions(7, 'major', 1200));
+    expect(quantizePitchValue(.37, 7, 'major', -1200)).toBe(1 / 3);
   });
 
   it('preserves legacy glides and validates the Wide filter range', () => {

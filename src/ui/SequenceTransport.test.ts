@@ -20,7 +20,7 @@ describe('SequenceTransport timing', () => {
         selectionEndSec: id === '1' ? 1 : 2, gates: [{ onSec: 0, offSec: .2 }] }),
       getPitchRecording: () => ({ durationSec: 1.5, selectionStartSec: 0, selectionEndSec: 1.5,
         points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: 1.5, valueNormalized: 0 }] }),
-      gateOn: () => {}, gateOff: () => {}, cancelScheduledGates: () => {}, resetSequencePitch: () => {}, setSequencePitch: () => {}
+      gateOn: () => {}, gateOff: () => {}, cancelScheduledGates: () => {}, resetSequencePitch: () => {}, setSequencePitchMuted: () => {}, setSequencePitch: () => {}
     } as unknown as AudioEngine;
     const transport = new SequenceTransport(() => engine, async () => {}, () => {}, () => {}, () => {});
     await transport.playAll();
@@ -28,7 +28,10 @@ describe('SequenceTransport timing', () => {
     expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.8);
     expect(transport.position('1', 'pitch')?.elapsed).toBeCloseTo(.3);
     expect(transport.position('2', 'gate')?.elapsed).toBeCloseTo(1.8);
+    // 1 s, 1.5 s and 2 s loops drift apart: Play All warns.
+    expect(transport.playAllMismatch()).toBe(true);
     transport.stopAll();
+    expect(transport.playAllMismatch()).toBe(false);
   });
   it('retains independent User Gate and Pitch phases across a live Play Speed change', async () => {
     vi.stubGlobal('window', { setInterval: () => 1, clearInterval: () => {} });
@@ -54,7 +57,7 @@ describe('SequenceTransport timing', () => {
       cancelScheduledGates: () => {},
       setSequencePitch: (_id: string, normalized: number, scale: number, filterAmount: number, time: number, transition: number) => calls.pitches.push({ cents: normalized * scale, filterCent: normalized * filterAmount, time, transition }),
       holdSequencePitch: (_id: string, time: number) => { calls.pitchHolds.push(time); return 80; },
-      resetSequencePitch: () => {}
+      resetSequencePitch: () => {}, setSequencePitchMuted: () => {}
     } as unknown as AudioEngine;
     const transport = new SequenceTransport(() => engine, async () => {}, () => {}, () => {}, () => {});
 
@@ -91,7 +94,7 @@ describe('SequenceTransport timing', () => {
       getGateMuted: () => false, getPitchMuted: () => false,
       getGateRecording: () => recording, getPitchRecording: () => null,
       gateOn: (_id: string, time: number) => gateOns.push(time), gateOff: () => {},
-      cancelScheduledGates: () => {}, cancelScheduledGatesFrom: () => {}, resetSequencePitch: () => {}
+      cancelScheduledGates: () => {}, cancelScheduledGatesFrom: () => {}, resetSequencePitch: () => {}, setSequencePitchMuted: () => {}
     } as unknown as AudioEngine;
     const transport = new SequenceTransport(() => engine, async () => {}, () => {}, () => {}, () => {});
 
@@ -126,7 +129,7 @@ describe('SequenceTransport timing', () => {
       getGateRecording: () => ({ durationSec: 4, selectionStartSec: 1, selectionEndSec: 2, gates: [{ onSec: 3, offSec: 3.5 }] }),
       getPitchRecording: () => null,
       gateOn: (_id: string, time: number) => gateOns.push(time), gateOff: () => {},
-      cancelScheduledGates: () => {}, resetSequencePitch: () => {}
+      cancelScheduledGates: () => {}, resetSequencePitch: () => {}, setSequencePitchMuted: () => {}
     } as unknown as AudioEngine;
     const transport = new SequenceTransport(() => engine, async () => {}, () => {}, () => {}, () => {});
 
@@ -136,5 +139,75 @@ describe('SequenceTransport timing', () => {
     expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.5, 9);
     expect(gateOns).toEqual([]);
     transport.stop('1');
+  });
+  it('does not warn when every playing timbre loops with the same real period', async () => {
+    vi.stubGlobal('window', { setInterval: () => 1, clearInterval: () => {} });
+    const context = { currentTime: 0, state: 'running' };
+    const synths = { '1': {} as ChannelSynth, '2': {} as ChannelSynth };
+    const engine = {
+      context, getChannelIds: () => ['1', '2'], getChannel: (id: '1' | '2') => synths[id],
+      // Timbre 2 loops 2 s at Play Speed 2, the same 1 s real period as Timbre 1.
+      getSequenceSelection: (id: string) => ({ gateMode: 'user', gateUserId: 'user-1', pitchUserId: 'user-1', recordSpeed: 1, playSpeed: id === '2' ? 2 : 1 }),
+      getSequenceSettings: (id: string) => ({ pitchMode: { kind: 'smooth' }, pitchScaleCent: 200, filterAmountCent: 0, filterAmountWide: false, recordSpeed: 1, playSpeed: id === '2' ? 2 : 1 }),
+      getGateMuted: () => false, getPitchMuted: () => false,
+      getGateRecording: (id: string) => ({ durationSec: id === '1' ? 1 : 2, selectionStartSec: 0,
+        selectionEndSec: id === '1' ? 1 : 2, gates: [{ onSec: 0, offSec: .2 }] }),
+      getPitchRecording: () => null,
+      gateOn: () => {}, gateOff: () => {}, cancelScheduledGates: () => {}, resetSequencePitch: () => {}, setSequencePitchMuted: () => {}
+    } as unknown as AudioEngine;
+    const transport = new SequenceTransport(() => engine, async () => {}, () => {}, () => {}, () => {});
+    await transport.playAll();
+    expect(transport.playingPeriods().map(item => item.seconds)).toEqual([1, 1]);
+    expect(transport.playAllMismatch()).toBe(false);
+    transport.stopAll();
+  });
+  it('keeps the loop clock through lane Mute, sends no muted Gate ON and resumes at the current phase', async () => {
+    const ticks: Array<() => void> = [];
+    vi.stubGlobal('window', { setInterval: (tick: () => void) => { ticks.push(tick); return 1; }, clearInterval: () => {} });
+    const context = { currentTime: 0, state: 'running' };
+    const synth = { isAutoTriggerRunning: () => false } as ChannelSynth;
+    const muted = { gate: true, pitch: true };
+    const gateOns: number[] = [], gateOffs: number[] = [], cancels: number[] = [];
+    const pitchMute: boolean[] = [];
+    const engine = {
+      context, getChannelIds: () => ['1'], getChannel: (id: string) => id === '1' ? synth : undefined,
+      getSequenceSelection: () => ({ gateMode: 'user', gateUserId: 'user-1', pitchUserId: 'user-1', recordSpeed: 1, playSpeed: 1 }),
+      getSequenceSettings: () => ({ pitchMode: { kind: 'smooth' }, pitchScaleCent: 200, filterAmountCent: 0, filterAmountWide: false, recordSpeed: 1, playSpeed: 1 }),
+      getGateMuted: () => muted.gate, getPitchMuted: () => muted.pitch,
+      getGateRecording: () => ({ durationSec: 1, selectionStartSec: 0, selectionEndSec: 1, gates: [{ onSec: 0, offSec: .5 }] }),
+      getPitchRecording: () => ({ durationSec: 1, selectionStartSec: 0, selectionEndSec: 1,
+        points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: 1, valueNormalized: 1 }] }),
+      gateOn: (_id: string, time: number) => gateOns.push(time), gateOff: (_id: string, time: number) => gateOffs.push(time),
+      cancelScheduledGates: () => {}, cancelScheduledGatesFrom: (_id: string, time: number) => cancels.push(time),
+      setSequencePitch: () => {}, resetSequencePitch: () => {},
+      setSequencePitchMuted: (_id: string, value: boolean) => pitchMute.push(value)
+    } as unknown as AudioEngine;
+    const transport = new SequenceTransport(() => engine, async () => {}, () => {}, () => {}, () => {}, () => {});
+
+    // Both lanes muted still play: the clock runs silently instead of reporting no Sequence data.
+    await transport.play('1');
+    expect(transport.isPlaying('1')).toBe(true);
+    expect(pitchMute).toEqual([true]);
+    context.currentTime = 1.3; ticks.forEach(tick => tick());
+    expect(gateOns).toEqual([]);
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.22, 9);
+    expect(transport.position('1', 'pitch')?.elapsed).toBeCloseTo(.22, 9);
+
+    // Unmute inside a Gate: ON now, phase unchanged.
+    muted.gate = false; muted.pitch = false;
+    transport.laneMutedChanged('1', 'gate'); transport.laneMutedChanged('1', 'pitch');
+    expect(gateOns).toEqual([1.3]);
+    expect(pitchMute).toEqual([true, false]);
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.22, 9);
+
+    // Mute again: the held Gate is released now and the clock keeps going.
+    context.currentTime = 1.4; muted.gate = true;
+    transport.laneMutedChanged('1', 'gate');
+    expect(cancels).toEqual([1.4]); expect(gateOffs.at(-1)).toBe(1.4);
+    context.currentTime = 2.2; ticks.forEach(tick => tick());
+    expect(gateOns).toEqual([1.3]);
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.12, 9);
+    transport.stop('1');
+    expect(pitchMute.at(-1)).toBe(false);
   });
 });

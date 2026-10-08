@@ -14,6 +14,7 @@ type Mode = 'idle' | 'starting' | 'recording';
 type SelectionEdge = 'start' | 'end';
 type TimelineLane = 'gate' | 'pitch';
 type WriteMode = 'replace' | 'overdub';
+type SongLanePosition = (id: string, lane: TimelineLane, patternId: UserPatternId) => ReturnType<SequenceTransport['position']>;
 
 function timeText(seconds: number): string {
   const centiseconds = Math.floor(Math.max(0, seconds) * 100);
@@ -21,7 +22,8 @@ function timeText(seconds: number): string {
 }
 
 function sourceLabel(id: UserPatternId): string { return `Pattern ${id.slice(-1)}`; }
-const SCALE_STOPS = [0, 200, 400, 600, 1200, 2400] as const;
+// Negative Scale inverts the Pitch motion (higher input → lower pitch).
+const SCALE_STOPS = [-2400, -1200, -600, -400, -200, 0, 200, 400, 600, 1200, 2400] as const;
 const MOTION_STORAGE_KEY = 'KOROGI-Lab/sequence-slide-gate-motion-v1';
 const STOP_TIME_STORAGE_KEY = 'KOROGI-Lab/sequence-slide-gate-stop-time-v1';
 const QUANTIZE_STORAGE_KEY = 'KOROGI-Lab/gate-quantize-options-v1';
@@ -79,7 +81,8 @@ export class TriggerRecorder {
   private pitchLapCapturing = false;
   private pitchPunchStart: number | null = null;
   private pitchMonitorNeedsUpdate = false;
-  private writeMode: WriteMode = 'replace';
+  private writeMode: WriteMode = 'overdub';
+  private songPosition: SongLanePosition = () => null;
   private gateWasEmpty = false;
   private pitchWasEmpty = false;
   private centerHandled = false;
@@ -164,7 +167,8 @@ export class TriggerRecorder {
   constructor(private readonly engine: () => AudioEngine | null, private readonly selectedId: () => string,
     private readonly ensureRunning: (forceAttempt?: boolean) => Promise<void>, private readonly prepareTarget: (id: string) => void,
     private readonly lockTarget: (id: string | null, lane: RecordingLane) => void, private readonly transport: SequenceTransport,
-    private readonly beforeSongEdit: () => void, private readonly songSettingsChanged: () => void) {
+    private readonly beforeSongEdit: () => void, private readonly songSettingsChanged: () => void,
+    private readonly songLaneMuted: (id: string, lane: TimelineLane) => void = () => {}) {
     this.length.value = String(P['record-length'].defaultValue);
     this.length.setAttribute('aria-label', `Record length in seconds, ${P['record-length'].min} to ${P['record-length'].max}`);
     this.toggle.addEventListener('click', () => { if (this.mode === 'recording') this.finishRecording(); else if (this.mode === 'idle') void this.beginRecording(); });
@@ -356,9 +360,19 @@ export class TriggerRecorder {
   lockedId(): string | null { return this.targetId; }
   discardQuantizeHistory(): void { this.quantizeHistory = null; this.gateEditRange = null; }
 
+  /** Song supplies the cursor for the displayed Patterns while it plays them. */
+  setSongPosition(source: SongLanePosition): void { this.songPosition = source; }
+
   refreshClock(): void {
     const id = this.targetId ?? this.selectedId();
-    if (this.mode === 'recording' || this.transport.position(id, 'gate') || this.transport.position(id, 'pitch')) this.updateClock();
+    if (this.mode === 'recording' || this.lanePosition(id, 'gate') || this.lanePosition(id, 'pitch')) this.updateClock();
+  }
+
+  private lanePosition(id: string, lane: TimelineLane): ReturnType<SequenceTransport['position']> {
+    const own = this.transport.position(id, lane);
+    if (own || this.mode === 'recording') return own;
+    const source = this.transport.source(id);
+    return this.songPosition(id, lane, lane === 'gate' ? source.gateUserId : source.pitchUserId);
   }
 
   refresh(): void {
@@ -1136,16 +1150,15 @@ export class TriggerRecorder {
     if (this.mode !== 'idle') return;
     const engine = this.engine(), id = this.selectedId(); if (!engine?.getChannel(id)) return;
     const source = this.transport.source(id);
+    // Mute applies live to Play, Play All and Song; it never stops a transport.
     if (lane === 'gate') {
       if (!engine.getGateRecording(id, source.gateUserId)) return;
-      this.beforeSongEdit();
       engine.setGateMuted(id, source.gateUserId, !engine.getGateMuted(id, source.gateUserId));
     } else {
       if (!engine.getPitchRecording(id, source.pitchUserId)) return;
-      this.beforeSongEdit();
       engine.setPitchMuted(id, source.pitchUserId, !engine.getPitchMuted(id, source.pitchUserId));
     }
-    this.transport.laneMutedChanged(id, lane); this.refresh();
+    this.transport.laneMutedChanged(id, lane); this.songLaneMuted(id, lane); this.refresh();
   }
 
   private clearRecording(lane: TimelineLane): void {
@@ -1155,8 +1168,8 @@ export class TriggerRecorder {
     const recording = lane === 'gate' ? engine.getGateRecording(id, patternId) : engine.getPitchRecording(id, patternId);
     if (!recording || !window.confirm(`Clear Timbre ${id} ${lane === 'gate' ? 'Gate' : 'Pitch'} ${sourceLabel(patternId)}?`)) return;
     this.beforeSongEdit();
-    if (lane === 'gate') { engine.setGateRecording(id, patternId, null); engine.setGateMuted(id, patternId, false); this.transport.laneMutedChanged(id, 'gate'); }
-    else { engine.setPitchRecording(id, patternId, null); engine.setPitchMuted(id, patternId, false); this.transport.laneMutedChanged(id, 'pitch'); }
+    if (lane === 'gate') { engine.setGateRecording(id, patternId, null); engine.setGateMuted(id, patternId, false); this.transport.laneCleared(id, 'gate'); }
+    else { engine.setPitchRecording(id, patternId, null); engine.setPitchMuted(id, patternId, false); this.transport.laneCleared(id, 'pitch'); }
     this.refresh();
   }
 
@@ -1270,7 +1283,7 @@ export class TriggerRecorder {
   }
 
   private updateClock(): void {
-    const id = this.targetId ?? this.selectedId(); const gatePosition = this.transport.position(id, 'gate'); const pitchPosition = this.transport.position(id, 'pitch');
+    const id = this.targetId ?? this.selectedId(); const gatePosition = this.lanePosition(id, 'gate'); const pitchPosition = this.lanePosition(id, 'pitch');
     const position = gatePosition ?? pitchPosition;
     const source = this.transport.source(id), engine = this.engine();
     const gateRecording = engine?.getChannel(id) ? engine.getGateRecording(id, source.gateUserId) : null;

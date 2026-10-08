@@ -17,7 +17,7 @@ test('Record Write controls and Patterns remain aligned across supported widths'
       const choices = selector => [...row.querySelectorAll(selector)].map(button => ({ box: rect(button), text: button.firstChild.textContent.trim(), fits: button.scrollWidth <= button.clientWidth + 1 }));
       const counter = row.querySelector('#record-counter');
       const counterText = document.createRange(); counterText.selectNodeContents(counter);
-      return { record: find('.trigger-user-group'), control: find('.record-performance'), newLength: find('#record-new-length'),
+      return { record: find('.trigger-user-group'), control: find('.record-performance'), newLength: find('#record-new-length'), copy: find('.record-copy'),
         recordButton: find('#record-toggle'), counterText: counterText.getBoundingClientRect(),
         write: choices('#record-write-mode + .segmented-choice button'), modes: choices('#record-mode + .segmented-choice button'),
         play: find('#sequence-panel'), speed: find('[data-numeric-control="sequence-play-speed"]'),
@@ -29,7 +29,11 @@ test('Record Write controls and Patterns remain aligned across supported widths'
     // counter over ● ▶ over Speed on the right, New Pattern Length along the bottom.
     expect(boxes.control.left).toBeGreaterThanOrEqual(boxes.record.left);
     expect(boxes.control.bottom).toBeLessThanOrEqual(boxes.write[0].box.top);
-    expect(boxes.record.height).toBeLessThanOrEqual(165);
+    // Copy Pattern sits right of New Pattern Length and wraps to one extra row only when the panel is too narrow.
+    const copyWrapped = boxes.copy.top >= boxes.newLength.bottom - 1;
+    if (!copyWrapped) expect(Math.abs((boxes.copy.top + boxes.copy.bottom) / 2 - (boxes.newLength.top + boxes.newLength.bottom) / 2)).toBeLessThanOrEqual(6);
+    expect(boxes.copy.bottom).toBeLessThanOrEqual(boxes.record.bottom);
+    expect(boxes.record.height - (copyWrapped ? boxes.copy.height + 6 : 0)).toBeLessThanOrEqual(165);
     expect(boxes.recordButton.width).toBe(64);
     expect(boxes.counterText.bottom).toBeLessThanOrEqual(boxes.recordButton.top);
     expect(boxes.play.left).toBeGreaterThanOrEqual(boxes.recordButton.right);
@@ -186,6 +190,22 @@ test('Length Lock and dt fit the iPad reference width and narrow local scroll', 
   expect(layout.scrollWidth).toBeLessThanOrEqual(layout.clientWidth + 1);
   expect(layout.lockRight).toBeLessThanOrEqual(layout.targetLeft);
   expect(layout.values.every(value => value.left >= value.areaLeft && value.right <= value.areaRight)).toBe(true);
+  // Second labels mark 0, the middle and the end of the full timeline; Start/End/dt sit left of Match on one row.
+  const ticks = await page.locator('.trigger-editor').evaluate(editor => ['gate', 'pitch'].map(lane => {
+    const area = editor.querySelector(`.${lane}-timeline-area`), rect = node => node.getBoundingClientRect();
+    const [zero, middle, end] = [...area.querySelectorAll('.record-ticks span')].map(rect);
+    const timeline = rect(area.querySelector('.record-timeline')), values = rect(area.querySelector('.record-selection-values'));
+    const button = rect(area.querySelector('.selection-bars-action')), ticksRow = rect(area.querySelector('.record-ticks'));
+    return { zero, middle, end, timeline, values, button, ticksRow };
+  }));
+  for (const lane of ticks) {
+    expect(Math.abs(lane.zero.left - lane.timeline.left)).toBeLessThanOrEqual(2);
+    expect(Math.abs((lane.middle.left + lane.middle.right) / 2 - (lane.timeline.left + lane.timeline.right) / 2)).toBeLessThanOrEqual(4);
+    expect(Math.abs(lane.end.right - lane.timeline.right)).toBeLessThanOrEqual(4);
+    expect(lane.values.top).toBeGreaterThanOrEqual(lane.ticksRow.bottom - 1);
+    expect(lane.values.right).toBeLessThanOrEqual(lane.button.left);
+    expect(Math.abs((lane.values.top + lane.values.bottom) / 2 - (lane.button.top + lane.button.bottom) / 2)).toBeLessThanOrEqual(8);
+  }
 
   await page.setViewportSize({ width: 390, height: 844 });
   layout = await measure();

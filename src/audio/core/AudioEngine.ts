@@ -248,6 +248,10 @@ export class AudioEngine {
     this.assertReady(); const strip = this.strip(id); strip.activate(); strip.synth.setSequencePitchCent(cents, time, portamentoSec);
   }
   holdSequencePitch(id: string, time = this.context.currentTime): number { this.assertReady(); return this.strip(id).synth.holdSequencePitch(time); }
+  /** Disconnect (or reconnect) the timbre's Sequence Pitch/Filter output without stopping its automation. */
+  setSequencePitchMuted(id: string, muted: boolean, time?: number): void {
+    if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.setSequencePitchMuted(muted, time);
+  }
   resetSequencePitch(id: string, time = this.context.currentTime, transitionSec = PARAM_SMOOTH_SEC): void {
     if (!this.disposed && !this.busy) this.graph.strips.get(id)?.synth.resetSequencePitch(time, transitionSec);
   }

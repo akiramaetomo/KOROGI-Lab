@@ -4,7 +4,7 @@ import { CommonSpaceEditor, prepareCommonSpaceCards, type CommonCardId } from '.
 import type { EditorCardId } from './model/editorLayout';
 import { DEFAULT_EDITOR_LAYOUT } from './model/editorLayout';
 import { AudioEngine } from './audio/core/AudioEngine';
-import { defaultBus, defaultSongSettings, defaultTimbre, DEFAULT_CHANNEL_MIX, LAB_SLOT_IDS, parseLabSession } from './model/documents';
+import { defaultBus, defaultSongSettings, defaultTimbre, DEFAULT_CHANNEL_MIX, LAB_SLOT_IDS, parseLabSessionWithNotices } from './model/documents';
 import { MixerPanel } from './ui/MixerPanel';
 import { TriggerRecorder } from './ui/TriggerRecorder';
 import { SequenceTransport } from './ui/SequenceTransport';
@@ -199,6 +199,7 @@ buildSegmentedSelects();
 
 const triggerButton = requireElement<HTMLButtonElement>('#trigger');
 const playAllButton = requireElement<HTMLButtonElement>('#play-all');
+const playAllWarning = requireElement<HTMLElement>('#loop-drift-warning');
 const fullscreenToggle = requireElement<HTMLButtonElement>('#fullscreen-toggle');
 const displayErrorElement = requireElement<HTMLElement>('#display-error');
 const statusElement = requireElement<HTMLButtonElement>('#status');
@@ -223,6 +224,9 @@ const songButton = requireElement<HTMLButtonElement>('#song-toggle');
 const songTimingSelect = requireElement<HTMLSelectElement>('#song-timing');
 const songBarsGroup = requireElement<HTMLFieldSetElement>('#song-bars-group');
 const songBpmInput = requireElement<HTMLInputElement>('#song-bpm');
+const songBpmSlider = requireElement<HTMLInputElement>('#song-bpm-slider');
+const songBpmRow = requireElement<HTMLElement>('#song-bpm-row');
+const songSpeedRow = requireElement<HTMLElement>('#song-speed-row');
 const recordBpmInput = requireElement<HTMLInputElement>('#record-bpm');
 const recordLengthMode = requireElement<HTMLSelectElement>('#record-length-mode');
 const songSpeedInput = requireElement<HTMLInputElement>('#song-speed');
@@ -314,7 +318,9 @@ const recorder = new TriggerRecorder(() => engine, () => mixer.selectedId, ensur
     mixer.protectSource(id);
     if (id) applyRecordingLock();
     else setAudioControlsEnabled(engine !== null && !loadingSession);
-  }, transport, () => { if (songTransport.isPlaying()) songTransport.stop(); }, syncSongSettings);
+  }, transport, () => { if (songTransport.isPlaying()) songTransport.stop(); }, syncSongSettings,
+  (id, lane) => songTransport.laneMutedChanged(id, lane));
+recorder.setSongPosition((id, lane, patternId) => songTransport.lanePosition(id, lane, patternId));
 function selectedChannel() { return engine?.getChannel(mixer.selectedId); }
 let gateState = false;
 let lastSongPreviewAt = 0;
@@ -341,6 +347,15 @@ function animateGate(): void {
   syncTransportControls();
   window.requestAnimationFrame(animateGate);
 }
+/** Play All loops each timbre independently; different real periods drift apart. Song shares one BPM clock. */
+function syncPlayAllWarning(): void {
+  const mismatch = transport.playAllMismatch();
+  if (playAllWarning.hidden !== !mismatch) playAllWarning.hidden = !mismatch;
+  if (!mismatch) return;
+  const detail = transport.playingPeriods().map(item => `Timbre ${item.id} ${item.lane === 'gate' ? 'Gate' : 'Pitch'} ${item.seconds.toFixed(3)} s`).join(', ');
+  const title = `Loop periods differ, so timbres drift apart: ${detail}. Match Pattern lengths and Play/Rec Speed, or use Song.`;
+  if (playAllWarning.title !== title) playAllWarning.title = title;
+}
 function syncTransportControls(): void {
   const id = mixer.selectedId;
   const running = transport.isPlaying(id);
@@ -352,13 +367,20 @@ function syncTransportControls(): void {
   sourceAutoButton.setAttribute('aria-pressed', String(source.gateMode === 'auto'));
   recordedGateButton.setAttribute('aria-pressed', String(source.gateMode === 'user'));
   syncAutoTimingAvailability(source.gateMode === 'auto');
+  // Song plays the same Pattern number on every timbre; its current Pattern glows in both rows.
+  const songPattern = songTransport.position()?.user ?? 0;
+  const songPlaying = (button: HTMLButtonElement, index: number): string => {
+    const playing = index + 1 === songPattern;
+    if (button.hasAttribute('data-song-playing') !== playing) button.toggleAttribute('data-song-playing', playing);
+    return playing ? ', playing in Song' : '';
+  };
   gateUserButtons.forEach((button, index) => {
     const patternId = `user-${index + 1}` as typeof source.gateUserId;
     const gate = engine?.getChannel(id) ? engine.getGateRecording(id, patternId) : null;
     button.setAttribute('aria-pressed', String(source.gateUserId === patternId));
     const state = gate ? engine!.getGateMuted(id, patternId) ? '0' : '1' : 'Null';
     button.querySelector('small')!.textContent = state;
-    button.setAttribute('aria-label', `Gate Pattern ${index + 1}, ${state === 'Null' ? 'no recording' : state === '0' ? 'muted' : 'recorded'}`);
+    button.setAttribute('aria-label', `Gate Pattern ${index + 1}, ${state === 'Null' ? 'no recording' : state === '0' ? 'muted' : 'recorded'}${songPlaying(button, index)}`);
   });
   pitchUserButtons.forEach((button, index) => {
     const patternId = `user-${index + 1}` as typeof source.pitchUserId;
@@ -366,11 +388,12 @@ function syncTransportControls(): void {
     button.setAttribute('aria-pressed', String(source.pitchUserId === patternId));
     const state = pitch ? engine!.getPitchMuted(id, patternId) ? '0' : '1' : 'Null';
     button.querySelector('small')!.textContent = state;
-    button.setAttribute('aria-label', `Pitch Pattern ${index + 1}, ${state === 'Null' ? 'no recording' : state === '0' ? 'muted' : 'recorded'}`);
+    button.setAttribute('aria-label', `Pitch Pattern ${index + 1}, ${state === 'Null' ? 'no recording' : state === '0' ? 'muted' : 'recorded'}${songPlaying(button, index)}`);
   });
   const any = transport.anyPlaying();
   playAllButton.textContent = any ? 'Stop All' : 'Play All';
   playAllButton.setAttribute('aria-pressed', String(any));
+  syncPlayAllWarning();
   songButton.textContent = songTransport.isPlaying() ? '■ Stop Song' : '▶ Play Song';
   songButton.setAttribute('aria-pressed', String(songTransport.isPlaying()));
 }
@@ -815,7 +838,8 @@ function patternLabel(id: UserPatternId): string { return `Pattern ${id.slice(-1
 function syncSongPreview(): void {
   const settings = engine?.getSongSettings(); if (!settings) return;
   const sections = songTransport.preview();
-  const barsTime = settings.bars[Number(songUserSelect.value) - 1]! * 240 / (settings.bpm * settings.speed);
+  // Bars timing follows BPM alone; Song Speed applies only to Seconds timing.
+  const barsTime = settings.bars[Number(songUserSelect.value) - 1]! * 240 / settings.bpm;
   const patterns = sections.map(item => `Pattern ${item.user}`).join(', ');
   const duration = settings.timingMode === 'bars' ? `Bars Pattern ${songUserSelect.value}: ${barsTime.toFixed(2)} s`
     : `Seconds total: ${sections.length ? `${sections.reduce((sum, section) => sum + section.duration, 0).toFixed(2)} s` : 'empty'}`;
@@ -825,6 +849,10 @@ function syncSongSettings(): void {
   const settings = engine?.getSongSettings(); if (!settings) return;
   setValue('#song-timing', settings.timingMode);
   songBpmInput.value = String(settings.bpm);
+  songBpmSlider.value = String(settings.bpm);
+  songBpmRow.hidden = settings.timingMode !== 'bars';
+  songSpeedRow.hidden = settings.timingMode === 'bars';
+  songBpmInput.disabled = songBpmSlider.disabled = recorder.isBusy();
   recordBpmInput.value = String(settings.bpm);
   recordBpmInput.disabled = recordLengthMode.value !== 'bars' || recorder.isBusy();
   songBarsGroup.disabled = settings.timingMode !== 'bars' || recorder.isBusy();
@@ -848,10 +876,11 @@ function applyBpm(value: string): void {
     if (engine.getSongSettings().bars.some(bars => bars > maxSongBars(bpm))) {
       patchStatus.textContent = `Reduce Fit to Bars to ${maxSongBars(bpm)} or fewer before setting ${bpm} BPM.`;
     } else { engine.setSongSettings({ ...engine.getSongSettings(), bpm }); songTransport.updateTiming(); recorder.refresh(); }
-  } else patchStatus.textContent = 'BPM must be a whole number from 40 to 240.';
+  } else patchStatus.textContent = `BPM must be a whole number from ${P['song-bpm'].min} to ${P['song-bpm'].max}.`;
   syncSongSettings();
 }
 songBpmInput.addEventListener('change', () => { if (!songBpmInput.disabled) applyBpm(songBpmInput.value); });
+songBpmSlider.addEventListener('input', () => { if (!songBpmSlider.disabled) applyBpm(songBpmSlider.value); });
 recordBpmInput.addEventListener('change', () => { if (!recordBpmInput.disabled) applyBpm(recordBpmInput.value); });
 function applySongSpeed(value: number): void {
   if (!engine || !Number.isFinite(value) || value < P['song-speed'].min || value > P['song-speed'].max) {
@@ -1266,9 +1295,7 @@ async function loadSessionSource(source: string, loadingMessage: string, loadedP
   if (!engine || loadingSession) return;
   try {
     patchStatus.textContent = loadingMessage;
-    const raw = JSON.parse(source) as { channels?: Array<{ timbre?: { formatVersion?: string } | null }> };
-    const oldPitchEnvelope = raw.channels?.some(channel => channel.timbre && !['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(channel.timbre.formatVersion ?? '')) ?? false;
-    const session = parseLabSession(source);
+    const { session, notices } = parseLabSessionWithNotices(source);
     songTransport.stop();
     transport.stopAll();
     recorder.cancel();
@@ -1280,7 +1307,7 @@ async function loadSessionSource(source: string, loadingMessage: string, loadedP
     await engine.applySession(session);
     mixer.manual.releaseAll(); mixer.refresh();
     setValue('#patch-name', session.name); syncCommonMix(); syncSelectedSource(); syncSongSettings();
-    patchStatus.textContent = `${loadedPrefix}: ${session.name}${oldPitchEnvelope ? ' · Legacy PEnv Amount/Time was ignored; new PEnv is neutral.' : ''}`;
+    patchStatus.textContent = `${loadedPrefix}: ${session.name}${notices.legacyPitchEnvelopeIgnored ? ' · Legacy PEnv Amount/Time was ignored; new PEnv is neutral.' : ''}`;
   } catch (error) { patchStatus.textContent = `${errorPrefix}: ${error instanceof Error ? error.message : String(error)}`; }
   finally { loadingSession = false; patchFileInput.value = ''; setAudioControlsEnabled(true); }
 }

@@ -135,3 +135,23 @@ test('document Space Trigger preserves its press target and ignores edit, repeat
   await page.waitForTimeout(50);
   expect(await page.evaluate(() => window.spaceGateCalls)).toEqual(['on:1', 'off:1']);
 });
+
+test('Pitch Scale spans −2400 to +2400 and a negative Scale inverts the Pitch motion', async ({ page }) => {
+  await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await page.locator('#trigger-menu').click();
+  await page.evaluate(async () => {
+    const { AudioEngine } = await import('/src/audio/core/AudioEngine.ts');
+    const original = AudioEngine.prototype.setControllerPitch;
+    AudioEngine.prototype.setControllerPitch = function (...args) { window.scaleEngine = this; return original.apply(this, args); };
+  });
+  await expect(page.locator('#sequence-pitch-scale-coarse + .slider-scale span')).toHaveText(['-2.4k cent', '0 cent', '2.4k cent']);
+  await setNumber(page, '#sequence-pitch-scale', -1150);
+  await expect(page.locator('#sequence-pitch-scale')).toHaveValue('-1200');
+  await expect(page.locator('#sequence-scale-custom')).toBeEmpty();
+  await page.locator('#sequence-pitch-input').evaluate(node => { node.value = '0.5'; node.dispatchEvent(new Event('input', { bubbles: true })); });
+  await expect(page.locator('#sequence-pitch-readout')).toHaveText('-600 cent');
+  await expect.poll(() => page.evaluate(() => window.scaleEngine?.getSequencePitchCent('1'))).toBe(-600);
+  await page.locator('#sequence-pitch-input').dispatchEvent('change');
+  expect((await savedTimbre(page)).pitchPatterns[0].pitchScaleCent).toBe(-1200);
+  await setNumber(page, '#sequence-pitch-scale', 2400);
+  await expect(page.locator('#sequence-pitch-scale')).toHaveValue('2400');
+});

@@ -244,7 +244,9 @@ export class NumericSliderControl {
       ticks[0]!.textContent = this.formatValue(this.min);
       ticks[1]!.textContent = this.zeroLogarithmic
         ? this.formatValue(Math.expm1(.5 * Math.log1p(this.max)))
-        : this.unit === '%' && this.min === 0 && this.max === 100 ? '50%' : '';
+        : this.unit === '%' && this.min === 0 && this.max === 100 ? '50%'
+          // Opt-in center label for signed ranges whose sign has a meaning (e.g. inverting Pitch Scale).
+          : this.numberInput.dataset.numericCenterLabel !== undefined ? this.formatValue((this.min + this.max) / 2) : '';
       ticks[2]!.textContent = this.formatValue(this.max);
       return;
     }

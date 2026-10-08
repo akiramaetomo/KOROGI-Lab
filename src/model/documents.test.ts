@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { defaultBus, defaultSongSettings, defaultTimbre, DEFAULT_CHANNEL_MIX, LAB_SLOT_IDS, normalizeTimbre, normalizeSession, parseTimbre, parseLabSession, parseSession } from './documents';
+import { defaultBus, defaultSongSettings, defaultTimbre, DEFAULT_CHANNEL_MIX, LAB_SLOT_IDS, normalizeTimbre, normalizeSession, parseTimbre, parseTimbreWithNotices, parseLabSession, parseLabSessionWithNotices, parseSession } from './documents';
 import type { SessionDocument } from '../audio/types';
 import { PARAMETER_RANGES as P, parameterValueBounds } from '../config/parameterRanges';
 
@@ -154,6 +154,24 @@ describe('Timbre and session boundaries', () => {
     });
     Reflect.set(timbre.settings.ampEnvelope, 'attackCurve', 'invalid');
     expect(() => normalizeTimbre(timbre)).toThrow('AEnv attackCurve');
+  });
+  it('reports the legacy PEnv notice only for files saved before the ADSR PEnv format', () => {
+    // v16/v17 keep their PEnv; the notice once stopped at v15 and misreported them.
+    const v16 = structuredClone(defaultTimbre()) as unknown as Record<string, any>;
+    v16.formatVersion = 'KOROGI-Lab/timbre-v16'; v16.gatePatterns.length = 3; v16.pitchPatterns.length = 3;
+    for (const timbre of [v16, defaultTimbre()]) {
+      expect(parseTimbreWithNotices(JSON.stringify(timbre)).notices.legacyPitchEnvelopeIgnored, timbre.formatVersion).toBe(false);
+    }
+    const old = structuredClone(defaultTimbre()) as unknown as Record<string, unknown>;
+    old.formatVersion = 'KOROGI-Lab/timbre-v9';
+    (old.settings as Record<string, unknown>).pitchEnvelope = { amount: -.1, transitionTimeSec: .2 };
+    delete ((old.settings as Record<string, unknown>).ampEnvelope as Record<string, unknown>).releaseTiming;
+    expect(parseTimbreWithNotices(JSON.stringify(old)).notices.legacyPitchEnvelopeIgnored).toBe(true);
+    const current = session();
+    expect(parseLabSessionWithNotices(JSON.stringify(current)).notices.legacyPitchEnvelopeIgnored).toBe(false);
+    const mixed = session() as unknown as { channels: Array<{ timbre: unknown }> };
+    mixed.channels[1]!.timbre = old;
+    expect(parseLabSessionWithNotices(JSON.stringify(mixed)).notices.legacyPitchEnvelopeIgnored).toBe(true);
   });
   it('round-trips embedded and empty slots without mixing routing into timbres', () => {
     const value = session(); value.channels[0]!.muted = true; value.channels[0]!.balance = .7; value.channels[0]!.pan = -.65;

@@ -20,7 +20,7 @@ export function normalizeSongSettings(raw: unknown): SongSettings {
     raw.bars.some(bar => !Number.isInteger(bar) || bar < P['song-bars'].min || bar > Math.min(P['song-bars'].max, maxSongBars(raw.bpm as number))) ||
     !['original', 'bars'].includes(raw.timingMode as string) || typeof raw.speed !== 'number' || !Number.isFinite(raw.speed) ||
     raw.speed < P['song-speed'].min || raw.speed > P['song-speed'].max)
-    throw new Error('Song requires Seconds or Bars timing, BPM 40–240, Speed 0.25–4 and eight bar counts within 300 seconds each.');
+    throw new Error('Song requires Seconds or Bars timing, BPM 30–480, Speed 0.25–4 and eight bar counts within 300 seconds each.');
   return { bpm: raw.bpm as number, speed: raw.speed, bars: [...raw.bars] as SongSettings['bars'], timingMode: raw.timingMode as SongSettings['timingMode'] };
 }
 export function defaultBus(): BusSettings {
@@ -56,13 +56,23 @@ function effect(value: EffectSlotSettings, fallback: Exclude<EffectSlotSettings[
   };
 }
 
+/** Formats that store the ADSR PEnv; older files have their PEnv replaced by the neutral default. */
+const NEW_PITCH_ENVELOPE_FORMATS: readonly string[] = ['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'];
+
+/** What a load migrated, so the UI reports it without re-deriving format versions. */
+export interface LoadNotices { legacyPitchEnvelopeIgnored: boolean }
+
+function timbreNotices(raw: unknown): LoadNotices {
+  return { legacyPitchEnvelopeIgnored: !NEW_PITCH_ENVELOPE_FORMATS.includes((raw as { formatVersion?: string }).formatVersion ?? '') };
+}
+
 /** Pure boundary: reject invalid types/enums, normalize finite values, strip unknown fields. */
 export function normalizeTimbre(raw: unknown): TimbreDocument {
   requireFormat(raw, ['KOROGI-Lab/timbre-v2', 'KOROGI-Lab/timbre-v3', 'KOROGI-Lab/timbre-v4', 'KOROGI-Lab/timbre-v5', 'KOROGI-Lab/timbre-v6', 'KOROGI-Lab/timbre-v7', 'KOROGI-Lab/timbre-v8', 'KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17']);
   const rawRecord = raw as Record<string, unknown>;
   const format = rawRecord.formatVersion as string;
   const modern = ['KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format);
-  const newEnvelope = ['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format);
+  const newEnvelope = NEW_PITCH_ENVELOPE_FORMATS.includes(format);
   const independentEnvelope = ['KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format);
   const old = format === 'KOROGI-Lab/timbre-v2';
   const legacyPatterns = !modern && !['KOROGI-Lab/timbre-v6', 'KOROGI-Lab/timbre-v7', 'KOROGI-Lab/timbre-v8'].includes(format);
@@ -303,7 +313,13 @@ function requireFormat(raw: unknown, accepted: readonly string[]): void {
 }
 
 export function parseTimbre(text: string): TimbreDocument {
-  return normalizeTimbre(JSON.parse(text));
+  return parseTimbreWithNotices(text).timbre;
+}
+
+export function parseTimbreWithNotices(text: string): { timbre: TimbreDocument; notices: LoadNotices } {
+  const raw: unknown = JSON.parse(text);
+  const timbre = normalizeTimbre(raw);
+  return { timbre, notices: timbreNotices(raw) };
 }
 
 export function parseSession(text: string): SessionDocument {
@@ -311,7 +327,18 @@ export function parseSession(text: string): SessionDocument {
 }
 /** Lab-specific topology validation; the audio engine accepts other channel counts. */
 export function parseLabSession(text: string): SessionDocument {
-  const session = parseSession(text);
+  return parseLabSessionWithNotices(text).session;
+}
+
+export function parseLabSessionWithNotices(text: string): { session: SessionDocument; notices: LoadNotices } {
+  const raw: unknown = JSON.parse(text);
+  const session = labTopology(normalizeSession(raw));
+  const timbres = isRecord(raw) && Array.isArray(raw.channels)
+    ? raw.channels.map(channel => (isRecord(channel) ? channel.timbre : null)).filter(timbre => timbre != null) : [];
+  return { session, notices: { legacyPitchEnvelopeIgnored: timbres.some(timbre => timbreNotices(timbre).legacyPitchEnvelopeIgnored) } };
+}
+
+function labTopology(session: SessionDocument): SessionDocument {
   const ids = session.channels.map(channel => channel.id);
   const isFour = ids.length === 4 && LAB_SLOT_IDS.slice(0, 4).every(id => ids.includes(id));
   const isEight = ids.length === 8 && LAB_SLOT_IDS.every(id => ids.includes(id));

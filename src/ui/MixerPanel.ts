@@ -1,7 +1,7 @@
 import type { AudioEngine } from '../audio/core/AudioEngine';
 import type { ChannelSynth } from '../audio/core/ChannelSynth';
 import type { GateScheduleEvent } from '../audio/types';
-import { defaultTimbre, LAB_SLOT_IDS, parseTimbre } from '../model/documents';
+import { defaultTimbre, LAB_SLOT_IDS, parseTimbreWithNotices } from '../model/documents';
 import { ManualGateController } from './ManualGateController';
 import { PARAMETER_RANGES as P } from '../config/parameterRanges';
 import { bindSliderReset } from './sliderTapReset';
@@ -84,11 +84,10 @@ export class MixerPanel {
         this.loading = true; this.refresh();
         try {
           const source = await file.text();
-          const oldPitchEnvelope = !['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15'].includes((JSON.parse(source) as { formatVersion?: string }).formatVersion ?? '');
-          const timbre = parseTimbre(source);
+          const { timbre, notices } = parseTimbreWithNotices(source);
           this.beforeReplace(id);
           this.manual.forgetSource(id); this.engine()?.replaceChannel(id, timbre); this.refresh(); this.selectionChanged();
-          this.report(`Loaded timbre ${id}: ${timbre.name}${oldPitchEnvelope ? ' · Legacy PEnv Amount/Time was ignored; new PEnv is neutral.' : ''}`);
+          this.report(`Loaded timbre ${id}: ${timbre.name}${notices.legacyPitchEnvelopeIgnored ? ' · Legacy PEnv Amount/Time was ignored; new PEnv is neutral.' : ''}`);
         } catch (error) { this.report(`Timbre import failed: ${error instanceof Error ? error.message : String(error)}`); }
         finally { this.loading = false; fileInput.value = ''; this.refresh(); }
       });

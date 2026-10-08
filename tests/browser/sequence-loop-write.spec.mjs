@@ -11,6 +11,10 @@ async function loadTimbre(page, timbre) {
   await page.locator('#timbre-file-1').setInputFiles({ name: 'loop-write.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
   await expect(page.locator('#patch-status')).toContainText('Loaded timbre 1:');
   await page.locator('#trigger-menu').click();
+  // Write defaults to Overdub; these takes exercise Replace unless a test selects Overdub itself.
+  // (A second load toggles the SEQUENCE panel closed; Write then keeps the earlier choice.)
+  const replace = page.locator('#record-write-mode + .segmented-choice [data-value="replace"]');
+  if (await replace.isVisible()) await replace.click();
 }
 
 async function gateFor(page, milliseconds = 100) {

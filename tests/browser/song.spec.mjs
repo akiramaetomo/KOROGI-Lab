@@ -29,7 +29,8 @@ test('Song clock settings and Pattern copy survive Session round-trip', async ({
   await expect(page.locator('#song-user option')).toHaveText(['Pattern 1', 'Pattern 2', 'Pattern 3', 'Pattern 4', 'Pattern 5', 'Pattern 6', 'Pattern 7', 'Pattern 8']);
   await expect(page.locator('#copy-from option')).toHaveText(['Pattern 1', 'Pattern 2', 'Pattern 3', 'Pattern 4', 'Pattern 5', 'Pattern 6', 'Pattern 7', 'Pattern 8']);
   await expect(page.locator('#copy-to option')).toHaveText(['Pattern 1', 'Pattern 2', 'Pattern 3', 'Pattern 4', 'Pattern 5', 'Pattern 6', 'Pattern 7', 'Pattern 8']);
-  await expect(page.locator('#song-bpm')).toBeDisabled();
+  // BPM is shown in place of Song Speed only for Bars timing.
+  await expect(page.locator('#song-bpm')).toBeHidden();
   // New Pattern Length (Unit/BPM) is editable only on a Null Gate and Null Pitch Pattern.
   await expect(page.locator('#record-new-length')).toHaveJSProperty('disabled', true);
   await page.locator('#source-user-2').click(); await page.locator('#pitch-user-2').click();
@@ -169,7 +170,7 @@ test('Song follows AEnv for three Patterns: enabled Gates rest and bypass contin
   expect(results.bypass.gap).toBeGreaterThan(.01);
 });
 
-test('live Song Speed change preserves the sounding Gate and moves its OFF', async ({ page }) => {
+test('live Bars BPM change preserves the sounding Gate and moves its OFF', async ({ page }) => {
   await page.goto('/');
   const levels = await page.evaluate(async () => {
     const { AudioEngine } = await import('/src/audio/core/AudioEngine.ts');
@@ -197,7 +198,7 @@ test('live Song Speed change preserves the sounding Gate and moves its OFF', asy
     const song = new SongTransport(() => transportEngine, async () => {}, () => {}, () => {});
     try {
       await song.play(); clock.currentTime = .04; tick();
-      clock.currentTime = .5; engine.setSongSettings({ ...engine.getSongSettings(), speed: 2 }); song.updateTiming();
+      clock.currentTime = .5; engine.setSongSettings({ ...engine.getSongSettings(), bpm: 240 }); song.updateTiming();
       clock.currentTime = 1; tick();
       const samples = (await context.startRendering()).getChannelData(0);
       const rms = time => {
@@ -229,7 +230,7 @@ test('Record Unit conversion keeps the intended duration and Copy controls stay 
   await length.fill('1'); await length.dispatchEvent('change');
   await page.locator('#record-length-mode').selectOption('bars');
   await expect(length).toHaveValue('0.5');
-  const sizes = await page.locator('.song-copy').evaluate(node => ({
+  const sizes = await page.locator('.record-copy').evaluate(node => ({
     group: node.getBoundingClientRect().width,
     destination: node.querySelector('#copy-to').getBoundingClientRect().width
   }));
@@ -237,17 +238,18 @@ test('Record Unit conversion keeps the intended duration and Copy controls stay 
   expect(sizes.destination).toBeLessThan(130);
 });
 
-test('Song Speed stays compact and Fit to Bars is exclusive to Bars timing', async ({ page }) => {
+test('Song Speed stays compact, Bars swaps it for a 30–480 BPM slider, and Fit to Bars is exclusive to Bars timing', async ({ page }) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   await page.locator('#trigger-menu').click();
   await expect(page.locator('#song-bars-group')).toHaveAttribute('disabled', '');
-  await expect(page.locator('#song-bpm')).toBeDisabled();
+  await expect(page.locator('#song-bpm-row')).toBeHidden();
+  await expect(page.locator('#song-speed-slider')).toBeVisible();
   await expect(page.locator('#song-toggle')).toHaveText('▶ Play Song');
   await expect(page.locator('#copy-user')).toHaveText('Copy Pattern');
   expect(await page.locator('[data-numeric-control="song-speed"]').count()).toBe(0);
   const geometry = await page.locator('.song-controls').evaluate(card => {
-    const row = card.querySelector('.song-speed-row').getBoundingClientRect();
+    const row = card.querySelector('#song-speed-row').getBoundingClientRect();
     const number = card.querySelector('#song-speed').getBoundingClientRect();
     const slider = card.querySelector('#song-speed-slider').getBoundingClientRect();
     return { cardHeight: card.getBoundingClientRect().height, rowHeight: row.height,
@@ -264,6 +266,11 @@ test('Song Speed stays compact and Fit to Bars is exclusive to Bars timing', asy
   await page.keyboard.press('ArrowRight');
   await expect(page.locator('#song-timing')).toHaveValue('bars');
   await expect(page.locator('#song-bpm')).toBeEnabled();
+  await expect(page.locator('#song-speed-row')).toBeHidden();
+  await expect(page.locator('#song-bpm-slider')).toHaveAttribute('min', '30');
+  await expect(page.locator('#song-bpm-slider')).toHaveAttribute('max', '480');
+  const bpmSlider = await page.locator('#song-bpm-slider').boundingBox();
+  expect(bpmSlider.width).toBeGreaterThanOrEqual(150);
   await page.locator('#record-length-mode').selectOption('bars');
   await page.locator('#song-bpm').fill('150'); await page.locator('#song-bpm').dispatchEvent('change');
   await expect(page.locator('#record-bpm')).toHaveValue('150');
@@ -271,8 +278,19 @@ test('Song Speed stays compact and Fit to Bars is exclusive to Bars timing', asy
   await page.locator('#song-bars').fill('2'); await page.locator('#song-bars').dispatchEvent('change');
   await expect(page.locator('#song-duration')).toContainText('Bars Pattern 3: 3.20 s');
   await expect(page.locator('#song-duration')).not.toContainText('Seconds total');
+  // The BPM slider sets the Bars tempo directly; Song Speed does not apply to Bars timing.
+  await page.locator('#song-bpm-slider').evaluate(input => { input.value = '480'; input.dispatchEvent(new Event('input', { bubbles: true })); });
+  await expect(page.locator('#song-bpm')).toHaveValue('480');
+  await expect(page.locator('#song-duration')).toContainText('Bars Pattern 3: 1.00 s');
+  await page.locator('#song-bpm').fill('30'); await page.locator('#song-bpm').dispatchEvent('change');
+  await expect(page.locator('#song-bpm-slider')).toHaveValue('30');
+  await expect(page.locator('#song-duration')).toContainText('Bars Pattern 3: 16.00 s');
+  await page.locator('#song-bpm').fill('29'); await page.locator('#song-bpm').dispatchEvent('change');
+  await expect(page.locator('#patch-status')).toContainText('BPM must be a whole number from 30 to 480.');
+  await expect(page.locator('#song-bpm')).toHaveValue('30');
   await page.locator('.song-timing-field [role="radio"][data-value="original"]').click();
-  await expect(page.locator('#song-bpm')).toBeDisabled();
+  await expect(page.locator('#song-bpm')).toBeHidden();
+  await expect(page.locator('#song-speed-slider')).toBeVisible();
   await expect(page.locator('#record-bpm')).toBeEnabled();
 });
 
@@ -287,13 +305,17 @@ test('Song controls fit their groups and the play action uses a red accent', asy
       const record = card.parentElement.querySelector('.trigger-user-group').getBoundingClientRect();
       const control = card.parentElement.querySelector('.record-performance').getBoundingClientRect();
       const title = bounds('.song-summary');
-      const copy = bounds('.song-copy'), from = bounds('#copy-from'), to = bounds('#copy-to');
+      // Copy Pattern lives in PATTERN / RECORD / PLAY, not in SONG.
+      const outside = selector => card.parentElement.querySelector(selector).getBoundingClientRect();
+      const copy = outside('.record-copy'), from = outside('#copy-from'), to = outside('#copy-to'), pattern = bounds('#song-user');
+      const copyInSong = !!card.querySelector('#copy-user');
       const color = getComputedStyle(card.querySelector('#song-toggle')).backgroundColor;
       return { songLeft: song.left, songTop: song.top, songRight: song.right, songBottom: song.bottom,
-        recordTop: record.top, controlTop: control.top,
+        recordTop: record.top, recordRight: record.right, recordBottom: record.bottom, controlTop: control.top,
+        copyTop: copy.top, copyBottom: copy.bottom, copyInSong,
         titleLeft: title.left, titleTop: title.top, titleRight: title.right,
         groupRight: group.right, copyRight: copy.right,
-        copyWidth: copy.width, fromWidth: from.width, toWidth: to.width, color,
+        copyWidth: copy.width, fromWidth: from.width, toWidth: to.width, patternWidth: pattern.width, color,
         pageWidth: document.documentElement.scrollWidth, viewport: innerWidth };
     });
     expect(layout.groupRight).toBeLessThanOrEqual(layout.songRight + 1);
@@ -302,10 +324,15 @@ test('Song controls fit their groups and the play action uses a red accent', asy
     expect(layout.titleTop).toBeGreaterThanOrEqual(layout.songTop);
     expect(layout.songBottom).toBeLessThan(layout.recordTop);
     expect(layout.songBottom).toBeLessThan(layout.controlTop);
-    expect(layout.copyRight).toBeLessThanOrEqual(layout.songRight + 1);
+    expect(layout.copyInSong).toBe(false);
+    expect(layout.copyTop).toBeGreaterThanOrEqual(layout.recordTop);
+    expect(layout.copyBottom).toBeLessThanOrEqual(layout.recordBottom);
+    expect(layout.copyRight).toBeLessThanOrEqual(layout.recordRight + 1);
     expect(layout.copyWidth).toBeLessThan(440);
     expect(layout.fromWidth).toBeGreaterThanOrEqual(104);
     expect(layout.toWidth).toBeGreaterThanOrEqual(104);
+    // Fit to Bars PATTERN shows "Pattern 8" and its arrow without clipping (same width as Copy).
+    expect(layout.patternWidth).toBeGreaterThanOrEqual(104);
     expect(layout.pageWidth).toBeLessThanOrEqual(layout.viewport + 1);
     const [red, green, blue] = layout.color.match(/\d+/g).map(Number);
     expect(red).toBeGreaterThan(green);
@@ -422,4 +449,28 @@ test('New Pattern Length stays in one row below the controls and switching Unit 
     expect(restored.record.height).toBeCloseTo(seconds.record.height, 2);
     expect(restored.control.height).toBeCloseTo(seconds.control.height, 2);
   }
+});
+
+test('Song lights the Gate and Pitch buttons of the Pattern it is playing', async ({ page }) => {
+  await page.goto('/');
+  await expect(page.locator('#osc1-frequency')).toBeEnabled();
+  const session = await saveSession(page);
+  for (const index of [0, 1]) {
+    session.channels[0].timbre.gatePatterns[index].recording = { durationSec: .6, selectionStartSec: 0, selectionEndSec: .6,
+      gates: [{ onSec: .05, offSec: .3 }] };
+  }
+  await page.locator('#patch-file').setInputFiles({ name: 'song-glow.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) });
+  await expect(page.locator('#patch-status')).toContainText('Loaded:');
+  await page.locator('#trigger-menu').click();
+  const lit = () => page.evaluate(() => [...document.querySelectorAll('.source-choice button[data-song-playing]')].map(button => button.id));
+  expect(await lit()).toEqual([]);
+  await page.locator('#song-toggle').click();
+  await expect(page.locator('#song-toggle')).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(lit).toEqual(['source-user-1', 'pitch-user-1']);
+  await expect(page.locator('#source-user-1')).toHaveAttribute('aria-label', /playing in Song$/);
+  const glow = await page.locator('#source-user-1').evaluate(node => getComputedStyle(node).boxShadow);
+  expect(glow).not.toBe('none');
+  await expect.poll(lit, { timeout: 2000 }).toEqual(['source-user-2', 'pitch-user-2']);
+  await page.locator('#song-toggle').click();
+  await expect.poll(lit).toEqual([]);
 });
