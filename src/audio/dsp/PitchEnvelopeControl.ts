@@ -209,11 +209,14 @@ export class PitchEnvelopeControl {
         const start = Math.max(time, segment.start);
         if (segment.start > time) offset.setValueAtTime(segment.from, segment.start);
         if (segment.curve === 'logarithmic' && segment.end - start >= .001) {
-          const curve = Float32Array.from({ length: 65 }, (_, index) => {
-            const progress = (start + (segment.end - start) * index / 64 - segment.start) / (segment.end - segment.start);
-            return segment.from + (segment.to - segment.from) * this.progress(progress, segment.curve);
-          });
-          offset.setValueCurveAtTime(curve, start, segment.end - start);
+          // 64 linear ramps through the same points a 65-point ValueCurve would interpolate. Chrome leaves a
+          // misaligned curve remnant when cancelAndHoldAtTime cuts an in-flight ValueCurve, so later events at
+          // the hold time throw NotSupportedError and repeated live retiming can crash the renderer.
+          for (let index = 1; index <= 64; index += 1) {
+            const pointTime = index === 64 ? segment.end : start + (segment.end - start) * index / 64;
+            const progress = (pointTime - segment.start) / (segment.end - segment.start);
+            offset.linearRampToValueAtTime(segment.from + (segment.to - segment.from) * this.progress(progress, segment.curve), pointTime);
+          }
         } else offset.linearRampToValueAtTime(segment.to, segment.end);
       }
     }

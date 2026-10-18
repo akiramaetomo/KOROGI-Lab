@@ -7,8 +7,11 @@ import type { PitchScaleMode } from '../audio/types';
 import { PARAMETER_RANGES as P } from '../config/parameterRanges';
 import { centerSelectedPitch, clearSelectedGates, mergeGateGesture, splicePitchRecording } from '../model/sequenceLoopRecording';
 import { maxSongBars } from '../model/recordingLimits';
-import { quantizeGateRecording, type GateQuantizeDenominator, type GateQuantizeMode } from '../model/quantizeGateRecording';
+import { formatBars, stretchBasePattern, stretchLoopSeconds, stretchSpeed } from '../model/stretch';
+import { quantizeGateRecording, quantizeGridFits, type GateQuantizeDenominator, type GateQuantizeMode } from '../model/quantizeGateRecording';
 import type { RecordingLane, SequenceTransport } from './SequenceTransport';
+import { METRONOME_PATTERNS, METRONOME_TONES, type MetronomeTone } from '../config/metronome';
+import { BEATS_PER_BAR, barSeconds, clickTimes, nextBarTime, type LoopBarClock, type ScheduledClick } from '../model/metronome';
 
 type Mode = 'idle' | 'starting' | 'recording';
 type SelectionEdge = 'start' | 'end';
@@ -27,6 +30,10 @@ const SCALE_STOPS = [-2400, -1200, -600, -400, -200, 0, 200, 400, 600, 1200, 240
 const MOTION_STORAGE_KEY = 'KOROGI-Lab/sequence-slide-gate-motion-v1';
 const STOP_TIME_STORAGE_KEY = 'KOROGI-Lab/sequence-slide-gate-stop-time-v1';
 const QUANTIZE_STORAGE_KEY = 'KOROGI-Lab/gate-quantize-options-v1';
+const CLICK_STORAGE_KEY = 'KOROGI-Lab/record-click-v1';
+const CLICK_LOOKAHEAD_SEC = .12;
+/** Grid layers closer than this on screen are left out instead of filling the timeline. */
+const GRID_MIN_SPACING_PX = 5;
 
 interface QuantizeHistory {
   id: string;
@@ -60,10 +67,17 @@ export class TriggerRecorder {
   private request = 0;
   private timer: number | null = null;
   private startedAt = 0;
+  /** Recording waits for the next bar head of a playing Stretch grid; input until then is played, not recorded. */
+  private awaitingStart = false;
   private limitSec = P['record-length'].defaultValue;
   private gatePeriodSec = this.limitSec;
   private pitchPeriodSec = this.limitSec;
-  private recordClockSpeed = 1;
+  /** Recorded seconds per real second of each lane: Play/Rec Speed, or the Stretch fit of each selection. */
+  private gateClockSpeed = 1;
+  private pitchClockSpeed = 1;
+  /** A Stretch recording's loop (real seconds, whole bars at the BPM) and its bar count; null when not Stretch. */
+  private stretchLoopSec: number | null = null;
+  private stretchBars: number | null = null;
   private recordingLane: RecordingLane = 'gate';
   private userRecordingLane: RecordingLane = 'both';
   private linked = false;
@@ -106,10 +120,14 @@ export class TriggerRecorder {
   private pitchDraft: PitchPoint[] = [];
   private gateEditRange: { key: string; selectionStartSec: number; selectionEndSec: number; startSec: number; endSec: number } | null = null;
   private quantizeHistory: QuantizeHistory | null = null;
+  private clickChoice = Object.keys(METRONOME_PATTERNS)[0] ?? 'off';
+  private clickScheduledUntil = 0;
+  private clickQueue: ScheduledClick<MetronomeTone>[] = [];
 
   private readonly length = this.element<HTMLInputElement>('#record-length');
   private readonly lengthMode = this.element<HTMLSelectElement>('#record-length-mode');
   private readonly newLength = this.element<HTMLFieldSetElement>('#record-new-length');
+  private readonly newLengthTitle = this.element<HTMLElement>('#record-new-length-title');
   private readonly toggle = this.element<HTMLButtonElement>('#record-toggle');
   private readonly gate = this.element<HTMLButtonElement>('#record-gate');
   private readonly separateGate = this.element<HTMLButtonElement>('#sequence-separate-gate');
@@ -151,6 +169,7 @@ export class TriggerRecorder {
   private readonly quantizeButton = this.element<HTMLButtonElement>('#gate-quantize');
   private readonly quantizeUndo = this.element<HTMLButtonElement>('#gate-quantize-undo');
   private readonly quantizeRedo = this.element<HTMLButtonElement>('#gate-quantize-redo');
+  private readonly quantizeNote = this.element<HTMLElement>('#gate-quantize-note');
   private readonly editTimeline = this.element<HTMLElement>('#gate-edit-timeline');
   private readonly editSelection = this.element<HTMLElement>('#gate-edit-selection');
   private readonly editStartHandle = this.element<HTMLButtonElement>('#gate-edit-start-handle');
@@ -158,6 +177,8 @@ export class TriggerRecorder {
   private readonly editStartValue = this.element<HTMLOutputElement>('#gate-edit-start-value');
   private readonly editEndValue = this.element<HTMLOutputElement>('#gate-edit-end-value');
   private readonly scaleCustom = this.element<HTMLOutputElement>('#sequence-scale-custom');
+  private readonly clickInput = this.element<HTMLSelectElement>('#record-click');
+  private readonly beatLamp = this.element<HTMLElement>('#record-beat-lamp');
 
   private readonly gateTimeline = this.timelineElements('record');
   private readonly pitchTimeline = this.timelineElements('pitch');
@@ -165,9 +186,9 @@ export class TriggerRecorder {
   private readonly pitchCurve = this.element<SVGPolylineElement>('#pitch-curve-line');
 
   constructor(private readonly engine: () => AudioEngine | null, private readonly selectedId: () => string,
-    private readonly ensureRunning: (forceAttempt?: boolean) => Promise<void>, private readonly prepareTarget: (id: string) => void,
+    private readonly ensureRunning: (forceAttempt?: boolean) => Promise<void>, private readonly prepareTarget: (id: string, keepScheduled: boolean) => void,
     private readonly lockTarget: (id: string | null, lane: RecordingLane) => void, private readonly transport: SequenceTransport,
-    private readonly beforeSongEdit: () => void, private readonly songSettingsChanged: () => void,
+    private readonly songEdited: (settingsOnly?: boolean) => void, private readonly songSettingsChanged: () => void,
     private readonly songLaneMuted: (id: string, lane: TimelineLane) => void = () => {}) {
     this.length.value = String(P['record-length'].defaultValue);
     this.length.setAttribute('aria-label', `Record length in seconds, ${P['record-length'].min} to ${P['record-length'].max}`);
@@ -193,6 +214,21 @@ export class TriggerRecorder {
     this.writeModeInput.addEventListener('change', () => {
       this.writeMode = this.writeModeInput.value as WriteMode;
       this.refresh();
+    });
+    this.loadClickOption();
+    this.clickInput.addEventListener('change', () => {
+      this.clickChoice = this.clickInput.value;
+      this.saveClickOption();
+      // A change during recording takes effect from the next click.
+      this.cancelClicks();
+      this.buildBeatLamp();
+      this.scheduleClicks();
+    });
+    this.transport.setStartAligner(earliest => {
+      // Seconds has no bars (ADR 0010): a timbre started during a recording starts at once.
+      if (this.engine()?.getSongSettings().timingMode !== 'bars') return earliest;
+      const clock = this.clickClock();
+      return clock ? nextBarTime(clock, earliest) : earliest;
     });
     this.link.addEventListener('click', () => {
       if (this.mode !== 'idle') return;
@@ -227,7 +263,7 @@ export class TriggerRecorder {
     }
     this.quantizeGap.value = String(gapRange.defaultValue);
     this.loadQuantizeOptions();
-    this.quantizeGrid.addEventListener('change', () => this.saveQuantizeOptions());
+    this.quantizeGrid.addEventListener('change', () => { this.saveQuantizeOptions(); this.refresh(); });
     this.quantizeMode.addEventListener('change', () => this.saveQuantizeOptions());
     this.quantizeGap.addEventListener('change', () => this.saveQuantizeOptions());
     this.quantizeButton.addEventListener('click', () => this.applyGateQuantize());
@@ -270,7 +306,7 @@ export class TriggerRecorder {
     });
     this.pitchCenter.addEventListener('blur', () => { this.pitchCenter.classList.remove('is-pressed'); centerUp(); });
     this.separateButton.addEventListener('click', event => {
-      if (this.mode !== 'idle' || this.heldOwner || this.pitchHeldId) return;
+      if (!this.separateSwitchable()) return;
       this.separate = !this.separate;
       this.refresh();
       // A pointer-selected mode must leave Space available for Gate performance.
@@ -297,6 +333,9 @@ export class TriggerRecorder {
     this.bindEditHandle(this.editEndHandle, 'end');
     this.bindTrigger();
     new ResizeObserver(() => this.updateGatePosition()).observe(this.pitchTrack);
+    // Only the line density depends on the on-screen width; a full refresh here would disturb other controls.
+    const gridObserver = new ResizeObserver(entries => entries.forEach(entry => this.updateGridLayers(entry.target as HTMLElement)));
+    gridObserver.observe(this.gateTimeline.grid); gridObserver.observe(this.pitchTimeline.grid);
     let lastStatus = '';
     new MutationObserver(() => {
       const message = this.status.textContent?.trim() ?? '';
@@ -324,7 +363,7 @@ export class TriggerRecorder {
       playhead: this.element<HTMLElement>(`#${prefix}-playhead`), midpoint: this.element<HTMLElement>(`#${prefix}-midpoint`),
       endpoint: this.element<HTMLElement>(`#${prefix}-endpoint`), startHandle: this.element<HTMLButtonElement>(`#${prefix}-start-handle`),
       endHandle: this.element<HTMLButtonElement>(`#${prefix}-end-handle`), startValue: this.element<HTMLOutputElement>(`#${prefix}-start-value`),
-      endValue: this.element<HTMLOutputElement>(`#${prefix}-end-value`),
+      endValue: this.element<HTMLOutputElement>(`#${prefix}-end-value`), grid: this.element<HTMLElement>(`#${prefix}-grid`),
       durationValue: this.element<HTMLOutputElement>(`#${prefix}-duration-value`)
     };
   }
@@ -334,6 +373,39 @@ export class TriggerRecorder {
   private controllerPitchAllowed(): boolean { return this.mode !== 'recording' || this.includes('pitch'); }
   private controllerGateAllowed(): boolean { return this.mode !== 'recording' || this.includes('gate'); }
   private sliderGateAllowed(): boolean { return !this.separate && this.controllerGateAllowed(); }
+  /** True once the recording has started; at the bar head a held Gate or Pitch starts recording there. */
+  private recordingNow(): boolean {
+    if (this.mode !== 'recording') return false;
+    if (this.awaitingStart && (this.engine()?.context.currentTime ?? 0) >= this.startedAt) this.beginAtBar();
+    return !this.awaitingStart;
+  }
+  private beginAtBar(): void {
+    this.awaitingStart = false;
+    const id = this.targetId; if (!id) return;
+    this.transport.completeHandover(id);
+    if (this.includes('gate') && this.heldActive && this.heldId === id) {
+      this.startGateInput(); this.heldOnSec = this.loopStart; this.gateTouched = true;
+      this.renderGateTimeline(this.draftGateRecording());
+    }
+    if (this.includes('pitch') && this.pitchHeldId === id && this.pitchPunchStart === null) {
+      this.startPitchInput(); this.pitchTouched = true;
+      this.pitchPunchStart = this.pitchLoopStart;
+      this.pitchDraft = [{ timeSec: this.pitchLoopStart, valueNormalized: this.effectivePitchValue(Number(this.pitchInput.value)) }];
+      this.transport.beginPitchPunch(id);
+      this.renderPitchTimeline(this.draftPitchRecording());
+    }
+    this.updateRecordingStatus();
+  }
+  /** Separate changes who owns the controller inputs, so it switches only while no input is held (recording included). */
+  private separateSwitchable(): boolean {
+    return this.mode !== 'starting' && !this.heldOwner && !this.pitchHeldId && !this.pitchGesture;
+  }
+  private syncSeparateButton(available = !!this.engine()?.getChannel(this.selectedId())): void {
+    const switchable = this.separateSwitchable();
+    this.separateButton.disabled = !available || !switchable;
+    this.separateButton.title = available && !switchable && this.mode !== 'starting' ? 'Release Gate and Pitch to switch Separate' : '';
+    this.separateButton.setAttribute('aria-pressed', String(this.separate));
+  }
 
   private beginPitchControl(): void {
     if (!this.controllerPitchAllowed() || this.pitchHeldId || this.mode === 'starting') return;
@@ -347,6 +419,7 @@ export class TriggerRecorder {
     this.pitchHeldId = id; this.pitchHeldSynth = synth;
     this.pitchTrack.classList.add('pitch-held');
     engine.controllerPitchOn(id);
+    this.syncSeparateButton();
   }
 
   private endPitchControl(): void {
@@ -355,6 +428,7 @@ export class TriggerRecorder {
     this.pitchHeldId = null; this.pitchHeldSynth = null;
     this.pitchTrack.classList.remove('pitch-held');
     if (id && synth && this.engine()?.getChannel(id) === synth) this.engine()!.controllerPitchOff(id);
+    this.syncSeparateButton();
   }
   isBusy(): boolean { return this.mode !== 'idle'; }
   lockedId(): string | null { return this.targetId; }
@@ -406,8 +480,8 @@ export class TriggerRecorder {
     ++this.request;
     if (releaseTrigger) this.endGate(this.recordPosition());
     if (this.mode === 'recording' && this.targetId) this.engine()?.cancelScheduledGates(this.targetId);
-    this.clearTimer(); this.mode = 'idle'; this.targetId = null; this.targetSource = null; this.targetSynth = null;
-    this.loopRecording = false; this.recordingBars = null; this.gateWorking = null; this.pitchWorking = null;
+    this.clearTimer(); this.cancelClicks(); this.mode = 'idle'; this.targetId = null; this.targetSource = null; this.targetSynth = null;
+    this.loopRecording = false; this.awaitingStart = false; this.recordingBars = null; this.stretchLoopSec = null; this.stretchBars = null; this.gateWorking = null; this.pitchWorking = null;
     this.lockTarget(null, 'both'); this.status.textContent = 'Stopped'; this.refresh();
   }
 
@@ -423,7 +497,10 @@ export class TriggerRecorder {
     const gateLength = oldGate ? oldGate.selectionEndSec - oldGate.selectionStartSec : null;
     const pitchLength = oldPitch ? oldPitch.selectionEndSec - oldPitch.selectionStartSec : null;
     const reference = oldGate ?? oldPitch;
-    if (!reference && (!Number.isInteger(lengthValue) || (barsMode ? lengthValue < P['song-bars'].min || lengthValue > maxSongBars(engine?.getSongSettings().bpm ?? P['song-bpm'].defaultValue) : lengthValue < range.min || lengthValue > range.max) || seconds > MAX_RECORDING_SEC)) {
+    // Stretch records on the loop it plays: the base Pattern's bars at the BPM (BPM and bars stay locked while recording).
+    const stretchBase = source.stretch && engine ? stretchBasePattern(source, !!oldGate) : null;
+    const stretchLoop = stretchBase && engine ? stretchLoopSeconds(engine.getPatternBars(id, stretchBase), engine.getSongSettings()) : null;
+    if (!reference && !stretchLoop && (!Number.isInteger(lengthValue) || (barsMode ? lengthValue < P['song-bars'].min || lengthValue > maxSongBars(engine?.getSongSettings().bpm ?? P['song-bpm'].defaultValue) : lengthValue < range.min || lengthValue > range.max) || seconds > MAX_RECORDING_SEC)) {
       this.status.textContent = barsMode ? `Record length: ${P['song-bars'].min}–${maxSongBars(engine?.getSongSettings().bpm ?? P['song-bpm'].defaultValue)} whole bars` : `Record length: ${range.min}–${range.max} whole seconds`; return;
     }
     if (!engine || !synth) { this.status.textContent = `Timbre ${id} is unavailable. Select a loaded Timbre.`; return; }
@@ -431,10 +508,13 @@ export class TriggerRecorder {
     this.loopRecording = true;
     this.gateWasEmpty = !oldGate; this.pitchWasEmpty = !oldPitch;
     this.writeMode = this.writeModeInput.value as WriteMode;
-    this.gatePeriodSec = gateLength ?? pitchLength ?? seconds;
-    this.pitchPeriodSec = pitchLength ?? gateLength ?? seconds;
+    // A new Stretch Pattern records the Stretch bars at speed 1; New Pattern Length is not used.
+    this.gatePeriodSec = gateLength ?? pitchLength ?? stretchLoop ?? seconds;
+    this.pitchPeriodSec = pitchLength ?? gateLength ?? stretchLoop ?? seconds;
+    this.stretchLoopSec = stretchLoop;
+    this.stretchBars = stretchBase && engine ? engine.getPatternBars(id, stretchBase) : null;
     const plannedBars = this.gatePeriodSec * (engine?.getSongSettings().bpm ?? 120) / 240;
-    this.recordingBars = barsMode && Math.abs(plannedBars - Math.round(plannedBars)) < 1e-6
+    this.recordingBars = !stretchLoop && barsMode && Math.abs(plannedBars - Math.round(plannedBars)) < 1e-6
       ? Math.round(plannedBars) : null;
     this.loopStart = oldGate?.selectionStartSec ?? 0; this.loopEnd = this.loopStart + this.gatePeriodSec;
     this.pitchLoopStart = oldPitch?.selectionStartSec ?? 0; this.pitchLoopEnd = this.pitchLoopStart + this.pitchPeriodSec;
@@ -442,7 +522,8 @@ export class TriggerRecorder {
     const request = ++this.request;
     this.mode = 'starting'; this.targetId = id; this.targetSource = source; this.targetSynth = synth;
     this.limitSec = Math.max(this.gatePeriodSec, this.pitchPeriodSec);
-    this.recordClockSpeed = source.playSpeed;
+    this.gateClockSpeed = stretchLoop ? stretchSpeed(this.gatePeriodSec, stretchLoop) : source.playSpeed;
+    this.pitchClockSpeed = stretchLoop ? stretchSpeed(this.pitchPeriodSec, stretchLoop) : source.playSpeed;
     this.lockTarget(id, this.recordingLane); this.updateControls(null, null, source);
     this.status.textContent = `Starting Timbre ${id} · ${this.recordingLane} · Loop · ${this.writeMode} · Gate ${sourceLabel(source.gateUserId)}, Pitch ${sourceLabel(source.pitchUserId)}…`;
     try { await this.ensureRunning(); } catch (error) {
@@ -450,7 +531,10 @@ export class TriggerRecorder {
       return;
     }
     if (request !== this.request || this.engine()?.getChannel(id) !== synth) { if (request === this.request) this.cancel(); return; }
-    this.prepareTarget(id); this.mode = 'recording'; this.startedAt = engine.context.currentTime + .03;
+    // On a playing Stretch grid the recording starts on its next bar head, and the target plays on until then.
+    const earliest = engine.context.currentTime + .03, gridStart = this.transport.nextGridBar(earliest);
+    this.prepareTarget(id, gridStart !== null); this.mode = 'recording'; this.startedAt = gridStart ?? earliest;
+    this.awaitingStart = gridStart !== null && gridStart > earliest;
     this.gateDraft = []; this.pitchDraft = []; this.gateTouched = false; this.pitchTouched = false;
     this.gateLapCapturing = false; this.pitchLapCapturing = false;
     this.pitchPunchStart = null; this.pitchMonitorNeedsUpdate = false;
@@ -459,10 +543,16 @@ export class TriggerRecorder {
       selectionEndSec: this.loopEnd, gates: [] };
     this.pitchWorking = oldPitch ?? { durationSec: this.pitchLoopEnd, selectionStartSec: this.pitchLoopStart,
       selectionEndSec: this.pitchLoopEnd, points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: this.pitchLoopEnd, valueNormalized: 0 }] };
-    this.transport.playRetained(id, source.playSpeed, true, true, this.startedAt);
+    // Without a bar grid, other playing timbres restart with the recording loop so a backing part stays on the beat.
+    if (gridStart === null) this.transport.restartOthersAt(this.startedAt);
+    this.transport.playRetained(id, { gate: this.gateClockSpeed, pitch: this.pitchClockSpeed }, source.playSpeed, true, true, this.startedAt);
+    this.clickScheduledUntil = 0; this.clickQueue = [];
+    this.scheduleClicks();
     this.timer = window.setInterval(() => {
       if (this.mode !== 'recording') return;
       if (this.engine()?.context.state !== 'running') { this.finishRecording(); return; }
+      this.recordingNow();
+      this.scheduleClicks();
       this.advanceLaps();
       this.updateClock();
       if (this.heldOnSec !== null) this.renderGateTimeline(this.draftGateRecording());
@@ -472,16 +562,25 @@ export class TriggerRecorder {
     this.refresh();
   }
 
-  private elapsed(): number { return Math.max(0, (this.engine()?.context.currentTime ?? this.startedAt) - this.startedAt) * this.recordClockSpeed; }
+  private clockSpeed(lane: TimelineLane): number { return lane === 'gate' ? this.gateClockSpeed : this.pitchClockSpeed; }
+  /** Recorded seconds since the start on a lane's clock. Under Stretch both lanes lap together in real time. */
+  private elapsed(lane: TimelineLane): number {
+    return Math.max(0, (this.engine()?.context.currentTime ?? this.startedAt) - this.startedAt) * this.clockSpeed(lane);
+  }
   private recordPosition(lane: TimelineLane = 'gate'): number {
     const start = lane === 'gate' ? this.loopStart : this.pitchLoopStart;
     const period = lane === 'gate' ? this.gatePeriodSec : this.pitchPeriodSec;
     const laps = lane === 'gate' ? this.gateLaps : this.pitchLaps;
-    return start + Math.max(0, Math.min(period, this.elapsed() - laps * period));
+    return start + Math.max(0, Math.min(period, this.elapsed(lane) - laps * period));
   }
 
   private updateRecordingStatus(): void {
     if (this.mode !== 'recording') return;
+    if (this.awaitingStart) {
+      const message = 'Recording · waiting for the next bar';
+      if (this.status.textContent !== message) this.status.textContent = message;
+      return;
+    }
     if (this.writeMode === 'overdub') {
       const message = 'Recording · Loop · Overdub · correcting selected passages';
       if (this.status.textContent !== message) this.status.textContent = message;
@@ -493,6 +592,8 @@ export class TriggerRecorder {
     if (this.status.textContent !== message) this.status.textContent = message;
   }
   private configuredLength(): number {
+    const stretchSec = this.newStretchLength();
+    if (stretchSec) return stretchSec;
     const value = Number(this.length.value); const range = P['record-length'];
     if (this.lengthMode.value === 'bars') return Number.isFinite(value) && value > 0 && value <= maxSongBars(this.engine()?.getSongSettings().bpm ?? 120)
       ? value * 240 / (this.engine()?.getSongSettings().bpm ?? 120) : this.limitSec;
@@ -592,7 +693,7 @@ export class TriggerRecorder {
   }
 
   private recordPitchReturn(valueBefore: number, valueAfter: number): void {
-    if (this.mode !== 'recording' || !this.includes('pitch')) return;
+    if (!this.includes('pitch') || !this.recordingNow()) return;
     if (this.loopRecording) this.advanceLaps();
     this.startPitchInput();
     const position = this.recordPosition('pitch');
@@ -707,16 +808,18 @@ export class TriggerRecorder {
     const id = this.targetId ?? this.selectedId(); const engine = this.engine(); const synth = engine?.getChannel(id);
     if (!engine || !synth) return false;
     const mode = this.mode; this.heldOwner = owner; this.heldId = id; this.heldSynth = synth;
+    this.syncSeparateButton();
     const start = () => {
       if (this.heldOwner !== owner || this.heldSynth !== synth || this.mode !== mode || this.engine()?.getChannel(id) !== synth) return;
-      if (mode === 'recording' && this.includes('gate')) this.startGateInput();
+      const recording = mode === 'recording' && this.recordingNow();
+      if (recording && this.includes('gate')) this.startGateInput();
       engine.controllerGateOn(id); this.heldActive = true;
-      if (mode === 'recording' && this.includes('gate')) {
+      if (recording && this.includes('gate')) {
         this.heldOnSec = this.recordPosition('gate'); this.gateTouched = true;
       }
       this.gate.setAttribute('aria-pressed', String(!this.separate));
       this.separateGate.setAttribute('aria-pressed', String(this.separate));
-      if (mode === 'recording' && this.includes('gate')) this.renderGateTimeline(this.draftGateRecording());
+      if (recording && this.includes('gate')) this.renderGateTimeline(this.draftGateRecording());
     };
     if (engine.context.state === 'running') start(); else void this.ensureRunning().then(start).catch(() => this.release(owner));
     return true;
@@ -735,6 +838,7 @@ export class TriggerRecorder {
     this.heldOwner = null; this.heldId = null; this.heldSynth = null; this.heldActive = false; this.heldOnSec = null;
     this.gate.setAttribute('aria-pressed', 'false');
     this.separateGate.setAttribute('aria-pressed', 'false');
+    this.syncSeparateButton();
   }
 
   private changePitch(rawValue: number, record = true): void {
@@ -747,7 +851,7 @@ export class TriggerRecorder {
     const effective = settings?.pitchMode.kind === 'stepped'
       ? quantizePitchValue(value, settings.pitchMode.stepsPerSide, settings.pitchMode.scale, settings.pitchScaleCent) : value;
     this.pitchReadout.textContent = `${Math.round(effective * (settings?.pitchScaleCent ?? P['sequence-pitch-scale'].defaultValue))} cent`;
-    if (record && this.mode === 'recording' && this.includes('pitch')) {
+    if (record && this.includes('pitch') && this.recordingNow()) {
       this.startPitchInput();
       const position = this.recordPosition('pitch'); this.pitchTouched = true;
       if (this.pitchPunchStart === null) {
@@ -782,8 +886,8 @@ export class TriggerRecorder {
   }
 
   private changeSettings(snapScale = false): void {
-    if (this.mode !== 'idle') return;
-    const engine = this.engine(); const id = this.selectedId(); const source = this.transport.source(id);
+    if (this.mode === 'starting') return;
+    const engine = this.engine(); const id = this.targetId ?? this.selectedId(); const source = this.currentSource();
     if (!engine?.getChannel(id)) return;
     const steps = Number(this.pitchSteps.value);
     const scale = this.pitchMode.value as PitchScaleMode;
@@ -796,14 +900,17 @@ export class TriggerRecorder {
     engine.setSequenceSettings(id, source.pitchUserId, { pitchScaleCent, filterAmountCent: Number(this.filterAmount.value),
       filterAmountWide: this.filterWide.getAttribute('aria-pressed') === 'true', pitchMode,
       recordSpeed: engine.getSequenceSelection(id).recordSpeed, playSpeed: Number(this.playSpeedInput.value) });
-    this.transport.sequenceSettingsChanged(id);
-    if (!this.transport.isPlaying(id)) this.changePitch(Number(this.pitchInput.value));
+    this.transport.sequenceSettingsChanged(id); this.songEdited(true);
+    // A held Pitch sounds (and, while recording, is recorded) with the new settings without moving the slider.
+    const reapply = this.pitchHeldId === id || this.mode === 'idle' && !this.transport.isPlaying(id);
     this.refresh();
+    if (reapply) this.changePitch(Number(this.pitchInput.value));
   }
 
   private syncSettings(settings: SequenceSettings | null): void {
     this.recordMode.value = this.userRecordingLane; this.syncSegmented(this.recordMode);
     this.writeModeInput.value = this.writeMode; this.syncSegmented(this.writeModeInput);
+    this.clickInput.value = this.clickChoice;
     if (!settings) return;
     this.pitchMode.value = settings.pitchMode.scale ?? 'equal';
     this.pitchSteps.value = String(settings.pitchMode.kind === 'stepped' ? settings.pitchMode.stepsPerSide : 0);
@@ -842,8 +949,8 @@ export class TriggerRecorder {
 
   private advanceLaps(): void {
     if (!this.loopRecording || this.mode !== 'recording') return;
-    const elapsed = this.elapsed();
-    while (elapsed >= (this.gateLaps + 1) * this.gatePeriodSec) {
+    const gateElapsed = this.elapsed('gate'), pitchElapsed = this.elapsed('pitch');
+    while (gateElapsed >= (this.gateLaps + 1) * this.gatePeriodSec) {
       if (this.includes('gate') && this.gateWorking) {
         if (this.heldOnSec !== null && this.loopEnd > this.heldOnSec) {
           this.gateDraft.push({ onSec: this.heldOnSec, offSec: this.loopEnd });
@@ -855,24 +962,24 @@ export class TriggerRecorder {
         }
         if (this.gateLapCapturing || completed)
           this.transport.setGateMonitorRecording(this.targetId!, this.gateWorking,
-            this.startedAt + (this.gateLaps + 1) * this.gatePeriodSec / this.recordClockSpeed);
+            this.startedAt + (this.gateLaps + 1) * this.gatePeriodSec / this.gateClockSpeed);
       }
       ++this.gateLaps;
       this.gateLapCapturing = false;
       if (this.includes('gate') && this.heldOnSec !== null) this.startGateInput();
     }
-    while (elapsed >= (this.pitchLaps + 1) * this.pitchPeriodSec) {
+    while (pitchElapsed >= (this.pitchLaps + 1) * this.pitchPeriodSec) {
       if (this.includes('pitch') && this.pitchWorking && this.pitchPunchStart !== null) {
         const value = this.effectivePitchValue(Number(this.pitchInput.value));
         this.closePitchPunch(this.pitchLoopEnd, false);
         this.transport.setPitchMonitorRecording(this.targetId!, this.pitchWorking,
-          this.startedAt + (this.pitchLaps + 1) * this.pitchPeriodSec / this.recordClockSpeed);
+          this.startedAt + (this.pitchLaps + 1) * this.pitchPeriodSec / this.pitchClockSpeed);
         this.pitchPunchStart = this.pitchLoopStart;
         this.pitchDraft = [{ timeSec: this.pitchLoopStart, valueNormalized: value }];
       }
       if (this.includes('pitch') && this.pitchWorking && this.pitchMonitorNeedsUpdate) {
         this.transport.setPitchMonitorRecording(this.targetId!, this.pitchWorking,
-          this.startedAt + (this.pitchLaps + 1) * this.pitchPeriodSec / this.recordClockSpeed);
+          this.startedAt + (this.pitchLaps + 1) * this.pitchPeriodSec / this.pitchClockSpeed);
         this.pitchMonitorNeedsUpdate = false;
       }
       ++this.pitchLaps;
@@ -924,7 +1031,7 @@ export class TriggerRecorder {
     this.endPitchGesture(false);
     this.closePitchPunch();
     this.endPitchControl();
-    this.endGate(this.recordPosition()); this.clearTimer();
+    this.endGate(this.recordPosition()); this.clearTimer(); this.cancelClicks();
     this.commitGateDraft();
     const id = this.targetId!; const source = this.targetSource!;
     let saveError: string | null = null;
@@ -938,18 +1045,20 @@ export class TriggerRecorder {
         if (validPitch) this.engine()!.setPitchRecording(id, source.pitchUserId, validPitch);
         if (gate) this.engine()!.setSequenceSelection(id, { gateMode: 'user' });
         if (this.recordingBars !== null && ((gate && this.gateWasEmpty) || (validPitch && this.pitchWasEmpty))) {
-          const settings = this.engine()!.getSongSettings();
-          if (gate && this.gateWasEmpty) settings.bars[Number(source.gateUserId.slice(-1)) - 1] = this.recordingBars;
-          if (validPitch && this.pitchWasEmpty) settings.bars[Number(source.pitchUserId.slice(-1)) - 1] = this.recordingBars;
-          this.engine()!.setSongSettings(settings);
+          if (gate && this.gateWasEmpty) this.engine()!.setPatternBars(id, source.gateUserId, this.recordingBars);
+          if (validPitch && this.pitchWasEmpty) this.engine()!.setPatternBars(id, source.pitchUserId, this.recordingBars);
           this.songSettingsChanged();
         }
       } catch (error) { saveError = error instanceof Error ? error.message : String(error); }
     }
+    // A first Gate on a differently numbered Pattern moves the Stretch base, which may change the loop length.
+    const engine = this.engine(), after = this.transport.source(id);
+    const movedBase = this.stretchBars !== null && engine?.getChannel(id)
+      && engine.getPatternBars(id, stretchBasePattern(after, !!engine.getGateRecording(id, after.gateUserId))) !== this.stretchBars;
     this.mode = 'idle'; this.targetId = null; this.targetSource = null; this.targetSynth = null;
-    this.loopRecording = false; this.recordingBars = null; this.gateWorking = null; this.pitchWorking = null;
+    this.loopRecording = false; this.awaitingStart = false; this.recordingBars = null; this.stretchLoopSec = null; this.stretchBars = null; this.gateWorking = null; this.pitchWorking = null;
     this.lockTarget(null, 'both'); this.status.textContent = saveError ? `Recording could not be saved: ${saveError}` : this.gateTouched || this.pitchTouched
-      ? 'Recording complete' : 'No input recorded; previous Gate and Pitch preserved. Use Trigger or Pitch/Center to record.'; this.refresh();
+      ? movedBase ? 'Recording complete; Stretch now follows the Gate Pattern\'s bars' : 'Recording complete' : 'No input recorded; previous Gate and Pitch preserved. Use Trigger or Pitch/Center to record.'; this.refresh();
   }
 
   private bindSelectionHandle(handle: HTMLButtonElement, lane: TimelineLane, edge: SelectionEdge): void {
@@ -1024,12 +1133,12 @@ export class TriggerRecorder {
     if (!engine?.getChannel(id) || engine.getSongSettings().timingMode !== 'bars' || !this.gateEditRange) return;
     const recording = engine.getGateRecording(id, source.gateUserId);
     if (!recording) return;
-    const bars = engine.getSongSettings().bars[Number(source.gateUserId.slice(-1)) - 1]!;
+    const bars = engine.getPatternBars(id, source.gateUserId);
     const result = quantizeGateRecording(recording, { bars, denominator: Number(this.quantizeGrid.value) as GateQuantizeDenominator,
       mode: this.quantizeMode.value as GateQuantizeMode, gapSec: Number(this.quantizeGap.value) / 1000,
       editStartSec: this.gateEditRange.startSec, editEndSec: this.gateEditRange.endSec });
     if (!result.changedGates && !result.deletedGates) { this.status.textContent = 'Quantize: no Gate times changed.'; return; }
-    this.beforeSongEdit();
+    this.songEdited();
     engine.setGateRecording(id, source.gateUserId, result.recording);
     this.transport.gateRecordingChanged(id, source.gateUserId);
     this.quantizeHistory = { id, patternId: source.gateUserId, before: recording, after: result.recording, state: 'after' };
@@ -1046,7 +1155,7 @@ export class TriggerRecorder {
     if (JSON.stringify(engine.getGateRecording(id, history.patternId)) !== JSON.stringify(expected)) {
       this.quantizeHistory = null; this.refresh(); this.status.textContent = 'Quantize history expired after another Gate edit.'; return;
     }
-    this.beforeSongEdit();
+    this.songEdited();
     engine.setGateRecording(id, history.patternId, target === 'before' ? history.before : history.after);
     this.transport.gateRecordingChanged(id, history.patternId);
     history.state = target; this.refresh();
@@ -1062,7 +1171,7 @@ export class TriggerRecorder {
     const value = Math.max(0, Math.min(recording.durationSec, ratio * recording.durationSec));
     const gate = this.linked ? engine?.getGateRecording(id, source.gateUserId) : null;
     const pitch = this.linked ? engine?.getPitchRecording(id, source.pitchUserId) : null;
-    this.beforeSongEdit();
+    this.songEdited();
     if (this.lengthLocked) {
       const active = lane === 'gate' ? gate ?? recording : pitch ?? recording;
       const current = edge === 'start' ? active.selectionStartSec : active.selectionEndSec;
@@ -1123,16 +1232,15 @@ export class TriggerRecorder {
     const pitch = engine.getPitchRecording(id, source.pitchUserId);
     const active = lane === 'gate' ? gate : pitch;
     if (!active) return;
-    const settings = engine.getSongSettings();
-    const bars = settings.bars[Number(patternId.slice(-1)) - 1]!;
-    const seconds = bars * 240 / settings.bpm;
+    const bars = engine.getPatternBars(id, patternId);
+    const seconds = stretchLoopSeconds(bars, engine.getSongSettings());
     const intervals = this.linked && gate && pitch ? [gate, pitch] : [active];
     const exceeded = intervals.find(item => item.selectionStartSec + seconds > item.durationSec + 1e-9);
     if (exceeded) {
-      this.status.textContent = `${bars} Fit to Bars (${seconds.toFixed(2)} s) exceeds the ${exceeded === gate ? 'Gate' : 'Pitch'} recording. Move the start earlier or choose fewer Bars.`;
+      this.status.textContent = `${formatBars(bars)} bars (${seconds.toFixed(2)} s) exceed the ${exceeded === gate ? 'Gate' : 'Pitch'} recording. Move the start earlier or choose fewer Bars.`;
       return;
     }
-    this.beforeSongEdit();
+    this.songEdited();
     for (const item of intervals) item.selectionEndSec = Math.min(item.durationSec, item.selectionStartSec + seconds);
     if (lane === 'gate' || intervals.length === 2) {
       engine.setGateRecording(id, source.gateUserId, gate!);
@@ -1142,7 +1250,7 @@ export class TriggerRecorder {
       engine.setPitchRecording(id, source.pitchUserId, pitch!);
       this.transport.pitchRecordingChanged(id, source.pitchUserId);
     }
-    this.status.textContent = `${bars} Fit to Bars applied to ${this.linked && intervals.length === 2 ? 'Gate and Pitch' : lane}.`;
+    this.status.textContent = `Match Fit to ${formatBars(bars)} bars applied to ${this.linked && intervals.length === 2 ? 'Gate and Pitch' : lane}.`;
     this.refresh();
   }
 
@@ -1167,7 +1275,7 @@ export class TriggerRecorder {
     const source = this.transport.source(id), patternId = lane === 'gate' ? source.gateUserId : source.pitchUserId;
     const recording = lane === 'gate' ? engine.getGateRecording(id, patternId) : engine.getPitchRecording(id, patternId);
     if (!recording || !window.confirm(`Clear Timbre ${id} ${lane === 'gate' ? 'Gate' : 'Pitch'} ${sourceLabel(patternId)}?`)) return;
-    this.beforeSongEdit();
+    this.songEdited();
     if (lane === 'gate') { engine.setGateRecording(id, patternId, null); engine.setGateMuted(id, patternId, false); this.transport.laneCleared(id, 'gate'); }
     else { engine.setPitchRecording(id, patternId, null); engine.setPitchMuted(id, patternId, false); this.transport.laneCleared(id, 'pitch'); }
     this.refresh();
@@ -1184,7 +1292,11 @@ export class TriggerRecorder {
     this.toggle.setAttribute('aria-label', recordLabel); this.toggle.title = recordLabel;
     this.toggle.setAttribute('aria-pressed', String(this.mode === 'recording'));
     // New Pattern Length applies only to a Null Gate and Null Pitch; recorded Patterns keep their own length.
-    this.newLength.disabled = this.mode !== 'idle' || !!gateRecording || !!pitchRecording;
+    this.newLength.disabled = this.mode !== 'idle' || !!gateRecording || !!pitchRecording || source.stretch;
+    // Bars records the Pattern's bars from the Bars box (ADR 0010), so the seconds field is hidden there,
+    // keeping its place like the Bars box in Seconds.
+    this.newLength.hidden = source.stretch;
+    setText(this.newLengthTitle, 'New Pattern Length (s)');
     this.length.disabled = this.newLength.disabled;
     this.gate.disabled = !available || this.mode === 'starting';
     const pitchOnlyThumb = this.separate || this.mode === 'recording' && !this.includes('gate');
@@ -1194,8 +1306,7 @@ export class TriggerRecorder {
     this.gate.setAttribute('aria-pressed', String(!pitchOnlyThumb && this.heldOwner !== null));
     this.separateGate.disabled = !available || this.mode === 'starting' || !this.separate || !this.controllerGateAllowed();
     this.separateGate.setAttribute('aria-pressed', String(this.separate && this.heldOwner !== null));
-    this.separateButton.disabled = !available || this.mode !== 'idle';
-    this.separateButton.setAttribute('aria-pressed', String(this.separate));
+    this.syncSeparateButton(available);
     this.recordMode.disabled = this.mode !== 'idle';
     this.writeModeInput.disabled = this.mode !== 'idle';
     this.lengthMode.disabled = this.mode !== 'idle';
@@ -1208,12 +1319,21 @@ export class TriggerRecorder {
     this.gateMute.disabled = !gateRecording || this.mode !== 'idle';
     this.pitchMute.disabled = !pitchRecording || this.mode !== 'idle';
     this.gateClear.disabled = !gateRecording || this.mode !== 'idle'; this.pitchClear.disabled = !pitchRecording || this.mode !== 'idle';
+    // Time operations belong to the Bars mode (ADR 0010); Seconds shows why Quantize is off and hides Match Fit and the click.
     const barsMode = this.engine()?.getSongSettings().timingMode === 'bars';
+    this.gateApplyBars.hidden = this.pitchApplyBars.hidden = !barsMode;
+    this.quantizeNote.hidden = barsMode;
+    this.clickInput.parentElement!.hidden = !barsMode;
     this.gateApplyBars.disabled = !barsMode || !gateRecording || this.mode !== 'idle';
     this.pitchApplyBars.disabled = !barsMode || !pitchRecording || this.mode !== 'idle';
     const quantizeEnabled = barsMode && !!gateRecording && this.mode === 'idle';
     for (const control of [this.quantizeGrid, this.quantizeMode, this.quantizeGap, this.quantizeButton,
       this.editStartHandle, this.editEndHandle]) control.disabled = !quantizeEnabled;
+    // A Pattern shorter than a bar takes only the grids that divide it (1/4 bar: 1/4 to 1/32).
+    const quantizeEngine = this.engine(), quantizeId = this.selectedId();
+    const quantizeBars = quantizeEngine?.getChannel(quantizeId) ? quantizeEngine.getPatternBars(quantizeId, source.gateUserId) : 1;
+    for (const option of this.quantizeGrid.options) option.disabled = !quantizeGridFits(quantizeBars, Number(option.value));
+    if (!quantizeGridFits(quantizeBars, Number(this.quantizeGrid.value))) this.quantizeButton.disabled = true;
     const history = this.quantizeHistory;
     if (history && history.id === this.selectedId() && history.patternId === source.gateUserId &&
       JSON.stringify(gateRecording) !== JSON.stringify(history.state === 'after' ? history.after : history.before)) this.quantizeHistory = null;
@@ -1223,8 +1343,11 @@ export class TriggerRecorder {
     this.quantizeRedo.disabled = !quantizeEnabled || !sameTarget || activeHistory?.state !== 'before';
     this.gateMute.setAttribute('aria-pressed', String(available && this.engine()!.getGateMuted(this.selectedId(), source.gateUserId)));
     this.pitchMute.setAttribute('aria-pressed', String(available && this.engine()!.getPitchMuted(this.selectedId(), source.pitchUserId)));
-    const settingsDisabled = !available || this.mode !== 'idle';
-    for (const input of [this.pitchMode, this.pitchSteps, this.portamento, this.pitchScale, this.filterAmount, this.playSpeedInput]) input.disabled = settingsDisabled;
+    // Pitch settings stay playable while recording; Play/Rec Speed is the recording clock and stays locked.
+    const settingsDisabled = !available || this.mode === 'starting';
+    for (const input of [this.pitchMode, this.pitchSteps, this.portamento, this.pitchScale, this.filterAmount]) input.disabled = settingsDisabled;
+    // Stretch sets the loop from bars and BPM, so Play/Rec Speed has no effect until Stretch is off.
+    this.playSpeedInput.disabled = !available || this.mode !== 'idle' || source.stretch;
     this.filterWide.disabled = settingsDisabled;
     this.portamento.disabled = settingsDisabled || Number(this.pitchSteps.value) === 0;
     this.pitchInput.disabled = !available || this.mode === 'starting' || this.mode === 'recording' && this.separate && !this.includes('pitch');
@@ -1239,6 +1362,7 @@ export class TriggerRecorder {
     const duration = recording?.durationSec ?? this.configuredLength(); const gates = recording?.gates ?? [];
     this.gateBars.replaceChildren(...gates.map(gate => { const bar = document.createElement('span'); bar.style.left = `${gate.onSec / duration * 100}%`; bar.style.width = `${(gate.offSec - gate.onSec) / duration * 100}%`; return bar; }));
     this.renderTimeline(this.gateTimeline, recording, duration, `${gates.length} recorded Gates`);
+    this.renderGrid(this.gateTimeline, recording, duration, this.laneBars('gate', recording));
     this.renderGateEditRange(recording ?? null);
   }
 
@@ -1265,6 +1389,7 @@ export class TriggerRecorder {
     const duration = recording?.durationSec ?? this.configuredLength(); const points = recording?.points ?? [];
     this.pitchCurve.setAttribute('points', points.map(point => `${point.timeSec / duration * 1000},${(1 - point.valueNormalized) * 50}`).join(' '));
     this.renderTimeline(this.pitchTimeline, recording, duration, `${points.length} recorded Pitch points`);
+    this.renderGrid(this.pitchTimeline, recording, duration, this.laneBars('pitch', recording));
   }
 
   private renderTimeline(elements: ReturnType<TriggerRecorder['timelineElements']>, recording: TriggerRecording | PitchRecording | null | undefined,
@@ -1295,7 +1420,7 @@ export class TriggerRecorder {
     const laneText = (lane: TimelineLane): string => {
       const period = lane === 'gate' ? this.gatePeriodSec : this.pitchPeriodSec;
       const laps = lane === 'gate' ? this.gateLaps : this.pitchLaps;
-      const elapsed = Math.max(0, Math.min(period, this.elapsed() - laps * period));
+      const elapsed = Math.max(0, Math.min(period, this.elapsed(lane) - laps * period));
       return `${lane === 'gate' ? 'Gate' : 'Pitch'} ${timeText(elapsed)} / ${timeText(period)} · Lap ${laps + 1}`;
     };
     this.counter.textContent = this.mode === 'recording'
@@ -1310,5 +1435,132 @@ export class TriggerRecorder {
     };
     place(this.gateTimeline.playhead, gatePosition, this.includes('gate'), 'gate');
     place(this.pitchTimeline.playhead, pitchPosition, this.includes('pitch'), 'pitch');
+    this.updateBeatLamp();
+  }
+
+  /**
+   * Bars that divide a lane's selection for the Grid and the click (the Gate quantize grid):
+   * a lane that a Bars recording is creating uses that length; a recorded Pattern uses the
+   * timbre's bars of that Pattern while the mode is Bars; a Null Pattern previews a Bars length.
+   */
+  private laneBars(lane: TimelineLane, recording: TriggerRecording | PitchRecording | null | undefined): number | null {
+    const engine = this.engine(); if (!engine) return null;
+    // Stretch divides both lanes into the base Pattern's bars, whatever Song Timing is: that is where the bars play.
+    if (this.mode === 'recording' && this.stretchBars !== null) return this.stretchBars;
+    const stretch = this.idleStretchPattern();
+    const id = this.targetId ?? this.selectedId();
+    if (stretch) return engine.getPatternBars(id, stretch);
+    if (this.mode === 'recording' && (lane === 'gate' ? this.gateWasEmpty : this.pitchWasEmpty)) return this.recordingBars;
+    if (!recording) {
+      const value = Number(this.length.value);
+      return this.lengthMode.value === 'bars' && Number.isInteger(value) && value > 0 ? value : null;
+    }
+    if (engine.getSongSettings().timingMode !== 'bars' || !engine.getChannel(id)) return null;
+    const source = this.currentSource();
+    return engine.getPatternBars(id, lane === 'gate' ? source.gateUserId : source.pitchUserId);
+  }
+
+  private renderGrid(elements: ReturnType<TriggerRecorder['timelineElements']>, recording: TriggerRecording | PitchRecording | null | undefined,
+    duration: number, bars: number | null): void {
+    const grid = elements.grid;
+    const start = recording?.selectionStartSec ?? 0; const end = recording?.selectionEndSec ?? duration;
+    grid.hidden = !bars;
+    grid.dataset.bars = bars ? String(bars) : '';
+    grid.style.left = `${start / duration * 100}%`; grid.style.width = `${(end - start) / duration * 100}%`;
+    this.updateGridLayers(grid);
+  }
+
+  private updateGridLayers(grid: HTMLElement): void {
+    const bars = Number(grid.dataset.bars); const width = grid.clientWidth;
+    // Percent stops repeat over the grid element, so the lines follow the selection at any width.
+    const layer = (color: string, count: number) => `repeating-linear-gradient(to right, var(${color}) 0 1px, transparent 1px calc(100% / ${count}))`;
+    const layers: string[] = [];
+    if (bars > 0 && width / bars >= GRID_MIN_SPACING_PX) layers.push(layer('--color-record-grid-bar', bars));
+    if (bars > 0 && width / (bars * BEATS_PER_BAR) >= GRID_MIN_SPACING_PX) layers.push(layer('--color-record-grid-beat', bars * BEATS_PER_BAR));
+    const background = layers.join(', ');
+    if (grid.dataset.layers !== background) { grid.dataset.layers = background; grid.style.backgroundImage = background; }
+  }
+
+  /** The Stretch base Pattern of the selected timbre outside recording, or null without Stretch. */
+  private idleStretchPattern(): UserPatternId | null {
+    const engine = this.engine(); const id = this.targetId ?? this.selectedId();
+    if (this.mode === 'recording' || !engine?.getChannel(id)) return null;
+    const source = this.currentSource();
+    return source.stretch ? stretchBasePattern(source, !!engine.getGateRecording(id, source.gateUserId)) : null;
+  }
+  /** Length a new Pattern records under Stretch (real seconds of the Stretch loop), else null. */
+  private newStretchLength(): number | null {
+    if (this.mode === 'recording') return this.stretchLoopSec;
+    const engine = this.engine(); const pattern = this.idleStretchPattern();
+    return engine && pattern ? stretchLoopSeconds(engine.getPatternBars(this.targetId ?? this.selectedId(), pattern), engine.getSongSettings()) : null;
+  }
+
+  /**
+   * The recording loop clock that the click and other timbres' starts follow. A Stretch loop is
+   * whole bars in real time, so its laps never cut a bar short.
+   */
+  private clickClock(): LoopBarClock | null {
+    const engine = this.engine();
+    if (this.mode !== 'recording' || !engine) return null;
+    if (this.stretchLoopSec !== null)
+      // A loop shorter than a bar divides it, so the click counts whole bars instead of restarting each lap.
+      return { startedAt: this.startedAt, periodSec: Math.max(this.stretchLoopSec, 240 / engine.getSongSettings().bpm), speed: 1,
+        barSec: 240 / engine.getSongSettings().bpm };
+    const lane: TimelineLane = this.includes('gate') ? 'gate' : 'pitch';
+    const periodSec = lane === 'gate' ? this.gatePeriodSec : this.pitchPeriodSec;
+    return { startedAt: this.startedAt, periodSec, speed: this.clockSpeed(lane),
+      barSec: barSeconds(periodSec, this.laneBars(lane, lane === 'gate' ? this.gateWorking : this.pitchWorking), engine.getSongSettings().bpm) };
+  }
+
+  private scheduleClicks(): void {
+    const engine = this.engine(); const pattern = METRONOME_PATTERNS[this.clickChoice]; const clock = this.clickClock();
+    // Seconds is tape-like: no BPM, so no click.
+    if (!engine || !pattern || !clock || engine.getSongSettings().timingMode !== 'bars') return;
+    const now = engine.context.currentTime;
+    const from = Math.max(this.clickScheduledUntil, now), to = now + CLICK_LOOKAHEAD_SEC;
+    if (to <= from) return;
+    for (const click of clickTimes(clock, pattern, from, to)) {
+      engine.scheduleClick(click.time, METRONOME_TONES[click.tone]);
+      this.clickQueue.push(click);
+    }
+    this.clickScheduledUntil = to;
+  }
+
+  private cancelClicks(): void {
+    this.engine()?.cancelClicks();
+    this.clickScheduledUntil = 0; this.clickQueue = [];
+    this.updateBeatLamp();
+  }
+
+  private buildBeatLamp(): void {
+    const pattern = METRONOME_PATTERNS[this.clickChoice] ?? Object.values(METRONOME_PATTERNS)[0] ?? [];
+    this.beatLamp.replaceChildren(...pattern.map(tone => { const dot = document.createElement('span'); dot.dataset.tone = tone; return dot; }));
+    this.beatLamp.classList.toggle('off', !METRONOME_PATTERNS[this.clickChoice]);
+    delete this.beatLamp.dataset.step;
+    this.updateBeatLamp();
+  }
+
+  /** Lights the step whose click sounded most recently, until the next click. */
+  private updateBeatLamp(): void {
+    const now = this.engine()?.context.currentTime ?? 0;
+    while (this.clickQueue.length > 1 && this.clickQueue[1]!.time <= now) this.clickQueue.shift();
+    const head = this.clickQueue[0];
+    const step = this.mode === 'recording' && head && head.time <= now ? head.step : -1;
+    if (this.beatLamp.dataset.step === String(step)) return;
+    this.beatLamp.dataset.step = String(step);
+    [...this.beatLamp.children].forEach((dot, index) => dot.classList.toggle('on', index === step));
+  }
+
+  private loadClickOption(): void {
+    try {
+      const saved = localStorage.getItem(CLICK_STORAGE_KEY);
+      if (saved === 'off' || (saved && saved in METRONOME_PATTERNS)) this.clickChoice = saved;
+    } catch { /* Editor preferences are optional. */ }
+    this.clickInput.value = this.clickChoice;
+    this.buildBeatLamp();
+  }
+
+  private saveClickOption(): void {
+    try { localStorage.setItem(CLICK_STORAGE_KEY, this.clickChoice); } catch { /* The control still works for this page. */ }
   }
 }

@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { openTimbreEditors } from './editor-helpers.mjs';
 
 async function savedTimbre(page, id = '1') {
   const save = page.locator(`#save-${id}`); await expect(save).toBeEnabled();
@@ -35,6 +36,7 @@ async function dragTimelineHandle(page, selector, valueSec, durationSec) {
 
 test('records only the large Gate, trims without losing the take, loops and round-trips through timbre/session', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeEnabled(); await page.locator('#trigger-menu').click();
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   await page.locator('#record-length').fill('2');
   await page.locator('#source-user-1').click();
   await page.locator('#record-mode + .segmented-choice [data-value="gate"]').click();
@@ -48,7 +50,7 @@ test('records only the large Gate, trims without losing the take, loops and roun
   await page.locator('#record-toggle').click();
   await expect(page.locator('#record-status')).toHaveText('Recording complete');
   const timbre = await savedTimbre(page);
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v17');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v18');
   expect(userRecording(timbre).gates).toHaveLength(1);
   const gate = userRecording(timbre).gates[0];
   expect(gate.offSec - gate.onSec).toBeGreaterThan(.15);
@@ -106,11 +108,11 @@ test('records only the large Gate, trims without losing the take, loops and roun
   const sessionDownload = page.waitForEvent('download');
   await page.locator('#export-patch').click();
   const session = JSON.parse(await readFile(await (await sessionDownload).path(), 'utf8'));
-  expect(session.formatVersion).toBe('KOROGI-Lab/session-v20');
+  expect(session.formatVersion).toBe('KOROGI-Lab/session-v21');
   expect(userRecording(session.channels[0].timbre)).toEqual(userRecording(editedWhilePlaying));
   expect(session.channels[0].timbre.sequence).toMatchObject({ gateMode: 'user', gateUserId: 'user-1', pitchUserId: 'user-1' });
   expect(userRecording(session.channels[1].timbre)).toEqual(userRecording(trimmed));
-  await page.locator('#trigger-menu').click(); await page.locator('#sequence-panel').click();
+  await openTimbreEditors(page, ['sequence']); await page.locator('#sequence-panel').click();
   await expect(page.locator('#record-status')).toHaveText('Loop playing');
   await page.locator('#patch-file').setInputFiles({ name: 'session.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) });
   await expect(page.locator('#patch-status')).toContainText('Loaded:');
@@ -243,6 +245,7 @@ test('rebuilding a reserved Gate keeps the ADSR snapshot taken at its original O
 
 test('changing the trim while playing keeps the current cycle and starts the new range at its boundary', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeEnabled(); await page.locator('#trigger-menu').click();
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   const timbre = await savedTimbre(page);
   timbre.gatePatterns[0].recording = { durationSec: .8, selectionStartSec: 0, selectionEndSec: .8,
     gates: [{ onSec: .1, offSec: .2 }, { onSec: .55, offSec: .65 }] };
@@ -272,6 +275,7 @@ test('changing the trim while playing keeps the current cycle and starts the new
 
 test('End closes a held Gate, and an empty later take preserves it', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await expect(page.locator('#record-toggle')).toBeEnabled(); await page.locator('#trigger-menu').click();
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   await page.locator('#record-length').fill('1');
   await page.locator('#source-user-1').click();
   await page.locator('#record-mode + .segmented-choice [data-value="gate"]').click();
@@ -341,6 +345,7 @@ test('Play Speed controls recording clock and retained Pitch playback', async ({
 
 test('a new take loops at the fixed Play Speed until End', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   const timbre = await savedTimbre(page);
   timbre.sequence.playSpeed = 2;
   await page.locator('#timbre-file-1').setInputFiles({ name: 'new-take-speed.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });

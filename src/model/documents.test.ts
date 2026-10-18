@@ -1,11 +1,23 @@
 import { describe, it, expect } from 'vitest';
-import { defaultBus, defaultSongSettings, defaultTimbre, DEFAULT_CHANNEL_MIX, LAB_SLOT_IDS, normalizeTimbre, normalizeSession, parseTimbre, parseTimbreWithNotices, parseLabSession, parseLabSessionWithNotices, parseSession } from './documents';
+import { defaultBus, defaultSongSettings, defaultTimbre, DEFAULT_CHANNEL_MIX, LAB_SLOT_IDS, normalizeTimbre, normalizeSession, normalizeSongSettings, parseTimbre, parseTimbreWithNotices, parseLabSession, parseLabSessionWithNotices, parseSession } from './documents';
 import type { SessionDocument } from '../audio/types';
 import { PARAMETER_RANGES as P, parameterValueBounds } from '../config/parameterRanges';
 
 function session(): SessionDocument {
-  return { formatVersion: 'KOROGI-Lab/session-v20', name: 'Four', savedAt: '2026-09-19', channels: ['1', '2', '3', '4'].map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
+  return { formatVersion: 'KOROGI-Lab/session-v21', name: 'Four', savedAt: '2026-09-19', channels: ['1', '2', '3', '4'].map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
     near: defaultBus(), far: defaultBus(), crossfade: .5, masterGainDb: -18, masterMuted: false, song: defaultSongSettings() };
+}
+/** A Session saved before SongFrame (session-v20): one bar count per Pattern number, shared by every timbre. */
+function legacySession(bars: number[], build: (current: SessionDocument) => void = () => {}): Record<string, any> {
+  const current = session(); build(current);
+  const old = structuredClone(current) as unknown as Record<string, any>;
+  old.formatVersion = 'KOROGI-Lab/session-v20';
+  old.song = { bpm: current.song.bpm, speed: current.song.speed, timingMode: current.song.timingMode, bars };
+  for (const channel of old.channels) if (channel.timbre) { channel.timbre.formatVersion = 'KOROGI-Lab/timbre-v17'; delete channel.timbre.patternBars; }
+  return old;
+}
+function gateTake(seconds: number) {
+  return { durationSec: seconds, selectionStartSec: 0, selectionEndSec: seconds, gates: [{ onSec: 0, offSec: seconds / 2 }] };
 }
 function legacy(assignment = 'mix1') {
   return { formatVersion: 'KOROGI-Lab/0.1-harness-1ch-v4', patchName: 'Legacy', savedAt: 'then', globalDetuneRangeCent: 30,
@@ -23,21 +35,28 @@ describe('Timbre and session boundaries', () => {
     old.channels[0].timbre.gatePatterns.length = 3;
     old.channels[0].timbre.pitchPatterns.length = 3;
     const migrated = normalizeSession(old);
-    expect(migrated.song).toEqual(defaultSongSettings());
+    // Songs before session-v18 played every section at one bar: the recorded Pattern 1 sets a one-bar Frame.
+    // They also played in Seconds, which they keep although a new app starts in Bars.
+    expect(migrated.song).toEqual({ ...defaultSongSettings(), timingMode: 'original', frameBars: 1 });
+    expect(migrated.channels[0]!.timbre!.patternBars).toEqual([1, 1, 1, 1, 1, 1, 1, 1]);
     expect(migrated.channels[0]!.timbre!.gatePatterns[0]!.recording).toEqual(timbre.gatePatterns[0]!.recording);
     expect(migrated.channels[0]!.timbre!.gatePatterns).toHaveLength(8);
     expect(migrated.channels[0]!.timbre!.gatePatterns.slice(3).every(item => item.recording === null)).toBe(true);
-    migrated.song.bpm = 132; migrated.song.bars[2] = 165;
-    expect(parseLabSession(JSON.stringify(migrated)).song).toEqual(migrated.song);
-    migrated.song.bars[2] = 166;
+    migrated.song.bpm = 132; migrated.song.frameBars = 32; migrated.channels[0]!.timbre!.patternBars[2] = 32;
+    const reloaded = parseLabSession(JSON.stringify(migrated));
+    expect(reloaded.song).toEqual(migrated.song);
+    expect(reloaded.channels[0]!.timbre!.patternBars).toEqual(migrated.channels[0]!.timbre!.patternBars);
+    migrated.song.frameBars = 1.5;
     expect(() => normalizeSession(migrated)).toThrow('Song requires');
-    const v18 = structuredClone(current) as unknown as Record<string, any>;
+    const v18 = structuredClone(old);
     v18.formatVersion = 'KOROGI-Lab/session-v18';
     v18.song = { bpm: 130, bars: [1, 2, 1, 1, 1, 1, 1, 1] };
-    expect(normalizeSession(v18).song).toEqual({ ...v18.song, timingMode: 'bars', speed: 1 });
-    const v19 = structuredClone(current) as unknown as Record<string, any>;
-    v19.formatVersion = 'KOROGI-Lab/session-v19'; delete v19.song.speed;
-    expect(normalizeSession(v19).song).toEqual({ ...v19.song, speed: 1 });
+    const fromV18 = normalizeSession(v18);
+    expect(fromV18.song).toEqual({ bpm: 130, timingMode: 'bars', speed: 1, frameBars: 1 });
+    expect(fromV18.channels[0]!.timbre!.patternBars).toEqual([1, 2, 1, 1, 1, 1, 1, 1]);
+    const v19 = structuredClone(v18);
+    v19.formatVersion = 'KOROGI-Lab/session-v19'; v19.song.timingMode = 'original';
+    expect(normalizeSession(v19).song).toEqual({ bpm: 130, timingMode: 'original', speed: 1, frameBars: 1 });
     current.song.speed = 1.75;
     expect(parseLabSession(JSON.stringify(current)).song.speed).toBe(1.75);
     current.song.speed = 5;
@@ -74,7 +93,7 @@ describe('Timbre and session boundaries', () => {
     oldSettings.autoTrigger = { tonSec: .25, toffSec: .25, oneShotRepeatSec: .5 };
     delete (oldSettings.ampEnvelope as Record<string, unknown>).releaseTiming;
     const migrated = normalizeTimbre(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v17');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v18');
     expect(migrated.settings.pitchEnvelope).toEqual(defaultTimbre().settings.pitchEnvelope);
     expect(migrated.settings.ampEnvelope.releaseTiming).toBe('time');
     const newTimbre = defaultTimbre();
@@ -245,9 +264,9 @@ describe('Timbre and session boundaries', () => {
     (settings.osc2 as Record<string, unknown>).baseFrequencyHz = 1_000_000;
     channels[0]!.gainDb = 6;
     const migrated = parseLabSession(JSON.stringify(old));
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v20');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v21');
     expect(migrated.channels.every(channel => channel.pan === 0)).toBe(true);
-    expect(migrated.channels[0]!.timbre?.formatVersion).toBe('KOROGI-Lab/timbre-v17');
+    expect(migrated.channels[0]!.timbre?.formatVersion).toBe('KOROGI-Lab/timbre-v18');
     expect(migrated.channels[0]!.timbre?.settings.phaseMode).toBe('free');
     expect(migrated.channels[0]!.timbre?.settings.filter2Route).toBe('mod');
     expect(migrated.channels[0]!.timbre?.settings.filter1CutoffDepthCent).toBe(1200);
@@ -286,7 +305,7 @@ describe('Timbre and session boundaries', () => {
     timbre.formatVersion = 'KOROGI-Lab/timbre-v4'; delete timbre.playbackSource;
     timbre.recording = { durationSec: 1, selectionStartSec: 0, selectionEndSec: 1, gates: [{ onSec: .1, offSec: .2 }] };
     const migrated = normalizeSession(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v20');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v21');
     expect(migrated.channels[0]!.timbre!.sequence.gateMode).toBe('auto');
     expect(migrated.channels[0]!.timbre!.gatePatterns[0]!.recording).toEqual(timbre.recording);
     expect(migrated.channels[0]!.timbre!.gatePatterns[1]!.recording).toBeNull();
@@ -312,7 +331,7 @@ describe('Timbre and session boundaries', () => {
     old.patterns = [{ id: 'user-1', recording: { durationSec: 1, selectionStartSec: 0, selectionEndSec: 1,
       gates: [{ onSec: .1, offSec: .4 }] } }, { id: 'user-2', recording: null }];
     const migrated = normalizeTimbre(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v17');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v18');
     expect(migrated.pitchPatterns[2]!.recording).toBeNull();
     expect(migrated.gatePatterns[0]!.recording).toEqual((old.patterns as Array<Record<string, unknown>>)[0]!.recording);
     expect(migrated.pitchPatterns.map(pattern => pattern.recording)).toEqual(Array(8).fill(null));
@@ -343,12 +362,128 @@ describe('Timbre and session boundaries', () => {
     const migrated = normalizeTimbre(old);
     expect(migrated.pitchPatterns.slice(0, 3).map(item => item.recording?.points[0]?.valueNormalized)).toEqual([.1, .2, .3]);
     expect(migrated.pitchPatterns.slice(0, 3).map(item => item.pitchScaleCent)).toEqual([333, 600, 0]);
-    expect(migrated.sequence).toEqual({ gateMode: 'auto', gateUserId: 'user-1', pitchUserId: 'user-3', recordSpeed: 2, playSpeed: .5 });
+    expect(migrated.sequence).toEqual({ gateMode: 'auto', gateUserId: 'user-1', pitchUserId: 'user-3', recordSpeed: 2, playSpeed: .5, stretch: false });
     expect(normalizeTimbre(migrated)).toEqual(migrated);
     old.playbackSource = { kind: 'user', patternId: 'user-2' };
-    expect(normalizeTimbre(old).sequence).toEqual({ gateMode: 'user', gateUserId: 'user-2', pitchUserId: 'user-2', recordSpeed: 4, playSpeed: 4 });
+    expect(normalizeTimbre(old).sequence).toEqual({ gateMode: 'user', gateUserId: 'user-2', pitchUserId: 'user-2', recordSpeed: 4, playSpeed: 4, stretch: false });
     old.playbackSource = { kind: 'user', patternId: 'user-3' };
     expect(() => normalizeTimbre(old)).toThrow('playback source');
+  });
+  it('reads Stretch as off from timbre-v17 files saved before it and keeps it through a round trip', () => {
+    const old = structuredClone(defaultTimbre()) as unknown as { sequence: Record<string, unknown> };
+    delete old.sequence.stretch;
+    expect(normalizeTimbre(old).sequence.stretch).toBe(false);
+    const stretched = defaultTimbre(); stretched.sequence.stretch = true;
+    expect(normalizeTimbre(JSON.parse(JSON.stringify(stretched))).sequence.stretch).toBe(true);
+    (stretched.sequence as unknown as Record<string, unknown>).stretch = 'yes';
+    expect(() => normalizeTimbre(stretched)).toThrow('stretch');
+  });
+  it('opens a Session in Bars when it saved Bars or stretched any timbre (ADR 0010)', () => {
+    expect(session().song.timingMode).toBe('bars'); // A new app starts in Bars.
+    const plain = session(); plain.song.timingMode = 'original';
+    expect(normalizeSession(plain).song.timingMode).toBe('original');
+    const savedBars = session(); savedBars.song.timingMode = 'bars';
+    expect(normalizeSession(savedBars).song.timingMode).toBe('bars');
+    const stretched = session(); stretched.channels[0]!.timbre!.sequence.stretch = true;
+    expect(normalizeSession(stretched).song.timingMode).toBe('bars');
+    const bothBars = session(); bothBars.song.timingMode = 'bars'; bothBars.channels[0]!.timbre!.sequence.stretch = true;
+    expect(normalizeSession(bothBars).song.timingMode).toBe('bars');
+  });
+  it('reads whole Pattern bars above 32 from older files as 32 and reports it', () => {
+    const old = legacySession([1, 300, 33, 32, 1, 1, 1, 1]); old.song.bpm = 240;
+    const { session: loaded, notices } = parseLabSessionWithNotices(JSON.stringify(old));
+    expect(loaded.channels[0]!.timbre!.patternBars).toEqual([1, 32, 32, 32, 1, 1, 1, 1]);
+    expect(notices.songBarsCapped).toBe(true);
+    expect(parseLabSessionWithNotices(JSON.stringify(session())).notices.songBarsCapped).toBe(false);
+  });
+  it('reads 1/2, 1/4, 1/8 and 1/16 Pattern bars through a round trip and rejects other fractions', () => {
+    const fractional = session(); fractional.channels[0]!.timbre!.patternBars = [.5, .25, .125, .0625, 1, 2, 1, 1];
+    expect(parseLabSession(JSON.stringify(fractional)).channels[0]!.timbre!.patternBars).toEqual([.5, .25, .125, .0625, 1, 2, 1, 1]);
+    for (const bad of [.3, 1.5, 0, 1 / 32, 33]) {
+      const invalid = session(); invalid.channels[0]!.timbre!.patternBars[0] = bad;
+      expect(() => normalizeSession(invalid)).toThrow('Pattern bar counts');
+    }
+    // Older files take the same values through the shared bars.
+    expect(parseLabSession(JSON.stringify(legacySession([.5, .25, .125, .0625, 1, 2, 1, 1]))).channels[0]!.timbre!.patternBars)
+      .toEqual([.5, .25, .125, .0625, 1, 2, 1, 1]);
+    expect(() => normalizeSession(legacySession([.3, 1, 1, 1, 1, 1, 1, 1]))).toThrow('Song requires');
+  });
+  it('keeps the Frame as whole bars from 1 to 32 (ADR 0011)', () => {
+    expect(defaultSongSettings().frameBars).toBe(4);
+    for (const frameBars of [1, 32]) expect(normalizeSongSettings({ ...defaultSongSettings(), frameBars }).frameBars).toBe(frameBars);
+    for (const frameBars of [0, 33, 1.5, .25]) expect(() => normalizeSongSettings({ ...defaultSongSettings(), frameBars })).toThrow('Song requires');
+    expect(() => normalizeSongSettings({ ...defaultSongSettings(), frameBars: undefined })).toThrow('Song requires');
+  });
+  it('moves the shared bars of an older Session to every timbre and sets the Frame to the longest Song section', () => {
+    // Pattern 1 (4 bars) and Pattern 2 (2 bars) are Song sections; Pattern 3 (8 bars) has no Gate and is not.
+    const old = legacySession([4, 2, 8, 1, 1, 1, 1, 1], current => {
+      current.channels[1]!.timbre = defaultTimbre();
+      current.channels[0]!.timbre!.gatePatterns[0]!.recording = gateTake(8);
+      current.channels[1]!.timbre!.gatePatterns[1]!.recording = gateTake(4);
+      current.channels[1]!.timbre!.pitchPatterns[2]!.recording = { durationSec: 16, selectionStartSec: 0, selectionEndSec: 16,
+        points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: 16, valueNormalized: 0 }] };
+    });
+    const { session: loaded, notices } = parseLabSessionWithNotices(JSON.stringify(old));
+    expect(loaded.formatVersion).toBe('KOROGI-Lab/session-v21');
+    expect(loaded.song.frameBars).toBe(4);
+    expect(loaded.channels[0]!.timbre!.patternBars).toEqual([4, 2, 8, 1, 1, 1, 1, 1]);
+    expect(loaded.channels[1]!.timbre!.patternBars).toEqual([4, 2, 8, 1, 1, 1, 1, 1]);
+    expect(notices.songFrameMerged).toBe(4);
+    // Saved again, it reads back unchanged and reports nothing.
+    const again = parseLabSessionWithNotices(JSON.stringify(loaded));
+    expect(again.session).toEqual(loaded);
+    expect(again.notices.songFrameMerged).toBeNull();
+  });
+  it('reports no merge when every older Song section had the Frame length, and rounds fractions up to a whole Frame', () => {
+    const even = legacySession([2, 2, 8, 1, 1, 1, 1, 1], current => {
+      current.channels[0]!.timbre!.gatePatterns[0]!.recording = gateTake(4);
+      current.channels[0]!.timbre!.gatePatterns[1]!.recording = gateTake(4);
+    });
+    const loaded = parseLabSessionWithNotices(JSON.stringify(even));
+    expect(loaded.session.song.frameBars).toBe(2);
+    expect(loaded.notices.songFrameMerged).toBeNull();
+    // A Pattern left out of Song does not set the Frame.
+    const resting = legacySession([2, 6, 1, 1, 1, 1, 1, 1], current => {
+      current.channels[0]!.timbre!.gatePatterns[0]!.recording = gateTake(4);
+      current.channels[0]!.timbre!.gatePatterns[1]!.recording = gateTake(4);
+      current.channels[0]!.timbre!.gatePatterns[1]!.inSong = false;
+    });
+    expect(parseLabSession(JSON.stringify(resting)).song.frameBars).toBe(2);
+    const quarter = legacySession([.25, 1, 1, 1, 1, 1, 1, 1], current => { current.channels[0]!.timbre!.gatePatterns[0]!.recording = gateTake(.5); });
+    const fromQuarter = parseLabSessionWithNotices(JSON.stringify(quarter));
+    expect(fromQuarter.session.song.frameBars).toBe(1);
+    expect(fromQuarter.notices.songFrameMerged).toBe(1);
+    // Without a Song section the Frame starts at its initial value.
+    const silent = parseLabSessionWithNotices(JSON.stringify(legacySession([8, 1, 1, 1, 1, 1, 1, 1])));
+    expect(silent.session.song.frameBars).toBe(P['song-frame'].defaultValue);
+    expect(silent.notices.songFrameMerged).toBeNull();
+  });
+  it('round-trips the Pattern bars of a timbre-v18 file and reads older timbre files from their selections at the given BPM', () => {
+    const current = defaultTimbre(); current.patternBars = [.25, 2, 1, 1, 1, 1, 1, 32];
+    const saved = parseTimbreWithNotices(JSON.stringify(current));
+    expect(saved.timbre.patternBars).toEqual(current.patternBars);
+    expect(saved.notices.patternBarsFromSelections).toBe(false);
+    const old = structuredClone(current) as unknown as Record<string, any>;
+    old.formatVersion = 'KOROGI-Lab/timbre-v17'; delete old.patternBars;
+    // Pattern 1: a 0.50 s Gate at 120 BPM is 1/4 bar. Pattern 2: a 4.00 s Pitch alone is 2 bars. Others: one bar.
+    old.gatePatterns[0].recording = gateTake(.5);
+    old.pitchPatterns[1].recording = { durationSec: 4, selectionStartSec: 0, selectionEndSec: 4,
+      points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: 4, valueNormalized: 0 }] };
+    const derived = parseTimbreWithNotices(JSON.stringify(old), 120);
+    expect(derived.timbre.patternBars).toEqual([.25, 2, 1, 1, 1, 1, 1, 1]);
+    expect(derived.notices.patternBarsFromSelections).toBe(true);
+    expect(parseTimbreWithNotices(JSON.stringify(old), 60).timbre.patternBars.slice(0, 2)).toEqual([.125, 1]);
+    const invalid = structuredClone(current) as unknown as Record<string, any>; invalid.patternBars = [1, 1, 1];
+    expect(() => normalizeTimbre(invalid)).toThrow('Pattern bar counts');
+  });
+  it('reads every Pattern as in Song from timbre-v17 files saved before the choice and keeps it through a round trip', () => {
+    const old = structuredClone(defaultTimbre()) as unknown as { gatePatterns: Array<Record<string, unknown>> };
+    old.gatePatterns.forEach(item => { delete item.inSong; });
+    expect(normalizeTimbre(old).gatePatterns.every(item => item.inSong)).toBe(true);
+    const chosen = defaultTimbre(); chosen.gatePatterns[2]!.inSong = false;
+    expect(normalizeTimbre(JSON.parse(JSON.stringify(chosen))).gatePatterns.map(item => item.inSong)).toEqual([true, true, false, true, true, true, true, true]);
+    (chosen.gatePatterns[2] as unknown as Record<string, unknown>).inSong = 'no';
+    expect(() => normalizeTimbre(chosen)).toThrow('inSong');
   });
   it('migrates v2-v4 sessions to centered pan and validates pan in v5', () => {
     for (const version of [2, 3, 4]) {

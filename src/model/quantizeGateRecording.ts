@@ -19,6 +19,11 @@ export interface GateQuantizeResult {
   deletedGates: number;
 }
 
+/** A grid fits a Pattern when its bars hold a whole number of steps (1/16 bar takes 1/16 and 1/32, not 1/8). */
+export function quantizeGridFits(bars: number, denominator: number): boolean {
+  return Number.isInteger(bars * denominator) && bars * denominator >= 1;
+}
+
 type WorkingGate = { onSec: number; offSec: number; originalIndex: number; affected: boolean };
 
 /** Quantize stored Gate times; the result is the only recording that needs to be saved. */
@@ -26,7 +31,7 @@ export function quantizeGateRecording(recording: TriggerRecording, options: Gate
   const { selectionStartSec: start, selectionEndSec: end, durationSec } = recording;
   const { bars, denominator, mode, gapSec, editStartSec, editEndSec } = options;
   const gapRange = P['gate-quantize-gap'];
-  if (!Number.isInteger(bars) || bars < 1 || ![4, 8, 16, 32].includes(denominator) ||
+  if (![4, 8, 16, 32].includes(denominator) || !quantizeGridFits(bars, denominator) ||
     (mode !== 'on' && mode !== 'on-off') || !Number.isFinite(gapSec) ||
     gapSec < gapRange.min / 1000 || gapSec > gapRange.max / 1000 ||
     !Number.isFinite(editStartSec) || !Number.isFinite(editEndSec) ||

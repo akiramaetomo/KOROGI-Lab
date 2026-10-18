@@ -146,32 +146,47 @@ test('Pitch Replace keeps recorded Gate, and Gate Replace keeps recorded Pitch',
   expect(replaced.gatePatterns[0].recording).not.toEqual(saved.gatePatterns[0].recording);
 });
 
-test('Separate Both recording writes independent Gate and Pitch while locking the mode', async ({ page }) => {
+test('Separate Both recording writes independent Gate and Pitch, and Separate switches only while no input is held', async ({ page }) => {
   await openSequence(page);
   const original = await loadPattern(page);
   await probeController(page);
-  await page.locator('#sequence-separate').click();
+  const separate = page.locator('#sequence-separate');
+  await separate.click();
   await page.locator('#record-mode + .segmented-choice [data-value="both"]').click();
   await page.locator('#record-toggle').click();
   await expect(page.locator('#record-status')).toContainText('Recording');
-  await expect(page.locator('#sequence-separate')).toBeDisabled();
+  await expect(separate).toBeEnabled();
   const button = page.locator('#sequence-separate-gate');
   await button.scrollIntoViewIfNeeded();
   const box = await button.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
+  await expect(separate).toBeDisabled();
   await page.locator('#sequence-pitch-input').evaluate(node => {
     node.value = '.8'; node.dispatchEvent(new Event('input', { bubbles: true }));
   });
   await expect.poll(() => page.evaluate(() => [window.separateProbe.gateOn, window.separateProbe.pitchOn])).toEqual([1, 1]);
   await page.waitForTimeout(120);
   await page.mouse.up();
+  await expect(separate).toBeDisabled();
   await page.locator('#sequence-pitch-input').dispatchEvent('change');
+  await expect(separate).toBeEnabled();
+
+  // Back to the slide thumb during the same recording: one press plays both Gate and Pitch.
+  await separate.click();
+  await expect(separate).toHaveAttribute('aria-pressed', 'false');
+  await expect(button).toBeDisabled();
+  await holdTrack(page, .3);
+  await expect.poll(() => page.evaluate(() => [window.separateProbe.gateOn, window.separateProbe.pitchOn])).toEqual([2, 2]);
+  await expect(separate).toBeDisabled();
+  await page.waitForTimeout(120);
+  await page.mouse.up();
+  await expect(separate).toBeEnabled();
   await page.locator('#record-toggle').click();
   const saved = await saveTimbre(page);
   expect(saved.gatePatterns[0].recording).not.toEqual(original.gatePatterns[0].recording);
   expect(saved.pitchPatterns[0].recording).not.toEqual(original.pitchPatterns[0].recording);
-  await expect(page.locator('#sequence-separate')).toHaveAttribute('aria-pressed', 'true');
+  await expect(separate).toHaveAttribute('aria-pressed', 'false');
 });
 
 test('independent Gate excludes recorded Gate events and resumes the current Gate interval', async ({ page }) => {
@@ -315,6 +330,12 @@ test('separated Pitch thumb shows idle, held, and Gate-only recording states in 
   await expect(page.locator('#record-status')).toContainText('Recording');
   await expect(track).toHaveClass(/disabled/);
   const disabled = await thumbColor();
+  // Separate OFF during a Gate-only recording returns the slide Gate; ON again greys the Pitch thumb.
+  await page.locator('#sequence-separate').click();
+  await expect(track).not.toHaveClass(/disabled/);
+  await expect(track).not.toHaveClass(/pitch-only/);
+  await page.locator('#sequence-separate').click();
+  await expect(track).toHaveClass(/disabled/);
   await page.locator('#record-toggle').click();
 
   expect(new Set([gateColor, idle, held, disabled]).size).toBe(4);

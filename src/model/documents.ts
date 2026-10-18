@@ -2,8 +2,10 @@ import { DEFAULT_EDITOR_LAYOUT, normalizeEditorLayout } from './editorLayout';
 import { DEFAULT_CHANNEL_SETTINGS, DEFAULT_EFFECT_SLOT_SETTINGS, LIMITS } from '../audio/constants';
 import { PARAMETER_RANGES as P } from '../config/parameterRanges';
 import { maxSongBars } from './recordingLimits';
+import { isPatternBars } from './stretch';
+import { defaultPatternBars, frameBarsForSong, patternBarsFromSelections } from './songFrame';
 import { clamp } from '../audio/dsp/params';
-import type { BusSettings, ChannelSettings, EffectSlotSettings, PlaybackSource, SessionDocument, SongSettings, TimbreDocument, UserPattern, UserPatternId } from '../audio/types';
+import type { BusSettings, ChannelSettings, EffectSlotSettings, PatternBars, PlaybackSource, SessionDocument, SongSettings, TimbreDocument, UserPattern, UserPatternId } from '../audio/types';
 import { checkChoice, checkShape, isRecord } from './patch';
 import { emptyGatePatterns, emptyPitchPatterns, LEGACY_USER_PATTERN_IDS, normalizeTriggerRecording, USER_PATTERN_IDS } from './triggerRecording';
 import { defaultAutoSequence, defaultSequenceSettings, normalizePitchRecording, normalizeSequenceSettings } from './sequencePitch';
@@ -11,17 +13,25 @@ import { defaultAutoSequence, defaultSequenceSettings, normalizePitchRecording, 
 export const DEFAULT_CHANNEL_MIX = { gainDb: P.level.defaultValue, muted: false, balance: P.balance.defaultValue, pan: P.pan.defaultValue };
 export const LAB_SLOT_IDS = ['1', '2', '3', '4', '5', '6', '7', '8'] as const;
 export function defaultSongSettings(): SongSettings {
-  const bar = P['song-bars'].defaultValue;
-  return { bpm: P['song-bpm'].defaultValue, speed: P['song-speed'].defaultValue, bars: [bar, bar, bar, bar, bar, bar, bar, bar], timingMode: 'original' };
+  return { bpm: P['song-bpm'].defaultValue, speed: P['song-speed'].defaultValue, frameBars: P['song-frame'].defaultValue, timingMode: 'bars' };
+}
+function validSongTiming(raw: unknown): raw is Record<string, unknown> & { bpm: number; speed: number; timingMode: SongSettings['timingMode'] } {
+  return isRecord(raw) && Number.isInteger(raw.bpm) && (raw.bpm as number) >= P['song-bpm'].min && (raw.bpm as number) <= P['song-bpm'].max &&
+    ['original', 'bars'].includes(raw.timingMode as string) && typeof raw.speed === 'number' && Number.isFinite(raw.speed) &&
+    raw.speed >= P['song-speed'].min && raw.speed <= P['song-speed'].max;
 }
 export function normalizeSongSettings(raw: unknown): SongSettings {
-  if (!isRecord(raw) || !Number.isInteger(raw.bpm) || (raw.bpm as number) < P['song-bpm'].min || (raw.bpm as number) > P['song-bpm'].max ||
-    !Array.isArray(raw.bars) || raw.bars.length !== USER_PATTERN_IDS.length ||
-    raw.bars.some(bar => !Number.isInteger(bar) || bar < P['song-bars'].min || bar > Math.min(P['song-bars'].max, maxSongBars(raw.bpm as number))) ||
-    !['original', 'bars'].includes(raw.timingMode as string) || typeof raw.speed !== 'number' || !Number.isFinite(raw.speed) ||
-    raw.speed < P['song-speed'].min || raw.speed > P['song-speed'].max)
-    throw new Error('Song requires Seconds or Bars timing, BPM 30–480, Speed 0.25–4 and eight bar counts within 300 seconds each.');
-  return { bpm: raw.bpm as number, speed: raw.speed, bars: [...raw.bars] as SongSettings['bars'], timingMode: raw.timingMode as SongSettings['timingMode'] };
+  if (!validSongTiming(raw) || !Number.isInteger(raw.frameBars) || (raw.frameBars as number) < P['song-frame'].min ||
+    (raw.frameBars as number) > Math.min(P['song-frame'].max, maxSongBars(raw.bpm)))
+    throw new Error(`Song requires Seconds or Bars timing, BPM 30–480, Speed 0.25–4 and a Frame of ${P['song-frame'].min} to ${P['song-frame'].max} whole bars.`);
+  return { bpm: raw.bpm, speed: raw.speed, frameBars: raw.frameBars as number, timingMode: raw.timingMode };
+}
+/** Pattern bars of a Song saved before SongFrame (session-v18 to v20): one count per Pattern number for every timbre. */
+function legacySongBars(raw: unknown): PatternBars {
+  if (!validSongTiming(raw) || !Array.isArray(raw.bars) || raw.bars.length !== USER_PATTERN_IDS.length ||
+    raw.bars.some(bar => typeof bar !== 'number' || !isPatternBars(bar, maxSongBars(raw.bpm))))
+    throw new Error('Song requires Seconds or Bars timing, BPM 30–480, Speed 0.25–4 and eight bar counts (1/2, 1/4, 1/8, 1/16 or 1 to 32 whole bars) within 300 seconds each.');
+  return [...raw.bars] as PatternBars;
 }
 export function defaultBus(): BusSettings {
   return { gainDb: P['bus-gain'].defaultValue, gainEnabled: true, effects: [
@@ -29,9 +39,9 @@ export function defaultBus(): BusSettings {
   ] };
 }
 export function defaultTimbre(name = 'Standard'): TimbreDocument {
-  return { formatVersion: 'KOROGI-Lab/timbre-v17', name, editorLayout: DEFAULT_EDITOR_LAYOUT.map(column => [...column]), settings: structuredClone(DEFAULT_CHANNEL_SETTINGS), detuneRangeCent: P['detune-range'].defaultValue, detuneNormalized: 0,
-    gatePatterns: emptyGatePatterns(), pitchPatterns: emptyPitchPatterns(), sequence: {
-      gateMode: 'auto', gateUserId: 'user-1', pitchUserId: 'user-1', recordSpeed: 1, playSpeed: 1
+  return { formatVersion: 'KOROGI-Lab/timbre-v18', name, editorLayout: DEFAULT_EDITOR_LAYOUT.map(column => [...column]), settings: structuredClone(DEFAULT_CHANNEL_SETTINGS), detuneRangeCent: P['detune-range'].defaultValue, detuneNormalized: 0,
+    gatePatterns: emptyGatePatterns(), pitchPatterns: emptyPitchPatterns(), patternBars: defaultPatternBars(), sequence: {
+      gateMode: 'auto', gateUserId: 'user-1', pitchUserId: 'user-1', recordSpeed: 1, playSpeed: 1, stretch: false
     } };
 }
 
@@ -57,23 +67,44 @@ function effect(value: EffectSlotSettings, fallback: Exclude<EffectSlotSettings[
 }
 
 /** Formats that store the ADSR PEnv; older files have their PEnv replaced by the neutral default. */
-const NEW_PITCH_ENVELOPE_FORMATS: readonly string[] = ['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'];
+const NEW_PITCH_ENVELOPE_FORMATS: readonly string[] = ['KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17', 'KOROGI-Lab/timbre-v18'];
 
 /** What a load migrated, so the UI reports it without re-deriving format versions. */
 export interface LoadNotices { legacyPitchEnvelopeIgnored: boolean }
+
+/** A timbre file saved before SongFrame has its Pattern bars read from its selections at the current BPM. */
+export interface TimbreLoadNotices extends LoadNotices { patternBarsFromSelections: boolean }
+
+/**
+ * A Session load also reports Pattern bars above the 32-bar limit that were read as 32, and the Frame length
+ * (in bars) when Song sections of different lengths before SongFrame now share it, else null.
+ */
+export interface SessionLoadNotices extends LoadNotices { songBarsCapped: boolean; songFrameMerged: number | null }
+
+/** Song of a saved file with whole Pattern bars above the limit read as the limit (files from before the 32-bar cap). */
+function capSavedSongBars(song: unknown): unknown {
+  if (!isRecord(song) || !Array.isArray(song.bars)) return song;
+  return { ...song, bars: song.bars.map(bar => Number.isInteger(bar) && (bar as number) > P['song-bars'].max ? P['song-bars'].max : bar) };
+}
+function songBarsAboveLimit(song: unknown): boolean {
+  return isRecord(song) && Array.isArray(song.bars) && song.bars.some(bar => Number.isInteger(bar) && (bar as number) > P['song-bars'].max);
+}
 
 function timbreNotices(raw: unknown): LoadNotices {
   return { legacyPitchEnvelopeIgnored: !NEW_PITCH_ENVELOPE_FORMATS.includes((raw as { formatVersion?: string }).formatVersion ?? '') };
 }
 
-/** Pure boundary: reject invalid types/enums, normalize finite values, strip unknown fields. */
-export function normalizeTimbre(raw: unknown): TimbreDocument {
-  requireFormat(raw, ['KOROGI-Lab/timbre-v2', 'KOROGI-Lab/timbre-v3', 'KOROGI-Lab/timbre-v4', 'KOROGI-Lab/timbre-v5', 'KOROGI-Lab/timbre-v6', 'KOROGI-Lab/timbre-v7', 'KOROGI-Lab/timbre-v8', 'KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17']);
+/**
+ * Pure boundary: reject invalid types/enums, normalize finite values, strip unknown fields. Files saved before
+ * SongFrame (timbre-v17 and older) read their Pattern bars from their selections at `bpm` (ADR 0011).
+ */
+export function normalizeTimbre(raw: unknown, bpm: number = P['song-bpm'].defaultValue): TimbreDocument {
+  requireFormat(raw, ['KOROGI-Lab/timbre-v2', 'KOROGI-Lab/timbre-v3', 'KOROGI-Lab/timbre-v4', 'KOROGI-Lab/timbre-v5', 'KOROGI-Lab/timbre-v6', 'KOROGI-Lab/timbre-v7', 'KOROGI-Lab/timbre-v8', 'KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17', 'KOROGI-Lab/timbre-v18']);
   const rawRecord = raw as Record<string, unknown>;
   const format = rawRecord.formatVersion as string;
-  const modern = ['KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format);
+  const modern = ['KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17', 'KOROGI-Lab/timbre-v18'].includes(format);
   const newEnvelope = NEW_PITCH_ENVELOPE_FORMATS.includes(format);
-  const independentEnvelope = ['KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format);
+  const independentEnvelope = ['KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17', 'KOROGI-Lab/timbre-v18'].includes(format);
   const old = format === 'KOROGI-Lab/timbre-v2';
   const legacyPatterns = !modern && !['KOROGI-Lab/timbre-v6', 'KOROGI-Lab/timbre-v7', 'KOROGI-Lab/timbre-v8'].includes(format);
   const legacyRecording = ['KOROGI-Lab/timbre-v4', 'KOROGI-Lab/timbre-v5'].includes(format) ? rawRecord.recording : null;
@@ -129,31 +160,32 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
       USER_PATTERN_IDS.slice(0, 3).some(id => !patterns.some(item => item.id === id)) ||
       new Set(patterns.map(item => item.id)).size !== 3) throw new Error(`Old ${lane} must contain Pattern 1–3 exactly once.`);
   }
-  const editorLayout = ['KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format)
-    ? normalizeEditorLayout(rawRecord.editorLayout, !['KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format)) : DEFAULT_EDITOR_LAYOUT.map(column => [...column]);
+  const editorLayout = ['KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17', 'KOROGI-Lab/timbre-v18'].includes(format)
+    ? normalizeEditorLayout(rawRecord.editorLayout, !['KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17', 'KOROGI-Lab/timbre-v18'].includes(format)) : DEFAULT_EDITOR_LAYOUT.map(column => [...column]);
   const pitchPatternsWithAmount = Array.isArray(migrated.pitchPatterns)
     ? migrated.pitchPatterns.map((item: Record<string, any>) => ({ ...item,
-      ...(!['KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format) ? { filterAmountCent: 0 } : {}),
-      ...(!['KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format) ? { pitchMode: { ...item.pitchMode, scale: 'equal',
+      ...(!['KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17', 'KOROGI-Lab/timbre-v18'].includes(format) ? { filterAmountCent: 0 } : {}),
+      ...(!['KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17', 'KOROGI-Lab/timbre-v18'].includes(format) ? { pitchMode: { ...item.pitchMode, scale: 'equal',
         portamentoSec: item.pitchMode?.portamentoSec ?? 0 } } : {}) }))
     : migrated.pitchPatterns;
-  const newFormat = format === 'KOROGI-Lab/timbre-v16' || format === 'KOROGI-Lab/timbre-v17';
-  const expandedGate = format === 'KOROGI-Lab/timbre-v17' ? migrated.gatePatterns : [...migrated.gatePatterns, ...emptyGatePatterns().slice(migrated.gatePatterns.length)];
-  const expandedPitch = format === 'KOROGI-Lab/timbre-v17' ? migrated.pitchPatterns : [...migrated.pitchPatterns, ...emptyPitchPatterns().slice(migrated.pitchPatterns.length)];
+  const eightPatterns = format === 'KOROGI-Lab/timbre-v17' || format === 'KOROGI-Lab/timbre-v18';
+  const newFormat = format === 'KOROGI-Lab/timbre-v16' || eightPatterns;
+  const expandedGate = eightPatterns ? migrated.gatePatterns : [...migrated.gatePatterns, ...emptyGatePatterns().slice(migrated.gatePatterns.length)];
+  const expandedPitch = eightPatterns ? migrated.pitchPatterns : [...migrated.pitchPatterns, ...emptyPitchPatterns().slice(migrated.pitchPatterns.length)];
   const value = { ...migrated, gatePatterns: expandedGate, pitchPatterns: expandedPitch.map((item: Record<string, unknown>, index: number) => ({
-    ...item, ...(index < pitchPatternsWithAmount.length ? pitchPatternsWithAmount[index] : {}), ...(!newFormat ? { filterAmountWide: false } : {}) })), editorLayout, formatVersion: 'KOROGI-Lab/timbre-v17', settings: {
+    ...item, ...(index < pitchPatternsWithAmount.length ? pitchPatternsWithAmount[index] : {}), ...(!newFormat ? { filterAmountWide: false } : {}) })), editorLayout, formatVersion: 'KOROGI-Lab/timbre-v18', settings: {
     ...(withSequencePitch.settings as Record<string, unknown>),
-    ...(!['KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format) ? {
+    ...(!['KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17', 'KOROGI-Lab/timbre-v18'].includes(format) ? {
       filterEnvelope: { ...structuredClone(DEFAULT_CHANNEL_SETTINGS.filterEnvelope), amountCent: 0 },
       blocksEnabled: { ...(withSequencePitch.settings as ChannelSettings).blocksEnabled, fenv: false }
     } : {}),
     pitchEnvelope: { ...(newEnvelope ? (withSequencePitch.settings as Record<string, any>).pitchEnvelope : structuredClone(DEFAULT_CHANNEL_SETTINGS.pitchEnvelope)),
       ...(!newFormat ? { curve: 'linear' } : {}) },
-    filterEnvelope: { ...(['KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format)
+    filterEnvelope: { ...(['KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17', 'KOROGI-Lab/timbre-v18'].includes(format)
       ? (withSequencePitch.settings as Record<string, any>).filterEnvelope
       : { ...DEFAULT_CHANNEL_SETTINGS.filterEnvelope, amountCent: 0 }),
       ...(!newFormat ? { amountWide: false } : {}) },
-    burst: ['KOROGI-Lab/timbre-v7', 'KOROGI-Lab/timbre-v8', 'KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17'].includes(format)
+    burst: ['KOROGI-Lab/timbre-v7', 'KOROGI-Lab/timbre-v8', 'KOROGI-Lab/timbre-v9', 'KOROGI-Lab/timbre-v10', 'KOROGI-Lab/timbre-v11', 'KOROGI-Lab/timbre-v12', 'KOROGI-Lab/timbre-v13', 'KOROGI-Lab/timbre-v14', 'KOROGI-Lab/timbre-v15', 'KOROGI-Lab/timbre-v16', 'KOROGI-Lab/timbre-v17', 'KOROGI-Lab/timbre-v18'].includes(format)
       ? (sequenced.settings as Record<string, unknown>).burst
       : structuredClone(DEFAULT_CHANNEL_SETTINGS.burst)
   } } as unknown as TimbreDocument;
@@ -172,22 +204,31 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
   if (!Array.isArray(withCurves.gatePatterns) || withCurves.gatePatterns.length !== USER_PATTERN_IDS.length ||
     !Array.isArray(withCurves.pitchPatterns) || withCurves.pitchPatterns.length !== USER_PATTERN_IDS.length) throw new Error('Eight Gate and Pitch patterns are required.');
   const { editorLayout: _layout, ...template } = defaultTimbre();
-  checkShape(withCurves, template, 'timbre');
-  const selection = withCurves.sequence;
+  // Stretch was added within timbre-v17; files saved before it play at their own speed.
+  const selection = { ...withCurves.sequence, stretch: withCurves.sequence.stretch ?? false };
+  // Song's per-Pattern choice was added within timbre-v17; files saved before it play every Pattern.
+  const gateInput = withCurves.gatePatterns.map(item => ({ ...item, inSong: item.inSong ?? true }));
+  // SongFrame (timbre-v18) stores bars per Pattern number; older files derive them once the Patterns are read.
+  const savedBars = format === 'KOROGI-Lab/timbre-v18' ? (rawRecord.patternBars as unknown) : null;
+  if (savedBars !== null && (!Array.isArray(savedBars) || savedBars.length !== USER_PATTERN_IDS.length ||
+    savedBars.some(bar => typeof bar !== 'number' || !isPatternBars(bar, P['song-bars'].max))))
+    throw new Error('Timbre requires eight Pattern bar counts (1/2, 1/4, 1/8, 1/16 or 1 to 32 whole bars).');
+  checkShape({ ...withCurves, sequence: selection, gatePatterns: gateInput, patternBars: savedBars ?? defaultPatternBars() }, template, 'timbre');
   checkChoice(selection.gateMode, ['auto', 'user'], 'Gate mode');
   checkChoice(selection.gateUserId, USER_PATTERN_IDS, 'Gate Pattern'); checkChoice(selection.pitchUserId, USER_PATTERN_IDS, 'Pitch Pattern');
   const normalizePatterns = <T extends { id: string }>(items: T[], lane: 'Gate' | 'Pitch') => {
     const ids = new Set(items.map(item => item.id));
     if (ids.size !== USER_PATTERN_IDS.length || USER_PATTERN_IDS.some(id => !ids.has(id))) throw new Error(`${lane} Pattern IDs must be unique and complete.`);
   };
-  normalizePatterns(withCurves.gatePatterns, 'Gate'); normalizePatterns(withCurves.pitchPatterns, 'Pitch');
-  const gatePatterns = withCurves.gatePatterns.map(item => ({ id: item.id, recording: normalizeTriggerRecording(item.recording), muted: item.muted }));
+  normalizePatterns(gateInput, 'Gate'); normalizePatterns(withCurves.pitchPatterns, 'Pitch');
+  const gatePatterns = gateInput.map(item => ({ id: item.id, recording: normalizeTriggerRecording(item.recording), muted: item.muted, inSong: item.inSong }));
   const pitchPatterns = withCurves.pitchPatterns.map(item => {
     const settings = normalizeSequenceSettings({ pitchMode: item.pitchMode, pitchScaleCent: item.pitchScaleCent, filterAmountCent: item.filterAmountCent,
       filterAmountWide: item.filterAmountWide, recordSpeed: 1, playSpeed: 1 });
     return { id: item.id, recording: normalizePitchRecording(item.recording), muted: item.muted,
       pitchMode: settings.pitchMode, pitchScaleCent: settings.pitchScaleCent, filterAmountCent: settings.filterAmountCent, filterAmountWide: settings.filterAmountWide };
   });
+  const patternBars = savedBars ? [...savedBars] as PatternBars : patternBarsFromSelections({ gatePatterns, pitchPatterns }, bpm);
   const speeds = normalizeSequenceSettings({ pitchMode: { kind: 'smooth' }, pitchScaleCent: 200,
     recordSpeed: selection.recordSpeed, playSpeed: selection.playSpeed });
   const ch = withCurves.settings;
@@ -277,33 +318,63 @@ export function normalizeTimbre(raw: unknown): TimbreDocument {
       groupPeriodJitter: burstRange(ch.burst.groupPeriodJitter, LIMITS.burstJitter, 'group jitter')
     }
   };
-  return { formatVersion: 'KOROGI-Lab/timbre-v17', name: value.name.trim() || 'Untitled', editorLayout, settings,
+  return { formatVersion: 'KOROGI-Lab/timbre-v18', name: value.name.trim() || 'Untitled', editorLayout, settings,
     detuneRangeCent: bounded(value.detuneRangeCent, LIMITS.detuneRangeCent), detuneNormalized: clamp(value.detuneNormalized, -1, 1),
-    gatePatterns, pitchPatterns, sequence: { gateMode: selection.gateMode, gateUserId: selection.gateUserId, pitchUserId: selection.pitchUserId,
-      recordSpeed: speeds.recordSpeed, playSpeed: speeds.playSpeed } };
+    gatePatterns, pitchPatterns, patternBars, sequence: { gateMode: selection.gateMode, gateUserId: selection.gateUserId, pitchUserId: selection.pitchUserId,
+      recordSpeed: speeds.recordSpeed, playSpeed: speeds.playSpeed, stretch: selection.stretch } };
 }
 
 export function normalizeSession(raw: unknown): SessionDocument {
-  requireFormat(raw, ['KOROGI-Lab/session-v2', 'KOROGI-Lab/session-v3', 'KOROGI-Lab/session-v4', 'KOROGI-Lab/session-v5', 'KOROGI-Lab/session-v6', 'KOROGI-Lab/session-v7', 'KOROGI-Lab/session-v8', 'KOROGI-Lab/session-v9', 'KOROGI-Lab/session-v10', 'KOROGI-Lab/session-v11', 'KOROGI-Lab/session-v12', 'KOROGI-Lab/session-v13', 'KOROGI-Lab/session-v14', 'KOROGI-Lab/session-v15', 'KOROGI-Lab/session-v16', 'KOROGI-Lab/session-v17', 'KOROGI-Lab/session-v18', 'KOROGI-Lab/session-v19', 'KOROGI-Lab/session-v20']);
+  requireFormat(raw, ['KOROGI-Lab/session-v2', 'KOROGI-Lab/session-v3', 'KOROGI-Lab/session-v4', 'KOROGI-Lab/session-v5', 'KOROGI-Lab/session-v6', 'KOROGI-Lab/session-v7', 'KOROGI-Lab/session-v8', 'KOROGI-Lab/session-v9', 'KOROGI-Lab/session-v10', 'KOROGI-Lab/session-v11', 'KOROGI-Lab/session-v12', 'KOROGI-Lab/session-v13', 'KOROGI-Lab/session-v14', 'KOROGI-Lab/session-v15', 'KOROGI-Lab/session-v16', 'KOROGI-Lab/session-v17', 'KOROGI-Lab/session-v18', 'KOROGI-Lab/session-v19', 'KOROGI-Lab/session-v20', 'KOROGI-Lab/session-v21']);
   if (!isRecord(raw) || !Array.isArray(raw.channels)) throw new Error('Session channels must be an array.');
   checkShape(raw, { formatVersion: '', name: '', savedAt: '', near: defaultBus(), far: defaultBus(), crossfade: 0, masterGainDb: 0, masterMuted: false }, 'session');
   const value = raw as unknown as SessionDocument;
-  const legacyPan = !['KOROGI-Lab/session-v5', 'KOROGI-Lab/session-v6', 'KOROGI-Lab/session-v7', 'KOROGI-Lab/session-v8', 'KOROGI-Lab/session-v9', 'KOROGI-Lab/session-v10', 'KOROGI-Lab/session-v11', 'KOROGI-Lab/session-v12', 'KOROGI-Lab/session-v13', 'KOROGI-Lab/session-v14', 'KOROGI-Lab/session-v15', 'KOROGI-Lab/session-v16', 'KOROGI-Lab/session-v17', 'KOROGI-Lab/session-v18', 'KOROGI-Lab/session-v19', 'KOROGI-Lab/session-v20'].includes(value.formatVersion);
+  const legacyPan = !['KOROGI-Lab/session-v5', 'KOROGI-Lab/session-v6', 'KOROGI-Lab/session-v7', 'KOROGI-Lab/session-v8', 'KOROGI-Lab/session-v9', 'KOROGI-Lab/session-v10', 'KOROGI-Lab/session-v11', 'KOROGI-Lab/session-v12', 'KOROGI-Lab/session-v13', 'KOROGI-Lab/session-v14', 'KOROGI-Lab/session-v15', 'KOROGI-Lab/session-v16', 'KOROGI-Lab/session-v17', 'KOROGI-Lab/session-v18', 'KOROGI-Lab/session-v19', 'KOROGI-Lab/session-v20', 'KOROGI-Lab/session-v21'].includes(value.formatVersion);
   const ids = new Set<string>();
+  const rawBpm = isRecord(value.song) && Number.isInteger(value.song.bpm) ? value.song.bpm as number : P['song-bpm'].defaultValue;
   const channels = value.channels.map(channel => {
     const withPan = legacyPan ? { ...channel, pan: P.pan.defaultValue } : channel;
     checkShape(withPan, { id: '', ...DEFAULT_CHANNEL_MIX }, 'channel');
     if (!channel.id.trim() || ids.has(channel.id)) throw new Error('Channel IDs must be nonempty and unique.');
     ids.add(channel.id);
     return { id: channel.id, gainDb: bounded(channel.gainDb, LIMITS.channelLevelDb), muted: channel.muted, balance: clamp(channel.balance, P.balance.min, P.balance.max), pan: clamp(withPan.pan, P.pan.min, P.pan.max),
-      timbre: channel.timbre === null ? null : normalizeTimbre(channel.timbre) };
+      timbre: channel.timbre === null ? null : normalizeTimbre(channel.timbre, rawBpm) };
   });
   const bus = (b: BusSettings): BusSettings => ({ gainEnabled: b.gainEnabled, gainDb: bounded(b.gainDb, LIMITS.busGainDb), effects: [effect(b.effects[0], 'chorus'), effect(b.effects[1], 'reverb')] });
-  return { formatVersion: 'KOROGI-Lab/session-v20', name: value.name.trim() || 'Untitled', savedAt: value.savedAt,
+  const song = value.formatVersion === 'KOROGI-Lab/session-v21' ? normalizeSongSettings(value.song) : legacySong(value, channels).song;
+  // The time mode is app-wide (ADR 0010): a Session that stretched any timbre opens in Bars.
+  if (channels.some(channel => channel.timbre?.sequence.stretch)) song.timingMode = 'bars';
+  return { formatVersion: 'KOROGI-Lab/session-v21', name: value.name.trim() || 'Untitled', savedAt: value.savedAt,
     channels, near: bus(value.near), far: bus(value.far), crossfade: clamp(value.crossfade, P.crossfade.min / 100, P.crossfade.max / 100), masterGainDb: bounded(value.masterGainDb, LIMITS.masterGainDb), masterMuted: value.masterMuted,
-    song: value.formatVersion === 'KOROGI-Lab/session-v20' ? normalizeSongSettings(value.song)
-      : value.formatVersion === 'KOROGI-Lab/session-v19' ? normalizeSongSettings({ ...value.song, speed: 1 })
-        : value.formatVersion === 'KOROGI-Lab/session-v18' ? normalizeSongSettings({ ...value.song, timingMode: 'bars', speed: 1 }) : defaultSongSettings() };
+    song };
+}
+
+/**
+ * Song of a Session saved before SongFrame (ADR 0011). Each timbre takes the old per-number bars as its Pattern bars
+ * (session-v17 and older had none: one bar). The Frame becomes the longest Song section, so `merged` reports the
+ * Frame when any section had another length.
+ */
+function legacySong(value: SessionDocument, channels: SessionDocument['channels']): { song: SongSettings; merged: number | null } {
+  const raw = value.song as unknown;
+  const saved = isRecord(raw) ? capSavedSongBars(raw) as Record<string, unknown> : {};
+  const format: string = value.formatVersion;
+  const timing = format === 'KOROGI-Lab/session-v20' ? saved
+    : format === 'KOROGI-Lab/session-v19' ? { ...saved, speed: 1 }
+      : format === 'KOROGI-Lab/session-v18' ? { ...saved, timingMode: 'bars', speed: 1 } : null;
+  const fallback = defaultSongSettings();
+  const bars = timing ? legacySongBars(timing) : defaultPatternBars();
+  const timbres = channels.flatMap(channel => channel.timbre ? [channel.timbre] : []);
+  for (const timbre of timbres) timbre.patternBars = [...bars] as PatternBars;
+  const frameBars = frameBarsForSong(timbres) ?? fallback.frameBars;
+  const sections = USER_PATTERN_IDS.flatMap((id, index) => timbres.some(timbre => {
+    const gate = timbre.gatePatterns.find(item => item.id === id);
+    return !!gate?.recording && gate.inSong;
+  }) ? [index] : []);
+  const merged = sections.some(index => bars[index] !== frameBars) ? frameBars : null;
+  const song = timing ? { bpm: timing.bpm as number, speed: timing.speed as number, timingMode: timing.timingMode as SongSettings['timingMode'], frameBars }
+    // Sessions before Song Timing (v17 and older) played in Seconds; they keep it although a new app starts in Bars.
+    : { ...fallback, timingMode: 'original' as const, frameBars };
+  return { song, merged };
 }
 
 function requireFormat(raw: unknown, accepted: readonly string[]): void {
@@ -316,10 +387,11 @@ export function parseTimbre(text: string): TimbreDocument {
   return parseTimbreWithNotices(text).timbre;
 }
 
-export function parseTimbreWithNotices(text: string): { timbre: TimbreDocument; notices: LoadNotices } {
+/** `bpm` reads the Pattern bars of a file saved before SongFrame: pass the Session BPM it is loaded into. */
+export function parseTimbreWithNotices(text: string, bpm: number = P['song-bpm'].defaultValue): { timbre: TimbreDocument; notices: TimbreLoadNotices } {
   const raw: unknown = JSON.parse(text);
-  const timbre = normalizeTimbre(raw);
-  return { timbre, notices: timbreNotices(raw) };
+  const timbre = normalizeTimbre(raw, bpm);
+  return { timbre, notices: { ...timbreNotices(raw), patternBarsFromSelections: (raw as { formatVersion?: string }).formatVersion !== 'KOROGI-Lab/timbre-v18' } };
 }
 
 export function parseSession(text: string): SessionDocument {
@@ -330,12 +402,15 @@ export function parseLabSession(text: string): SessionDocument {
   return parseLabSessionWithNotices(text).session;
 }
 
-export function parseLabSessionWithNotices(text: string): { session: SessionDocument; notices: LoadNotices } {
+export function parseLabSessionWithNotices(text: string): { session: SessionDocument; notices: SessionLoadNotices } {
   const raw: unknown = JSON.parse(text);
   const session = labTopology(normalizeSession(raw));
+  const merged = isRecord(raw) && raw.formatVersion !== 'KOROGI-Lab/session-v21'
+    ? legacySong(raw as unknown as SessionDocument, session.channels).merged : null;
   const timbres = isRecord(raw) && Array.isArray(raw.channels)
     ? raw.channels.map(channel => (isRecord(channel) ? channel.timbre : null)).filter(timbre => timbre != null) : [];
-  return { session, notices: { legacyPitchEnvelopeIgnored: timbres.some(timbre => timbreNotices(timbre).legacyPitchEnvelopeIgnored) } };
+  return { session, notices: { legacyPitchEnvelopeIgnored: timbres.some(timbre => timbreNotices(timbre).legacyPitchEnvelopeIgnored),
+    songBarsCapped: isRecord(raw) && raw.formatVersion !== 'KOROGI-Lab/session-v17' && songBarsAboveLimit(raw.song), songFrameMerged: merged } };
 }
 
 function labTopology(session: SessionDocument): SessionDocument {

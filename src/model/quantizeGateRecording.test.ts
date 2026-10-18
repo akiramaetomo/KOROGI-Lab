@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TriggerRecording } from '../audio/types';
 import { normalizeTriggerRecording } from './triggerRecording';
-import { quantizeGateRecording, type GateQuantizeOptions } from './quantizeGateRecording';
+import { quantizeGateRecording, quantizeGridFits, type GateQuantizeOptions } from './quantizeGateRecording';
 
 const base = (gates: TriggerRecording['gates']): TriggerRecording => ({
   durationSec: 2, selectionStartSec: 0, selectionEndSec: 2, gates
@@ -10,6 +10,17 @@ const settings: GateQuantizeOptions = { bars: 1, denominator: 16, mode: 'on', ga
   editStartSec: 0, editEndSec: 2 };
 
 describe('quantizeGateRecording', () => {
+  it('quantizes a Pattern shorter than a bar only on grids that divide it', () => {
+    // 1/4 bar on a 0.50 s selection: the 1/16 grid has four steps of 0.125 s.
+    const quarter = { durationSec: .5, selectionStartSec: 0, selectionEndSec: .5, gates: [{ onSec: .13, offSec: .2 }] };
+    const result = quantizeGateRecording(quarter, { ...settings, bars: .25, denominator: 16, editEndSec: .5 });
+    expect(result.recording.gates[0]!.onSec).toBe(.125);
+    expect(() => quantizeGateRecording(quarter, { ...settings, bars: .0625, denominator: 4, editEndSec: .5 })).toThrow(RangeError);
+    expect([4, 8, 16, 32].filter(grid => quantizeGridFits(.0625, grid))).toEqual([16, 32]);
+    expect([4, 8, 16, 32].filter(grid => quantizeGridFits(.125, grid))).toEqual([8, 16, 32]);
+    expect([4, 8, 16, 32].filter(grid => quantizeGridFits(1, grid))).toEqual([4, 8, 16, 32]);
+  });
+
   it('keeps one bar anchored while a later edit quantizes only a subsection', () => {
     const original = base([{ onSec: .19, offSec: .31 }, { onSec: .81, offSec: .92 }, { onSec: 1.6, offSec: 1.72 }]);
     const fine = quantizeGateRecording(original, { ...settings, denominator: 32 }).recording;

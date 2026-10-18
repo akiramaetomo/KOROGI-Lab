@@ -1,11 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { openTimbreEditors, openCommonEditors } from './editor-helpers.mjs';
+import { closeFiles, openTimbreEditors, openCommonEditors, openFiles } from './editor-helpers.mjs';
 
 async function panel(page, name) {
   const groups = { sources: ['osc1', 'osc2'], modulation: ['mod', 'penv'], filters: ['filter1', 'filter2'],
     amp: ['aenv'], triggering: ['sequence'], 'voice-effects': ['fx1'], output: ['detune'] };
   if (groups[name]) { await openTimbreEditors(page, groups[name]); return; }
+  if (name === 'patch') { await openFiles(page); return; }
+  await closeFiles(page);
   if (name === 'space-effects') {
     await openCommonEditors(page, ['near', 'near-gain']);
   } else if (name === 'space-output') {

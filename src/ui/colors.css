@@ -128,8 +128,6 @@ button:focus-visible / outline */
   --color-diagram-gain-text: #dbe4e8;
   /* 対象: .diagram-gain output / color */
   --color-diagram-gain-text-2: #a9c4aa;
-  /* 対象: .play-hint / color */
-  --color-play-hint-text: #a9bbac;
   /* 対象: .input-page-switch button[aria-pressed="true"] / border-color */
   --color-input-page-switch-pressed-border: #d4ba83;
   /* 対象: .input-page-switch button[aria-pressed="true"] / background */
@@ -170,16 +168,12 @@ button:focus-visible / outline */
   --color-fullscreen-toggle-pressed-text: #d7ebd7;
   /* 対象: .fullscreen-toggle[aria-pressed="true"] / background */
   --color-fullscreen-toggle-pressed-background: #344750;
-  /* 対象: .patch-status / border */
-  --color-patch-status-border: #3a4249;
-  /* 対象: .patch-status / background */
-  --color-patch-status-background: #0f1214;
-  /* 対象: .patch-status / color */
-  --color-patch-status-text: #aab2b9;
+  /* 対象: .status-line（ヘッダの操作結果） / color */
+  --color-status-line-text: #aab2b9;
+  /* 対象: .files-dialog::backdrop / background */
+  --color-files-dialog-backdrop: #0000008c;
   /* 対象: .audio-error / color */
   --color-audio-error-text: #d7a38d;
-  /* 対象: .audio-running .play-hint / color */
-  --color-audio-running-play-hint-text: #87949a;
 
   /* === TIMBRES・ミキサー === */
   /* 対象: .mixer-panel / background */
@@ -542,6 +536,17 @@ button:focus-visible / outline */
   --color-song-button-active-background: #973e4a;
   --color-song-button-active-border: #eea3ac;
   --color-song-button-active-shadow: rgba(238, 163, 172, .25);
+  /* 対象: SONGのTimbre×Pattern格子。ON=Songで鳴らす、OFF=休符、無効=記録なし。列見出しはSongの区間になる番号 */
+  --color-song-arrange-on-background: #485e55;
+  --color-song-arrange-on-border: #a3bb9e;
+  --color-song-arrange-on-text: #eef4e8;
+  --color-song-arrange-off-background: #1b1f23;
+  --color-song-arrange-off-border: #5f666d;
+  --color-song-arrange-off-text: #9aa1a8;
+  --color-song-arrange-head-text: #e6e8ea;
+  --color-song-arrange-head-skipped-text: #737980;
+  --color-song-arrange-focus-outline: #a8d3e5;
+  --color-song-arrange-sequence-bar: #c4c9ce;
   /* 対象: #record-toggle（●録音）待機／hover／録音中 */
   --color-record-button-background: #3a2326;
   --color-record-button-border: #b9646d;
@@ -582,6 +587,19 @@ button:focus-visible / outline */
   --color-record-selection-handle-hover-disabled-background: rgba(162, 209, 210, .14);
   /* 対象: .record-playhead / background */
   --color-record-playhead-background: #d8b482;
+  /* 対象: .record-grid 小節線（TriggerRecorder.tsのGrid描画） */
+  --color-record-grid-bar: rgba(232, 197, 135, .6);
+  /* 対象: .record-grid 拍線（TriggerRecorder.tsのGrid描画） */
+  --color-record-grid-beat: rgba(189, 228, 227, .22);
+  /* 対象: .record-beat-lamp span（消灯） / background, border */
+  --color-beat-lamp-background: #26313a;
+  --color-beat-lamp-border: #52606a;
+  /* 対象: .record-beat-lamp span.on（po・pu点灯） / background, border */
+  --color-beat-lamp-on-background: #7fdc8f;
+  --color-beat-lamp-on-border: #b6f0c0;
+  /* 対象: .record-beat-lamp span[data-tone="pi"].on（小節頭pi点灯） / background, border */
+  --color-beat-lamp-accent-background: #ff8a6b;
+  --color-beat-lamp-accent-border: #ffd0c2;
   /* 対象: .record-selection-values / color */
   --color-record-selection-values-text: #aab6bd;
   /* 対象: .record-selection-values output / color */
@@ -646,6 +664,12 @@ button:focus-visible / outline */
   --color-sequence-link-pressed-background: #514838;
   /* 対象: #sequence-link[aria-pressed="true"] / color */
   --color-sequence-link-pressed-text: #ffebb6;
+  /* 対象: #time-mode-bars[aria-pressed="true"] / border-color */
+  --color-sequence-stretch-pressed-border: #7cc6cf;
+  /* 対象: #time-mode-bars[aria-pressed="true"] / background */
+  --color-sequence-stretch-pressed-background: #344f56;
+  /* 対象: #time-mode-bars[aria-pressed="true"] / color */
+  --color-sequence-stretch-pressed-text: #dcf6fa;
   /* 対象: #gate-mute[aria-pressed="true"], #pitch-mute[aria-pressed="true"] / border-color */
   --color-gate-mute-pressed-border: #da998d;
   /* 対象: #gate-mute[aria-pressed="true"], #pitch-mute[aria-pressed="true"] / background */

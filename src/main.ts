@@ -11,7 +11,12 @@ import { SequenceTransport } from './ui/SequenceTransport';
 import { SongTransport } from './ui/SongTransport';
 import { USER_PATTERN_IDS } from './model/triggerRecording';
 import { maxSongBars } from './model/recordingLimits';
+import { formatBars, isPatternBars, parsePatternBars, patternBarChoices, stretchBasePattern, stretchLoopSeconds, stretchSpeed } from './model/stretch';
+import { frameBarsForSong, patternBarsFromSelections } from './model/songFrame';
+import { setSongCellOn, songCell } from './model/songArrangement';
+import { planPatternCopy } from './model/patternCopy';
 import { SignalMap } from './ui/SignalMap';
+import { SongArrangement, type SongRowPlayback } from './ui/SongArrangement';
 import { mountPitchEnvelopeGuide, syncPitchEnvelopeGuide } from './ui/PitchEnvelopeGuide';
 import type {
   BusAssignment,
@@ -28,6 +33,7 @@ import type {
   FilterType,
   TimbreDocument,
   UserPatternId,
+  SequenceSelection,
   ModMode,
   OscSourceType
 } from './audio/types';
@@ -36,6 +42,7 @@ import { NumericSliderControl } from './ui/NumericSliderControl';
 import { PARAMETER_RANGES as P, parameterForInput, parameterValueBounds } from './config/parameterRanges';
 import { validateParameterRanges } from './config/parameterSafety';
 import { DEMO_SESSIONS } from './demoSessions';
+import { METRONOME_PATTERNS } from './config/metronome';
 
 const amplitudeEditor = new ADSREditor(document.querySelector<HTMLElement>('[data-adsr="aenv"]')!, 'aenv');
 const filterEnvelopeEditor = new ADSREditor(document.querySelector<HTMLElement>('[data-adsr="fenv"]')!, 'fenv');
@@ -195,6 +202,8 @@ function buildSegmentedSelects(): void {
   });
 }
 
+// Click choices come from the metronome constants; a dropdown leaves room for the planned 1/8 and 1/16.
+for (const name of Object.keys(METRONOME_PATTERNS)) requireElement<HTMLSelectElement>('#record-click').add(new Option(`Click ${name}`, name));
 buildSegmentedSelects();
 
 const triggerButton = requireElement<HTMLButtonElement>('#trigger');
@@ -214,6 +223,10 @@ const osc1DetuneReadout = requireElement<HTMLElement>('#osc1-detune-readout');
 const osc2DetuneReadout = requireElement<HTMLElement>('#osc2-detune-readout');
 const detuneCentReadout = requireElement<HTMLElement>('#detune-cent-readout');
 const patchStatus = requireElement<HTMLElement>('#patch-status');
+const statusLine = requireElement<HTMLButtonElement>('#status-line');
+const filesStatus = requireElement<HTMLElement>('#files-status');
+/** The header line may cut the latest result off; FILES shows it in full (a tap on the line opens FILES). */
+function setStatus(message: string): void { patchStatus.textContent = filesStatus.textContent = statusLine.title = message; }
 
 const sequencePanelButton = requireElement<HTMLButtonElement>('#sequence-panel');
 const sourceAutoButton = requireElement<HTMLButtonElement>('#source-auto');
@@ -221,20 +234,25 @@ const pitchUserButtons = USER_PATTERN_IDS.map((_, index) => requireElement<HTMLB
 const gateUserButtons = USER_PATTERN_IDS.map((_, index) => requireElement<HTMLButtonElement>(`#source-user-${index + 1}`));
 const recordedGateButton = requireElement<HTMLButtonElement>('#source-recorded');
 const songButton = requireElement<HTMLButtonElement>('#song-toggle');
-const songTimingSelect = requireElement<HTMLSelectElement>('#song-timing');
-const songBarsGroup = requireElement<HTMLFieldSetElement>('#song-bars-group');
+const timeModeSecondsButton = requireElement<HTMLButtonElement>('#time-mode-seconds');
+const timeModeBarsButton = requireElement<HTMLButtonElement>('#time-mode-bars');
+const headerBpmField = requireElement<HTMLElement>('#header-bpm-field');
+const headerBpmInput = requireElement<HTMLInputElement>('#header-bpm');
+const songFrameGroup = requireElement<HTMLFieldSetElement>('#song-frame-group');
 const songBpmInput = requireElement<HTMLInputElement>('#song-bpm');
 const songBpmSlider = requireElement<HTMLInputElement>('#song-bpm-slider');
 const songBpmRow = requireElement<HTMLElement>('#song-bpm-row');
 const songSpeedRow = requireElement<HTMLElement>('#song-speed-row');
 const recordBpmInput = requireElement<HTMLInputElement>('#record-bpm');
-const recordLengthMode = requireElement<HTMLSelectElement>('#record-length-mode');
 const songSpeedInput = requireElement<HTMLInputElement>('#song-speed');
 const songSpeedSlider = requireElement<HTMLInputElement>('#song-speed-slider');
-const songUserSelect = requireElement<HTMLSelectElement>('#song-user');
-const songBarsInput = requireElement<HTMLInputElement>('#song-bars');
+const songFrameInput = requireElement<HTMLSelectElement>('#song-frame');
 const songDuration = requireElement<HTMLOutputElement>('#song-duration');
 const songClock = requireElement<HTMLOutputElement>('#song-clock');
+const stretchGroup = requireElement<HTMLFieldSetElement>('#sequence-stretch-group');
+const stretchBarsInput = requireElement<HTMLSelectElement>('#sequence-stretch-bars');
+const stretchBpmInput = requireElement<HTMLInputElement>('#sequence-stretch-bpm');
+const stretchReadout = requireElement<HTMLOutputElement>('#sequence-stretch-readout');
 
 function showDisplayError(message: string): void {
   displayErrorElement.textContent = message;
@@ -277,7 +295,7 @@ function runAudioStartAttempt(): Promise<void> {
     audioErrorElement.textContent = '';
     refreshStatus();
   }).catch(error => {
-    patchStatus.textContent = `Audio could not start: ${error instanceof Error ? error.message : String(error)}. Try a Gate or Play control again.`;
+    setStatus(`Audio could not start: ${error instanceof Error ? error.message : String(error)}. Try a Gate or Play control again.`);
     audioErrorElement.textContent = 'Audio could not start. Tap Audio ready or try GATE or Play again.';
     audioErrorElement.hidden = false;
     refreshStatus();
@@ -302,15 +320,16 @@ function ensureAudioRunning(forceAttempt = false): Promise<void> {
 statusElement.addEventListener('click', () => { void ensureAudioRunning(true).catch(() => {}); });
 const transport = new SequenceTransport(() => engine, ensureAudioRunning,
   () => { mixer.refresh(); recorder.refresh(); numericSliders.forEach(slider => slider.sync()); syncTransportControls(); },
-  message => { patchStatus.textContent = message; }, id => mixer.manual.forgetSource(id), () => songTransport.stop());
+  setStatus, id => mixer.manual.forgetSource(id), () => songTransport.stop());
 const songTransport = new SongTransport(() => engine, ensureAudioRunning, syncTransportControls, () => transport.stopAll());
 const mixer = new MixerPanel(requireElement('#mixer-slots'), () => engine, ensureAudioRunning, syncSelectedSource,
-  message => { patchStatus.textContent = message; }, saveTimbre,
+  setStatus, saveTimbre,
   id => { songTransport.stop(); transport.beforeReplace(id); recorder.releaseSource(id); recorder.discardQuantizeHistory(); if (recorder.lockedId() === id) recorder.cancel(); }, () => transport);
 const recorder = new TriggerRecorder(() => engine, () => mixer.selectedId, ensureAudioRunning,
-  id => {
+  (id, keepScheduled) => {
     mixer.manual.forgetSource(id);
-    engine?.cancelScheduledGates(id);
+    // A target handed over on the bar grid keeps its scheduled Gates until the recording starts.
+    if (!keepScheduled) engine?.cancelScheduledGates(id);
     mixer.refresh();
   }, (id, lane) => {
     if (id) songTransport.stop();
@@ -318,9 +337,45 @@ const recorder = new TriggerRecorder(() => engine, () => mixer.selectedId, ensur
     mixer.protectSource(id);
     if (id) applyRecordingLock();
     else setAudioControlsEnabled(engine !== null && !loadingSession);
-  }, transport, () => { if (songTransport.isPlaying()) songTransport.stop(); }, syncSongSettings,
+  }, transport, settingsOnly => settingsOnly ? songTransport.updateTiming() : songTransport.contentChanged(), syncSongSettings,
   (id, lane) => songTransport.laneMutedChanged(id, lane));
 recorder.setSongPosition((id, lane, patternId) => songTransport.lanePosition(id, lane, patternId));
+/** The SONG cell last tapped; it stays framed while its timbre is selected and SEQUENCE shows its Gate Pattern. */
+let songFocus: { id: string; frame: number } | null = null;
+/**
+ * A first tap selects the cell's timbre and its Gate and Pitch Patterns, as the card and the SEQUENCE buttons do;
+ * a tap on the framed cell turns it on or off, which Song applies from the next section head like other Pattern edits.
+ */
+const songArrangement = new SongArrangement(requireElement('#song-arrange'), () => engine, (id, frame, focused) => {
+  if (!engine?.getChannel(id)) return;
+  const cell = songCell(engine, id, frame);
+  if (focused) {
+    if (!engine.getGateRecording(id, cell.gate) && !engine.getPitchRecording(id, cell.pitch)) return;
+    setSongCellOn(engine, id, frame, !cell.on);
+    songTransport.contentChanged(); syncSongPreview(); return;
+  }
+  if (!selectFromSong(id)) return;
+  songFocus = { id, frame };
+  // A cell plays the recorded Gate, so SEQUENCE shows it rather than Auto.
+  transport.setSelection(id, { gateMode: 'user', gateUserId: cell.gate, pitchUserId: cell.pitch });
+  syncTransportControls();
+}, id => {
+  // A name selects only the timbre: what Play and Play All play stays as it is.
+  if (engine?.getChannel(id) && selectFromSong(id)) syncTransportControls();
+});
+/** SONG sits in SEQUENCE: the editors stay as they are instead of switching to the timbre's own layout. */
+function selectFromSong(id: string): boolean {
+  const layout = functionEditor?.columns;
+  if (!mixer.select(id)) return false;
+  if (layout) functionEditor?.restore(layout);
+  return true;
+}
+function visibleSongFocus(): { id: string; frame: number } | null {
+  if (!songFocus || songFocus.id !== mixer.selectedId || !engine?.getChannel(songFocus.id)) return null;
+  // The frame marks the cell SEQUENCE edits, so it goes away once SEQUENCE shows Auto or another Gate Pattern.
+  const source = transport.source(songFocus.id);
+  return source.gateMode === 'user' && songCell(engine, songFocus.id, songFocus.frame).gate === source.gateUserId ? songFocus : null;
+}
 function selectedChannel() { return engine?.getChannel(mixer.selectedId); }
 let gateState = false;
 let lastSongPreviewAt = 0;
@@ -347,13 +402,13 @@ function animateGate(): void {
   syncTransportControls();
   window.requestAnimationFrame(animateGate);
 }
-/** Play All loops each timbre independently; different real periods drift apart. Song shares one BPM clock. */
+/** Play All loops each timbre independently; periods that are not whole multiples drift apart. Bars timbres and Song share the BPM bar. */
 function syncPlayAllWarning(): void {
   const mismatch = transport.playAllMismatch();
   if (playAllWarning.hidden !== !mismatch) playAllWarning.hidden = !mismatch;
   if (!mismatch) return;
-  const detail = transport.playingPeriods().map(item => `Timbre ${item.id} ${item.lane === 'gate' ? 'Gate' : 'Pitch'} ${item.seconds.toFixed(3)} s`).join(', ');
-  const title = `Loop periods differ, so timbres drift apart: ${detail}. Match Pattern lengths and Play/Rec Speed, or use Song.`;
+  const detail = transport.playingPeriods().map(item => `Timbre ${item.id} ${item.lane === 'gate' ? 'Gate' : 'Pitch'} ${item.seconds.toFixed(3)} s${item.stretch ? ' (Stretch)' : ''}`).join(', ');
+  const title = `Loop periods are not whole multiples of each other, so timbres drift apart: ${detail}. Use Bars, match Pattern lengths and Play/Rec Speed, or use Chain.`;
   if (playAllWarning.title !== title) playAllWarning.title = title;
 }
 function syncTransportControls(): void {
@@ -369,10 +424,19 @@ function syncTransportControls(): void {
   syncAutoTimingAvailability(source.gateMode === 'auto');
   // Song plays the same Pattern number on every timbre; its current Pattern glows in both rows.
   const songPattern = songTransport.position()?.user ?? 0;
+  songArrangement.setPlaying(songPattern);
+  songArrangement.setFocus(id, visibleSongFocus());
+  const playback = new Map<string, SongRowPlayback>();
+  for (const slot of engine?.getChannelIds() ?? []) if (engine!.getChannel(slot)) {
+    const selection = transport.source(slot);
+    playback.set(slot, { gate: selection.gateMode === 'user' ? USER_PATTERN_IDS.indexOf(selection.gateUserId) + 1 : 0,
+      pitch: USER_PATTERN_IDS.indexOf(selection.pitchUserId) + 1, playing: transport.isPlaying(slot) });
+  }
+  songArrangement.setPlayback(playback);
   const songPlaying = (button: HTMLButtonElement, index: number): string => {
     const playing = index + 1 === songPattern;
     if (button.hasAttribute('data-song-playing') !== playing) button.toggleAttribute('data-song-playing', playing);
-    return playing ? ', playing in Song' : '';
+    return playing ? ', playing in Chain' : '';
   };
   gateUserButtons.forEach((button, index) => {
     const patternId = `user-${index + 1}` as typeof source.gateUserId;
@@ -391,10 +455,11 @@ function syncTransportControls(): void {
     button.setAttribute('aria-label', `Pitch Pattern ${index + 1}, ${state === 'Null' ? 'no recording' : state === '0' ? 'muted' : 'recorded'}${songPlaying(button, index)}`);
   });
   const any = transport.anyPlaying();
-  playAllButton.textContent = any ? 'Stop All' : 'Play All';
+  playAllButton.textContent = any ? '■ Stop Loop' : '▶ Loop';
   playAllButton.setAttribute('aria-pressed', String(any));
   syncPlayAllWarning();
-  songButton.textContent = songTransport.isPlaying() ? '■ Stop Song' : '▶ Play Song';
+  syncStretchControls();
+  songButton.textContent = songTransport.isPlaying() ? '■ Stop Chain' : '▶ Chain';
   songButton.setAttribute('aria-pressed', String(songTransport.isPlaying()));
 }
 window.requestAnimationFrame(animateGate);
@@ -443,7 +508,7 @@ function setAudioControlsEnabled(enabled: boolean): void {
   refreshBurstControls();
   applyRecordingLock();
   syncSongSettings();
-  if (!enabled) { recordBpmInput.disabled = true; songBarsGroup.disabled = true; }
+  if (!enabled) { recordBpmInput.disabled = headerBpmInput.disabled = true; songFrameGroup.disabled = true; timeModeSecondsButton.disabled = timeModeBarsButton.disabled = true; }
 }
 
 function applyRecordingLock(): void {
@@ -453,8 +518,11 @@ function applyRecordingLock(): void {
   sourceAutoButton.disabled = true;
   gateUserButtons.forEach(button => { button.disabled = true; });
   songButton.disabled = true;
-  recordBpmInput.disabled = true;
-  songBarsGroup.disabled = true;
+  // BPM and bars set the recording loop and the bar grid, so every editor of them stays locked.
+  recordBpmInput.disabled = headerBpmInput.disabled = songBpmInput.disabled = songBpmSlider.disabled = true;
+  // The time mode sets the recording clock as well.
+  timeModeSecondsButton.disabled = timeModeBarsButton.disabled = true;
+  songFrameGroup.disabled = true;
   recordedGateButton.disabled = true;
   pitchUserButtons.forEach(button => { button.disabled = true; });
 }
@@ -470,11 +538,6 @@ function syncModAvailability(): void {
 let functionEditor: FunctionEditor | undefined;
 let commonEditor: CommonSpaceEditor | undefined;
 function refreshEditingNodes(): void {
-  const panelName = document.querySelector<HTMLElement>('[data-panel].active:not(.editor-card):not(.space-card)')?.dataset.panel;
-  document.querySelectorAll<HTMLButtonElement>('[data-panel-target]:not([data-editor-target]):not([data-common-target])').forEach((button) => {
-    const active = button.dataset.panelTarget === panelName && (!button.dataset.bus || button.dataset.bus === selectedBus());
-    button.classList.toggle('active', active);
-  });
   functionEditor?.refreshNodes();
   commonEditor?.refreshNodes();
   if (functionEditor && !functionEditor.root.hidden) {
@@ -483,25 +546,16 @@ function refreshEditingNodes(): void {
   }
 }
 function showPanel(panelName: string, cardId?: EditorCardId, focus = false, commonId?: CommonCardId, activate = false): void {
-  const dedicated = panelName === 'patch';
   const common = panelName === 'space-effects' || panelName === 'space-output';
-  document.querySelectorAll<HTMLElement>('[data-panel]:not(.editor-card):not(.space-card)').forEach(panel => {
-    panel.classList.toggle('active', dedicated && panel.dataset.panel === panelName);
-  });
-  if (dedicated || common) functionEditor?.hide();
+  if (common) functionEditor?.hide();
   else if (activate && cardId) functionEditor?.activate(cardId, focus);
   else functionEditor?.show(cardId, focus);
   if (common && activate && commonId) commonEditor?.activate(commonId, focus);
   else if (common) commonEditor?.show(commonId, focus);
   else commonEditor?.hide();
   refreshEditingNodes();
-  const labels: Record<string, string> = { 'space-effects': 'COMMON SPACE FX / GAIN', 'space-output': 'COMMON SPACE OUTPUT', patch: 'FILES' };
   const cards = [...document.querySelectorAll<HTMLElement>('.editor-card.active')].map(card => card.dataset.editorCard!.toUpperCase());
-  activePathElement.textContent = `Viewing: ${dedicated ? labels[panelName] : common ? 'COMMON SPACE · ' + commonEditor?.viewingLabel : cards.join(' / ') || 'Select a block'}`;
-  if (dedicated && focus) {
-    const heading = requireElement<HTMLElement>('.function-panel.active:not(.editor-card):not(.space-card) .panel-heading');
-    heading.tabIndex = -1; heading.focus({ preventScroll: true });
-  }
+  activePathElement.textContent = `Viewing: ${common ? 'COMMON SPACE · ' + commonEditor?.viewingLabel : cards.join(' / ') || 'Select a block'}`;
 }
 document.querySelectorAll<HTMLButtonElement>('[data-panel-target]').forEach(button => {
   button.addEventListener('click', event => {
@@ -823,10 +877,12 @@ function refreshDetuneReadouts(): void {
 
 mixer.manual.bind(triggerButton, () => mixer.selectedId);
 playAllButton.addEventListener('click', () => { void transport.toggleAll(); });
+// The header opens SEQUENCE, where Loop, Chain and the Pattern board live; unlike the map node it never closes it.
+requireElement<HTMLButtonElement>('#sequence-open').addEventListener('click', event => showPanel('triggering', 'sequence', event.detail === 0));
 songButton.addEventListener('click', () => {
   if (recorder.isBusy()) return;
   if (!songTransport.isPlaying() && !songTransport.preview().length) {
-    patchStatus.textContent = 'Record or load a Gate Pattern before playing Song.'; return;
+    setStatus('Record or load a Gate Pattern before playing Chain.'); return;
   }
   void songTransport.toggle();
 });
@@ -839,52 +895,103 @@ function syncSongPreview(): void {
   const settings = engine?.getSongSettings(); if (!settings) return;
   const sections = songTransport.preview();
   // Bars timing follows BPM alone; Song Speed applies only to Seconds timing.
-  const barsTime = settings.bars[Number(songUserSelect.value) - 1]! * 240 / settings.bpm;
+  const frameTime = stretchLoopSeconds(settings.frameBars, settings);
   const patterns = sections.map(item => `Pattern ${item.user}`).join(', ');
-  const duration = settings.timingMode === 'bars' ? `Bars Pattern ${songUserSelect.value}: ${barsTime.toFixed(2)} s`
+  const duration = settings.timingMode === 'bars' ? `Bars Frame: ${settings.frameBars} bars · ${frameTime.toFixed(2)} s`
     : `Seconds total: ${sections.length ? `${sections.reduce((sum, section) => sum + section.duration, 0).toFixed(2)} s` : 'empty'}`;
   songDuration.textContent = `${duration} · ${patterns ? `Song: ${patterns}` : 'No Gate Pattern'}`;
+  songArrangement.sync(sections.map(section => section.user));
 }
 function syncSongSettings(): void {
   const settings = engine?.getSongSettings(); if (!settings) return;
-  setValue('#song-timing', settings.timingMode);
+  const bars = settings.timingMode === 'bars';
+  timeModeSecondsButton.setAttribute('aria-pressed', String(!bars));
+  timeModeBarsButton.setAttribute('aria-pressed', String(bars));
+  timeModeSecondsButton.disabled = timeModeBarsButton.disabled = recorder.isBusy();
+  // Seconds is tape-like and shows no BPM (ADR 0010).
+  headerBpmField.hidden = !bars;
+  if (document.activeElement !== headerBpmInput) headerBpmInput.value = String(settings.bpm);
+  headerBpmInput.disabled = recorder.isBusy();
+  // Bars swaps Song Speed for the BPM slider, as before the app-wide mode.
   songBpmInput.value = String(settings.bpm);
   songBpmSlider.value = String(settings.bpm);
-  songBpmRow.hidden = settings.timingMode !== 'bars';
-  songSpeedRow.hidden = settings.timingMode === 'bars';
+  songBpmRow.hidden = !bars;
   songBpmInput.disabled = songBpmSlider.disabled = recorder.isBusy();
+  songSpeedRow.hidden = bars;
   recordBpmInput.value = String(settings.bpm);
-  recordBpmInput.disabled = recordLengthMode.value !== 'bars' || recorder.isBusy();
-  songBarsGroup.disabled = settings.timingMode !== 'bars' || recorder.isBusy();
+  recordBpmInput.disabled = true;
+  songFrameGroup.disabled = settings.timingMode !== 'bars' || recorder.isBusy();
   songSpeedInput.value = String(settings.speed);
   songSpeedSlider.value = String(settings.speed);
-  songBarsInput.value = String(settings.bars[Number(songUserSelect.value) - 1]);
-  songBarsInput.setAttribute('aria-label', `Bars to fit Pattern ${songUserSelect.value}, 1 to ${maxSongBars(settings.bpm)}`);
+  setFrameMenu(songFrameInput, settings.frameBars, settings.bpm);
   syncSongPreview();
 }
-recordLengthMode.addEventListener('change', syncSongSettings);
-songUserSelect.addEventListener('change', syncSongSettings);
-songTimingSelect.addEventListener('change', () => {
-  if (!engine) return;
-  songTransport.stop(); engine.setSongSettings({ ...engine.getSongSettings(), timingMode: songTimingSelect.value as 'original' | 'bars' });
-  syncSongSettings(); recorder.refresh();
-});
+/** The Frame menu lists whole bars from 1 to the limit (ADR 0011). */
+function setFrameMenu(select: HTMLSelectElement, frameBars: number, bpm: number): void {
+  const max = Math.min(P['song-frame'].max, maxSongBars(bpm));
+  const choices = Array.from({ length: max - P['song-frame'].min + 1 }, (_, index) => String(P['song-frame'].min + index));
+  if (select.options.length !== choices.length || select.options[choices.length - 1]?.value !== choices.at(-1))
+    select.replaceChildren(...choices.map(text => new Option(text, text)));
+  if (select.value !== String(frameBars)) select.value = String(frameBars);
+}
+/** A Bars menu lists every allowed count (1/16 to 1/2, then 1 to the limit at the BPM), so nothing else can be chosen. */
+function setBarsMenu(select: HTMLSelectElement, bars: number, bpm: number): void {
+  const choices = patternBarChoices(maxSongBars(bpm)).map(formatBars);
+  if (select.options.length !== choices.length || select.options[choices.length - 1]?.value !== choices.at(-1))
+    select.replaceChildren(...choices.map(text => new Option(text, text)));
+  if (select.value !== formatBars(bars)) select.value = formatBars(bars);
+}
+/**
+ * The app-wide time mode (ADR 0010). Switching stops Song and Play All. Entering Bars reads each timbre's Pattern
+ * bars from its selections at the BPM and the Frame from the Song Patterns (ADR 0011), and asks before changing
+ * values that differ from the current ones.
+ */
+function setTimeMode(mode: 'original' | 'bars'): void {
+  if (!engine || recorder.isBusy()) return;
+  const settings = engine.getSongSettings();
+  if (settings.timingMode === mode) return;
+  songTransport.stop(); transport.stopAll();
+  if (mode === 'bars') {
+    const timbres = engine.getChannelIds().filter(id => engine!.getChannel(id)).map(id => ({ id, timbre: engine!.createTimbre(id) }));
+    const proposed = timbres.map(({ timbre }) => patternBarsFromSelections(timbre, settings.bpm, timbre.patternBars));
+    const frameBars = frameBarsForSong(timbres.map(({ timbre }, index) => ({ gatePatterns: timbre.gatePatterns, patternBars: proposed[index]! })))
+      ?? settings.frameBars;
+    const changes = timbres.flatMap(({ id, timbre }, index) => proposed[index]!.map((to, pattern) => ({ label: `Timbre ${id} · Pattern ${pattern + 1}`,
+      from: timbre.patternBars[pattern]!, to }))).filter(item => item.from !== item.to);
+    if (frameBars !== settings.frameBars) changes.push({ label: 'Frame', from: settings.frameBars, to: frameBars });
+    if (changes.length && window.confirm(`Bars from the recorded seconds at ${settings.bpm} BPM:\n` +
+      changes.map(item => `${item.label}: ${formatBars(item.from)} → ${formatBars(item.to)} bars`).join('\n') +
+      '\n\nOK: use these bars. Cancel: keep the current bars.')) {
+      timbres.forEach(({ id }, index) => proposed[index]!.forEach((bars, pattern) => engine!.setPatternBars(id, USER_PATTERN_IDS[pattern]!, bars)));
+      settings.frameBars = frameBars;
+    }
+  }
+  engine.setSongSettings({ ...settings, timingMode: mode });
+  syncSongSettings(); syncStretchControls(); recorder.refresh(); syncTransportControls();
+  setStatus(mode === 'bars' ? "Bars: every timbre plays and records in its Pattern's bars at the BPM."
+    : 'Seconds: every timbre loops its recorded seconds at Play/Rec Speed.');
+}
+timeModeSecondsButton.addEventListener('click', () => setTimeMode('original'));
+timeModeBarsButton.addEventListener('click', () => setTimeMode('bars'));
 function applyBpm(value: string): void {
   if (!engine) return;
+  if (recorder.isBusy()) { syncSongSettings(); return; }
   const bpm = Number(value);
   if (Number.isInteger(bpm) && bpm >= P['song-bpm'].min && bpm <= P['song-bpm'].max) {
-    if (engine.getSongSettings().bars.some(bars => bars > maxSongBars(bpm))) {
-      patchStatus.textContent = `Reduce Fit to Bars to ${maxSongBars(bpm)} or fewer before setting ${bpm} BPM.`;
-    } else { engine.setSongSettings({ ...engine.getSongSettings(), bpm }); songTransport.updateTiming(); recorder.refresh(); }
-  } else patchStatus.textContent = `BPM must be a whole number from ${P['song-bpm'].min} to ${P['song-bpm'].max}.`;
+    const longest = Math.max(engine.getSongSettings().frameBars, ...engine.getChannelIds().filter(id => engine!.getChannel(id))
+      .flatMap(id => USER_PATTERN_IDS.map(user => engine!.getPatternBars(id, user))));
+    if (longest > maxSongBars(bpm)) {
+      setStatus(`Reduce the Frame and Pattern bars to ${maxSongBars(bpm)} or fewer before setting ${bpm} BPM.`);
+    } else { engine.setSongSettings({ ...engine.getSongSettings(), bpm }); songTransport.updateTiming(); transport.stretchTimingChanged(); recorder.refresh(); }
+  } else setStatus(`BPM must be a whole number from ${P['song-bpm'].min} to ${P['song-bpm'].max}.`);
   syncSongSettings();
 }
-songBpmInput.addEventListener('change', () => { if (!songBpmInput.disabled) applyBpm(songBpmInput.value); });
-songBpmSlider.addEventListener('input', () => { if (!songBpmSlider.disabled) applyBpm(songBpmSlider.value); });
-recordBpmInput.addEventListener('change', () => { if (!recordBpmInput.disabled) applyBpm(recordBpmInput.value); });
+headerBpmInput.addEventListener('change', () => { if (!headerBpmInput.disabled) { applyBpm(headerBpmInput.value); syncStretchControls(); } });
+songBpmInput.addEventListener('change', () => { if (!songBpmInput.disabled) { applyBpm(songBpmInput.value); syncStretchControls(); } });
+songBpmSlider.addEventListener('input', () => { if (!songBpmSlider.disabled) { applyBpm(songBpmSlider.value); syncStretchControls(); } });
 function applySongSpeed(value: number): void {
   if (!engine || !Number.isFinite(value) || value < P['song-speed'].min || value > P['song-speed'].max) {
-    patchStatus.textContent = 'Song Speed must be 0.25–4×.';
+    setStatus('Song Speed must be 0.25–4×.');
   } else {
     engine.setSongSettings({ ...engine.getSongSettings(), speed: value });
     songTransport.updateTiming();
@@ -893,28 +1000,93 @@ function applySongSpeed(value: number): void {
 }
 songSpeedInput.addEventListener('change', () => applySongSpeed(Number(songSpeedInput.value)));
 songSpeedSlider.addEventListener('input', () => applySongSpeed(Number(songSpeedSlider.value)));
-songBarsInput.addEventListener('change', () => {
+/** Pattern bars belong to the timbre (ADR 0011); a playing loop restarts on the next bar head, Song at its next section. */
+function applyPatternBars(id: string, user: UserPatternId, value: string): void {
+  if (!engine?.getChannel(id)) return;
+  if (recorder.isBusy()) { syncSongSettings(); syncStretchControls(); return; }
+  const bars = parsePatternBars(value);
+  if (bars !== null && isPatternBars(bars, maxSongBars(engine.getSongSettings().bpm))) {
+    engine.setPatternBars(id, user, bars); songTransport.contentChanged(); transport.stretchTimingChanged(); recorder.refresh();
+  } else setStatus(`Bars must be 1/16, 1/8, 1/4, 1/2 or a whole number from 1 to ${maxSongBars(engine.getSongSettings().bpm)}.`);
+  syncSongSettings(); syncStretchControls();
+}
+/** The SongFrame: every Song section's length (ADR 0011). Song takes it from its next section head. */
+function applyFrameBars(value: string): void {
   if (!engine) return;
-  const bars = Number(songBarsInput.value);
-  if (Number.isInteger(bars) && bars >= P['song-bars'].min && bars <= maxSongBars(engine.getSongSettings().bpm)) {
-    songTransport.stop(); const settings = engine.getSongSettings();
-    settings.bars[Number(songUserSelect.value) - 1] = bars; engine.setSongSettings(settings);
-  } else patchStatus.textContent = `Fit to Bars must be a whole number from 1 to ${maxSongBars(engine.getSongSettings().bpm)}.`;
-  syncSongSettings();
+  if (recorder.isBusy()) { syncSongSettings(); return; }
+  const frameBars = Number(value);
+  if (Number.isInteger(frameBars) && frameBars >= P['song-frame'].min && frameBars <= Math.min(P['song-frame'].max, maxSongBars(engine.getSongSettings().bpm))) {
+    engine.setSongSettings({ ...engine.getSongSettings(), frameBars }); songTransport.contentChanged(); recorder.refresh();
+  } else setStatus(`Frame must be a whole number of bars from ${P['song-frame'].min} to ${P['song-frame'].max}.`);
+  syncSongSettings(); syncStretchControls();
+}
+songFrameInput.addEventListener('change', () => applyFrameBars(songFrameInput.value));
+/** Stretch fits the Gate Pattern (or the Pitch Pattern without a Gate recording) to that Pattern's bars. */
+function stretchPattern(id: string): UserPatternId {
+  const source = transport.source(id);
+  return stretchBasePattern(source, !!engine?.getChannel(id) && !!engine.getGateRecording(id, source.gateUserId));
+}
+function syncStretchControls(): void {
+  const id = mixer.selectedId, settings = engine?.getSongSettings();
+  const source = transport.source(id), user = stretchPattern(id), index = USER_PATTERN_IDS.indexOf(user);
+  stretchGroup.hidden = !source.stretch;
+  stretchBarsInput.disabled = stretchBpmInput.disabled = !settings || recorder.isBusy();
+  if (!settings || !engine?.getChannel(id)) return;
+  const bars = engine.getPatternBars(id, user);
+  setBarsMenu(stretchBarsInput, bars, settings.bpm);
+  if (document.activeElement !== stretchBpmInput && stretchBpmInput.value !== String(settings.bpm)) stretchBpmInput.value = String(settings.bpm);
+  stretchBarsInput.setAttribute('aria-label', `Bars of Timbre ${id} Pattern ${index + 1}`);
+  const loopSec = bars * 240 / settings.bpm;
+  const text = `${patternLabel(user)} · ${loopSec.toFixed(2)} s${stretchRatioText(id, source, loopSec)}`;
+  // Play All keeps the Pattern bars; only Song fits a longer Pattern to the Frame (ADR 0011), so say so here.
+  const note = bars > settings.frameBars ? ` · Chain: ${settings.frameBars} bars` : '';
+  if (stretchReadout.textContent !== text + note) {
+    const fit = Object.assign(document.createElement('span'), { className: 'stretch-song-fit', textContent: note,
+      title: `Chain fits this Pattern to its ${settings.frameBars}-bar Frame; Loop plays all ${formatBars(bars)} bars.` });
+    stretchReadout.replaceChildren(text, ...(note ? [fit] : []));
+  }
+}
+/**
+ * Playback speed against the recorded seconds (`×1.00` plays as recorded). Gate and Pitch share the loop, so
+ * Pitch shows its own ratio only when its selection length differs.
+ */
+function stretchRatioText(id: string, source: SequenceSelection, loopSec: number): string {
+  if (!engine?.getChannel(id)) return '';
+  const gate = source.gateMode === 'user' ? engine.getGateRecording(id, source.gateUserId) : null;
+  const pitch = engine.getPitchRecording(id, source.pitchUserId);
+  const ratio = (recording: { selectionStartSec: number; selectionEndSec: number }) =>
+    stretchSpeed(recording.selectionEndSec - recording.selectionStartSec, loopSec);
+  const base = gate ?? pitch; if (!base) return '';
+  const text = ` · ×${ratio(base).toFixed(2)}`;
+  return gate && pitch && Math.abs(ratio(pitch) - ratio(gate)) >= .005 ? `${text} · Pitch ×${ratio(pitch).toFixed(2)}` : text;
+}
+stretchBarsInput.addEventListener('change', () => {
+  if (!stretchBarsInput.disabled) applyPatternBars(mixer.selectedId, stretchPattern(mixer.selectedId), stretchBarsInput.value);
 });
+stretchBpmInput.addEventListener('change', () => { if (!stretchBpmInput.disabled) { applyBpm(stretchBpmInput.value); syncStretchControls(); } });
 requireElement<HTMLButtonElement>('#copy-user').addEventListener('click', () => {
   const id = mixer.selectedId, from = requireElement<HTMLSelectElement>('#copy-from').value as UserPatternId;
   const to = requireElement<HTMLSelectElement>('#copy-to').value as UserPatternId;
   if (!engine?.getChannel(id) || recorder.isBusy()) return;
-  if (from === to) { patchStatus.textContent = 'Choose a different destination Pattern.'; return; }
-  if (!window.confirm(`Overwrite Timbre ${id} ${patternLabel(to)} with ${patternLabel(from)}? Gate, Pitch, selections, mute and Pitch settings will be replaced.`)) return;
-  songTransport.stop(); transport.stop(id); recorder.discardQuantizeHistory(); engine.copyUserPattern(id, from, to);
-  recorder.refresh(); syncSongPreview(); syncTransportControls(); patchStatus.textContent = `Copied Timbre ${id} ${patternLabel(from)} → ${patternLabel(to)}.`;
+  if (from === to) { setStatus('Choose a different destination Pattern.'); return; }
+  const recorded = (timbre: string, user: UserPatternId) => !!engine!.getGateRecording(timbre, user) || !!engine!.getPitchRecording(timbre, user);
+  const plan = planPatternCopy({ patternBars: USER_PATTERN_IDS.map(user => engine!.getPatternBars(id, user)) }, from, to,
+    { sourceRecorded: recorded(id, from), destinationRecorded: recorded(id, to) });
+  // Bars belong to the timbre (ADR 0011), so only replacing a recording asks.
+  if (plan.overwrite && !window.confirm(`Overwrite Timbre ${id} ${patternLabel(to)} with ${patternLabel(from)}? Gate, Pitch, selections, mute and Pitch settings will be replaced.`)) return;
+  transport.stop(id); recorder.discardQuantizeHistory(); engine.copyUserPattern(id, from, to);
+  if (plan.bars !== null) { engine.setPatternBars(id, to, plan.bars); transport.stretchTimingChanged(); syncSongSettings(); syncStretchControls(); }
+  songTransport.contentChanged();
+  recorder.refresh(); syncSongPreview(); syncTransportControls();
+  setStatus(`Copied Timbre ${id} ${patternLabel(from)} → ${patternLabel(to)}.${plan.bars === null ? '' : ` Bars: ${formatBars(plan.bars)}.`}`);
 });
 sourceAutoButton.addEventListener('click', () => transport.setSelection(mixer.selectedId, { gateMode: 'auto' }));
 recordedGateButton.addEventListener('click', () => transport.setSelection(mixer.selectedId, { gateMode: 'user' }));
-gateUserButtons.forEach((button, index) => button.addEventListener('click', () => transport.setSelection(mixer.selectedId,
-  { gateUserId: USER_PATTERN_IDS[index]! })));
+gateUserButtons.forEach((button, index) => button.addEventListener('click', () => {
+  // Frame n holds Pattern n, so the SONG frame follows the Gate Pattern SEQUENCE edits.
+  if (songFocus?.id === mixer.selectedId) songFocus = { id: songFocus.id, frame: index + 1 };
+  transport.setSelection(mixer.selectedId, { gateUserId: USER_PATTERN_IDS[index]! });
+}));
 pitchUserButtons.forEach((button, index) => button.addEventListener('click', () => transport.setSelection(mixer.selectedId,
   { pitchUserId: USER_PATTERN_IDS[index]! })));
 
@@ -1238,6 +1410,18 @@ function syncUiFromTimbre(timbre: TimbreDocument): void {
 const exportPatchButton = requireElement<HTMLButtonElement>('#export-patch');
 const importPatchButton = requireElement<HTMLButtonElement>('#import-patch');
 const patchFileInput = requireElement<HTMLInputElement>('#patch-file');
+// FILES is a temporary dialog: the editor cards and COMMON SPACE stay as they were underneath.
+const filesDialog = requireElement<HTMLDialogElement>('#files-dialog');
+const openFiles = (): void => { if (!filesDialog.open) filesDialog.showModal(); };
+requireElement<HTMLButtonElement>('#files-menu').addEventListener('click', openFiles);
+statusLine.addEventListener('click', openFiles);
+requireElement<HTMLButtonElement>('#files-close').addEventListener('click', () => filesDialog.close());
+// A click on the backdrop targets the dialog itself but lands outside its box.
+filesDialog.addEventListener('click', event => {
+  if (event.target !== filesDialog) return;
+  const box = filesDialog.getBoundingClientRect();
+  if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) filesDialog.close();
+});
 const demoMenuButton = requireElement<HTMLButtonElement>('#demo-menu-button');
 const demoMenu = requireElement<HTMLElement>('#demo-menu');
 
@@ -1281,12 +1465,12 @@ function syncCommonMix(): void {
 exportPatchButton.addEventListener('click', () => {
   if (!engine) return;
   const session = engine.createSession(requireElement<HTMLInputElement>('#patch-name').value);
-  downloadJson(session, 'session'); patchStatus.textContent = `Exported: ${session.name}`;
+  downloadJson(session, 'session'); setStatus(`Exported: ${session.name}`); filesDialog.close();
 });
 function saveTimbre(id: string): void {
   if (!engine?.getChannel(id)) return;
   const timbre = engine.createTimbre(id); downloadJson(timbre, 'timbre');
-  patchStatus.textContent = `Exported timbre: ${timbre.name}`;
+  setStatus(`Exported timbre: ${timbre.name}`);
 }
 requireElement<HTMLInputElement>('#crossfade').addEventListener('change', () => { engine?.setCrossfade(numberValue('#crossfade') / 100); syncCommonMix(); });
 requireElement<HTMLButtonElement>('#master-mute').addEventListener('click', () => { if (engine) engine.setMasterMuted(!engine.isMasterMuted()); syncCommonMix(); });
@@ -1294,7 +1478,7 @@ importPatchButton.addEventListener('click', () => patchFileInput.click());
 async function loadSessionSource(source: string, loadingMessage: string, loadedPrefix: string, errorPrefix: string): Promise<void> {
   if (!engine || loadingSession) return;
   try {
-    patchStatus.textContent = loadingMessage;
+    setStatus(loadingMessage);
     const { session, notices } = parseLabSessionWithNotices(source);
     songTransport.stop();
     transport.stopAll();
@@ -1307,8 +1491,10 @@ async function loadSessionSource(source: string, loadingMessage: string, loadedP
     await engine.applySession(session);
     mixer.manual.releaseAll(); mixer.refresh();
     setValue('#patch-name', session.name); syncCommonMix(); syncSelectedSource(); syncSongSettings();
-    patchStatus.textContent = `${loadedPrefix}: ${session.name}${notices.legacyPitchEnvelopeIgnored ? ' · Legacy PEnv Amount/Time was ignored; new PEnv is neutral.' : ''}`;
-  } catch (error) { patchStatus.textContent = `${errorPrefix}: ${error instanceof Error ? error.message : String(error)}`; }
+    setStatus(`${loadedPrefix}: ${session.name}${notices.legacyPitchEnvelopeIgnored ? ' · Legacy PEnv Amount/Time was ignored; new PEnv is neutral.' : ''}` +
+      (notices.songBarsCapped ? ` · Pattern bars above ${P['song-bars'].max} were set to ${P['song-bars'].max}.` : '') +
+      (notices.songFrameMerged !== null ? ` · Song sections now share one Frame length (${notices.songFrameMerged} bars).` : ''));
+  } catch (error) { setStatus(`${errorPrefix}: ${error instanceof Error ? error.message : String(error)}`); }
   finally { loadingSession = false; patchFileInput.value = ''; setAudioControlsEnabled(true); }
 }
 patchFileInput.addEventListener('change', async () => {
@@ -1316,9 +1502,10 @@ patchFileInput.addEventListener('change', async () => {
   try {
     await loadSessionSource(await file.text(), `Loading: ${file.name} ...`, 'Loaded', 'Import failed');
   } catch (error) {
-    patchStatus.textContent = `Import failed: ${error instanceof Error ? error.message : String(error)}`;
+    setStatus(`Import failed: ${error instanceof Error ? error.message : String(error)}`);
     patchFileInput.value = '';
   }
+  filesDialog.close();
 });
 
 function setDemoMenuOpen(open: boolean, focusFirst = false): void {
@@ -1484,7 +1671,7 @@ try {
   try { validateParameterRanges(P, context.sampleRate); }
   catch (error) { void context.close(); throw error; }
   engine = new AudioEngine(context, {
-    formatVersion: 'KOROGI-Lab/session-v20', name: 'KOROGI Session', savedAt: '',
+    formatVersion: 'KOROGI-Lab/session-v21', name: 'KOROGI Session', savedAt: '',
     channels: LAB_SLOT_IDS.map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
     near: defaultBus(), far: defaultBus(), crossfade: P.crossfade.defaultValue / 100, masterGainDb: P['master-gain'].defaultValue, masterMuted: false, song: defaultSongSettings()
   });
@@ -1494,7 +1681,7 @@ try {
   syncCommonMix(); syncSelectedSource(); syncSongSettings();
   refreshStatus();
 } catch (error) {
-  patchStatus.textContent = `Audio engine is unavailable: ${error instanceof Error ? error.message : String(error)}`;
+  setStatus(`Audio engine is unavailable: ${error instanceof Error ? error.message : String(error)}`);
   audioErrorElement.textContent = `Initialization stopped: ${error instanceof Error ? error.message : String(error)}`;
   audioErrorElement.hidden = false;
   refreshStatus();

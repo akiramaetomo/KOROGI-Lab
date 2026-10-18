@@ -124,18 +124,22 @@ export interface BusSettings {
 
 export interface TimbreDocument {
   editorLayout: EditorLayout;
-  formatVersion: 'KOROGI-Lab/timbre-v17';
+  formatVersion: 'KOROGI-Lab/timbre-v18';
   name: string;
   settings: ChannelSettings;
   detuneRangeCent: number;
   detuneNormalized: number;
   gatePatterns: GatePattern[];
   pitchPatterns: PitchPattern[];
+  patternBars: PatternBars;
   sequence: SequenceSelection;
 }
 
 export type UserPatternId = 'user-1' | 'user-2' | 'user-3' | 'user-4' | 'user-5' | 'user-6' | 'user-7' | 'user-8';
-export interface SongSettings { bpm: number; speed: number; bars: [number, number, number, number, number, number, number, number]; timingMode: 'original' | 'bars' }
+/** Bars of each Pattern number of one timbre (1/16 to 32): its loop length under Bars (ADR 0011). */
+export type PatternBars = [number, number, number, number, number, number, number, number];
+/** `frameBars` is the SongFrame: every Song section's length and the Play All restart period under Bars (ADR 0011). */
+export interface SongSettings { bpm: number; speed: number; frameBars: number; timingMode: 'original' | 'bars' }
 export type PitchScaleMode = 'equal' | 'just-major' | 'major' | 'natural-minor' | 'dorian' | 'major-blues' | 'minor-blues';
 export type PitchMode = { kind: 'smooth'; scale?: PitchScaleMode; portamentoSec?: number }
   | { kind: 'stepped'; stepsPerSide: number; portamentoSec: number; scale?: PitchScaleMode };
@@ -162,11 +166,14 @@ export interface UserPattern {
   settings: SequenceSettings;
 }
 export type PlaybackSource = { kind: 'auto' } | { kind: 'user'; patternId: UserPatternId };
-export interface GatePattern { id: UserPatternId; recording: TriggerRecording | null; muted: boolean }
+/** `inSong` lets Song play or rest this timbre at the Pattern number; Play and Play All ignore it. */
+export interface GatePattern { id: UserPatternId; recording: TriggerRecording | null; muted: boolean; inSong: boolean }
 export interface PitchPattern { id: UserPatternId; recording: PitchRecording | null; muted: boolean; pitchMode: PitchMode; pitchScaleCent: number; filterAmountCent: number; filterAmountWide: boolean }
 export interface SequenceSelection {
   gateMode: 'auto' | 'user'; gateUserId: UserPatternId; pitchUserId: UserPatternId;
   recordSpeed: number; playSpeed: number;
+  /** Play All / Play: fit the selection to its Pattern's bars at the Session BPM (Gate Pattern first). */
+  stretch: boolean;
 }
 export type MasterInputMode = 'common-space' | 'fx1-direct';
 
@@ -192,7 +199,7 @@ export interface SessionChannel extends ChannelMixSettings {
 
 /** The engine does not impose the Lab UI's four-slot limit. */
 export interface SessionDocument {
-  formatVersion: 'KOROGI-Lab/session-v20';
+  formatVersion: 'KOROGI-Lab/session-v21';
   name: string;
   savedAt: string;
   channels: SessionChannel[];

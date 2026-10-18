@@ -54,7 +54,7 @@ test('BURST is an independent One-shot Timbre block and round-trips its settings
   await edit(page, '#burst-group-period', 100);
   await edit(page, '#burst-group-jitter', 10);
   const timbre = await saveTimbre(page);
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v17');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v18');
   expect(timbre.settings.burst).toEqual({ enabled: true, pulseCountMin: 1, pulseCountMax: 3,
     pulseIntervalSec: .025, pulseIntervalJitter: .2, groupPeriodSec: .1, groupPeriodJitter: .1 });
 
@@ -81,6 +81,35 @@ test('BURST controls remain a two-column, three-row grid at supported widths', a
     expect(rows.map(top => controls.filter(control => control.top === top).length)).toEqual([2, 2, 2]);
     expect(Math.min(...controls.map(control => control.width))).toBeGreaterThan(150);
   }
+});
+
+test('BURST controls keep their height when a Group Period drag shows the timing warning', async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 900 });
+  await start(page);
+  const timbre = await saveTimbre(page);
+  timbre.editorLayout = [['sequence'], ['osc1', 'aenv'], ['filter1', 'burst']];
+  timbre.settings.ampEnvelope = { ...timbre.settings.ampEnvelope, mode: 'one-shot', attackSec: .005, decaySec: .016, releaseSec: .03 };
+  timbre.settings.burst = { enabled: true, pulseCountMin: 3, pulseCountMax: 3,
+    pulseIntervalSec: .07394, pulseIntervalJitter: 0, groupPeriodSec: .2116, groupPeriodJitter: 0 };
+  await loadTimbre(page, timbre);
+  const warnings = page.locator('#burst-timing-warnings');
+  await expect(warnings).toBeHidden();
+  const controls = page.locator('.burst-control-grid > .numeric-control');
+  const heights = () => controls.evaluateAll(nodes => nodes.map(node => Math.round(node.getBoundingClientRect().height)));
+  const before = await heights();
+  expect(Math.min(...before)).toBeGreaterThan(40);
+
+  // Chrome left the inline-size containers at zero height after this drag (2026-10-10).
+  const slider = page.locator('#burst-group-period-coarse');
+  await slider.scrollIntoViewIfNeeded();
+  const box = await slider.boundingBox();
+  await page.mouse.move(box.x + box.width * .6, box.y + box.height / 2);
+  await page.mouse.down();
+  for (let step = 1; step <= 10; step++) await page.mouse.move(box.x + box.width * (.6 - step * .03), box.y + box.height / 2);
+  await page.mouse.up();
+  await expect(warnings).toContainText('Group overlap');
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  expect(await heights()).toEqual(before);
 });
 
 test('BURST emits 25 ms three-pulse groups and Auto Ton acts as the phrase window', async ({ page }) => {
@@ -115,6 +144,7 @@ test('BURST emits 25 ms three-pulse groups and Auto Ton acts as the phrase windo
 
 test('recording stores the external phrase Gate rather than generated BURST pulses', async ({ page }) => {
   await start(page);
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   await page.locator('#aenv-mode').evaluate(select => {
     select.value = 'one-shot'; select.dispatchEvent(new Event('change', { bubbles: true }));
   });

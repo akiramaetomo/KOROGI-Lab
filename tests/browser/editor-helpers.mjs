@@ -1,7 +1,21 @@
 import { expect } from '@playwright/test';
 
+/** FILES is a modal dialog; it blocks the page until it closes. */
+export async function openFiles(page) {
+  // A click right after page load can land before main.ts binds FILES; retry until the dialog opens.
+  await expect(async () => {
+    if (!await page.locator('#files-dialog').evaluate(dialog => dialog.open)) await page.locator('#files-menu').click();
+    await expect(page.locator('#files-dialog')).toBeVisible({ timeout: 500 });
+  }).toPass();
+}
+export async function closeFiles(page) {
+  if (await page.locator('#files-dialog').evaluate(dialog => dialog.open)) await page.locator('#files-close').click();
+  await expect(page.locator('#files-dialog')).toBeHidden();
+}
+
 /** Explicit test setup replaces the former implicit fixed-page pairing. */
 export async function openTimbreEditors(page, ids) {
+  await closeFiles(page);
   if (await page.locator('.function-editor').isHidden())
     await page.locator(ids[0] === 'sequence' ? '#trigger-menu' : `#flow-${ids[0]}`).click(ids[0] === 'fx1' ? { position: { x: 8, y: 15 } } : undefined);
   while (await page.locator('.editor-card.active').count())
@@ -10,6 +24,7 @@ export async function openTimbreEditors(page, ids) {
 }
 
 export async function openCommonEditors(page, ids) {
+  await closeFiles(page);
   if (!await page.locator('.common-editor').isVisible()) await page.locator('#flow-near-fx2').click();
   while (await page.locator('.space-card.active').count()) await page.locator('.space-card.active .editor-card-close').first().click();
   const nodes = { near: 'flow-near-fx2', far: 'flow-far-fx2', 'near-gain': 'flow-near-gain', 'far-gain': 'flow-far-gain', balance: 'flow-balance', master: 'flow-master' };

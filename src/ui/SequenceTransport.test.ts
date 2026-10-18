@@ -140,6 +140,31 @@ describe('SequenceTransport timing', () => {
     expect(gateOns).toEqual([]);
     transport.stop('1');
   });
+  it('warns only when loop periods are not whole multiples of each other (within 1 ms)', async () => {
+    vi.stubGlobal('window', { setInterval: () => 1, clearInterval: () => {} });
+    const warns = async (lengths: Record<'1' | '2', number>) => {
+      const synths = { '1': {} as ChannelSynth, '2': {} as ChannelSynth };
+      const engine = {
+        context: { currentTime: 0, state: 'running' }, getChannelIds: () => ['1', '2'], getChannel: (id: '1' | '2') => synths[id],
+        getSequenceSelection: () => ({ gateMode: 'user', gateUserId: 'user-1', pitchUserId: 'user-1', recordSpeed: 1, playSpeed: 1 }),
+        getSequenceSettings: () => ({ pitchMode: { kind: 'smooth' }, pitchScaleCent: 200, filterAmountCent: 0, filterAmountWide: false, recordSpeed: 1, playSpeed: 1 }),
+        getGateMuted: () => false, getPitchMuted: () => false,
+        getGateRecording: (id: '1' | '2') => ({ durationSec: lengths[id], selectionStartSec: 0, selectionEndSec: lengths[id], gates: [{ onSec: 0, offSec: .05 }] }),
+        getPitchRecording: () => null,
+        gateOn: () => {}, gateOff: () => {}, cancelScheduledGates: () => {}, resetSequencePitch: () => {}, setSequencePitchMuted: () => {}
+      } as unknown as AudioEngine;
+      const transport = new SequenceTransport(() => engine, async () => {}, () => {}, () => {}, () => {});
+      await transport.playAll();
+      const result = transport.playAllMismatch();
+      transport.stopAll();
+      return result;
+    };
+    expect(await warns({ '1': 2, '2': .5 })).toBe(false);
+    expect(await warns({ '1': 2, '2': .503 })).toBe(true);
+    expect(await warns({ '1': 1.5, '2': .5 })).toBe(false);
+    expect(await warns({ '1': 2, '2': 2.0005 })).toBe(false);
+    expect(await warns({ '1': 2, '2': 3 })).toBe(true);
+  });
   it('does not warn when every playing timbre loops with the same real period', async () => {
     vi.stubGlobal('window', { setInterval: () => 1, clearInterval: () => {} });
     const context = { currentTime: 0, state: 'running' };
@@ -209,5 +234,188 @@ describe('SequenceTransport timing', () => {
     expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.12, 9);
     transport.stop('1');
     expect(pitchMute.at(-1)).toBe(false);
+  });
+  it('keeps backing timbres on the recording loop and leaves the recording monitor to the recorder', async () => {
+    vi.stubGlobal('window', { setInterval: () => 1, clearInterval: () => {} });
+    const context = { currentTime: 0, state: 'running' };
+    const synths = { '1': {} as ChannelSynth, '2': {} as ChannelSynth };
+    const engine = {
+      context, getChannelIds: () => ['1', '2'], getChannel: (id: '1' | '2') => synths[id],
+      getSequenceSelection: () => ({ gateMode: 'user', gateUserId: 'user-1', pitchUserId: 'user-1', recordSpeed: 1, playSpeed: 1 }),
+      getSequenceSettings: () => ({ pitchMode: { kind: 'smooth' }, pitchScaleCent: 200, filterAmountCent: 0, filterAmountWide: false, recordSpeed: 1, playSpeed: 1 }),
+      getGateMuted: () => false, getPitchMuted: () => false,
+      getGateRecording: () => ({ durationSec: 2, selectionStartSec: 0, selectionEndSec: 2, gates: [{ onSec: 0, offSec: .1 }] }),
+      getPitchRecording: () => null,
+      gateOn: () => {}, gateOff: () => {}, cancelScheduledGates: () => {}, resetSequencePitch: () => {}, setSequencePitchMuted: () => {}
+    } as unknown as AudioEngine;
+    const transport = new SequenceTransport(() => engine, async () => {}, () => {}, () => {}, () => {});
+    await transport.play('2');
+    context.currentTime = .7;
+    // Recording Timbre 1 starts at 1.0 s: the playing Timbre 2 restarts with it.
+    transport.setRecordingTarget('1', 'both');
+    transport.restartOthersAt(1);
+    transport.playRetained('1', { gate: 1, pitch: 1 }, 1, true, true, 1);
+    context.currentTime = 1.5;
+    expect(transport.position('2', 'gate')?.elapsed).toBeCloseTo(.5);
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.5);
+    // Play All / Stop All act on the other timbres only; a press mid-bar waits for the next bar.
+    transport.setStartAligner(earliest => Math.ceil(earliest - 1) + 1);
+    expect(transport.anyPlaying()).toBe(true);
+    transport.stopAll();
+    expect(transport.anyPlaying()).toBe(false);
+    expect(transport.isPlaying('1')).toBe(true);
+    await transport.playAll();
+    expect(transport.isPlaying('1')).toBe(true);
+    context.currentTime = 2.25;
+    expect(transport.position('2', 'gate')?.elapsed).toBeCloseTo(.25);
+    transport.setRecordingTarget(null);
+    expect(transport.isPlaying('1')).toBe(false);
+    transport.stopAll();
+  });
+});
+
+describe('SequenceTransport Stretch', () => {
+  type Gate = { durationSec: number; selectionStartSec: number; selectionEndSec: number; gates: Array<{ onSec: number; offSec: number }> };
+  function setup(timbres: Record<string, { stretch: boolean; gateUserId?: string; gates: Record<string, Gate> }>, bars: number[], bpm = 120) {
+    const timers = new Map<number, () => void>(); let nextTimer = 0;
+    vi.stubGlobal('window', { setInterval: (tick: () => void) => { timers.set(++nextTimer, tick); return nextTimer; },
+      clearInterval: (timer: number) => { timers.delete(timer); } });
+    const context = { currentTime: 0, state: 'running' };
+    const song = { bpm, speed: 1, frameBars: 4, timingMode: 'original' };
+    const calls = { gateOns: [] as Array<[string, number]>, gateCancels: [] as Array<[string, number]>, songCancels: [] as Array<[string, number]> };
+    const synth = { isAutoTriggerRunning: () => false } as ChannelSynth;
+    const selection = (id: string) => ({ gateMode: 'user', gateUserId: timbres[id]!.gateUserId ?? 'user-1', pitchUserId: 'user-1',
+      recordSpeed: 1, playSpeed: 1, stretch: timbres[id]!.stretch });
+    const engine = {
+      context, getChannelIds: () => Object.keys(timbres), getChannel: (id: string) => timbres[id] ? synth : undefined,
+      getSongSettings: () => structuredClone(song),
+      getSequenceSelection: selection,
+      setSequenceSelection: (id: string, changes: Record<string, unknown>) => { Object.assign(timbres[id]!, changes); },
+      getSequenceSettings: () => ({ pitchMode: { kind: 'smooth' }, pitchScaleCent: 200, filterAmountCent: 0, filterAmountWide: false, recordSpeed: 1, playSpeed: 1 }),
+      getGateMuted: () => false, getPitchMuted: () => false,
+      // Every timbre here uses the same bars per Pattern number.
+      getPatternBars: (_id: string, user: string) => bars[Number(user.slice(-1)) - 1]!,
+      getGateRecording: (id: string, user: string) => timbres[id]!.gates[user] ?? null, getPitchRecording: () => null,
+      gateOn: (id: string, time: number) => calls.gateOns.push([id, time]), gateOff: () => {},
+      cancelScheduledGates: () => {}, cancelScheduledGatesFrom: (id: string, time: number) => calls.gateCancels.push([id, time]),
+      cancelSongFuture: (id: string, time: number) => calls.songCancels.push([id, time]),
+      resetSequencePitch: () => {}, setSequencePitchMuted: () => {}, holdSequencePitch: () => 0
+    } as unknown as AudioEngine;
+    const transport = new SequenceTransport(() => engine, async () => {}, () => {}, () => {}, () => {});
+    const advance = (time: number) => {
+      while (context.currentTime < time - 1e-9) {
+        context.currentTime = Math.min(time, context.currentTime + .015);
+        [...timers.values()].forEach(tick => tick());
+      }
+    };
+    return { transport, context, song, bars, calls, advance };
+  }
+  const gate = (length: number, gates: Array<{ onSec: number; offSec: number }>): Gate =>
+    ({ durationSec: length, selectionStartSec: 0, selectionEndSec: length, gates });
+
+  it('fits each selection to its Pattern bars and starts a later Stretch timbre on the next bar head', async () => {
+    // 120 BPM: one bar is 2 s. Timbre 1 fits 1.5 s to 1 bar; Timbre 2 fits 3 s (Pattern 2) to 2 bars.
+    const { transport, calls, advance } = setup({
+      '1': { stretch: true, gates: { 'user-1': gate(1.5, [{ onSec: 0, offSec: .1 }]) } },
+      '2': { stretch: true, gateUserId: 'user-2', gates: { 'user-2': gate(3, [{ onSec: 0, offSec: .1 }]) } }
+    }, [1, 2, 1, 1, 1, 1, 1, 1]);
+    await transport.play('1');
+    advance(1.08);
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.75, 9);
+    await transport.play('2');
+    advance(3.08);
+    expect(calls.gateOns.filter(([id]) => id === '2').map(([, time]) => time)).toEqual([2.08]);
+    expect(transport.position('2', 'gate')?.elapsed).toBeCloseTo(.75, 9);
+    expect(transport.playingPeriods().map(item => item.seconds)).toEqual([2, 4]);
+    // Whole bars on one grid do not drift.
+    expect(transport.playAllMismatch()).toBe(false);
+    transport.stopAll();
+  });
+  it('switches a Stretch Pattern at the next bar head without a doubled or early Gate', async () => {
+    const { transport, calls, advance } = setup({
+      '1': { stretch: true, gates: { 'user-1': gate(1, [{ onSec: 0, offSec: .5 }]), 'user-2': gate(.5, [{ onSec: .25, offSec: .3 }]) } }
+    }, [1, 1, 1, 1, 1, 1, 1, 1]);
+    await transport.play('1');
+    advance(.5);
+    transport.setSelection('1', { gateUserId: 'user-2' });
+    // The old Pattern keeps playing to the bar head at 2.08 s; the new one starts there.
+    expect(transport.position('1', 'gate')?.start).toBe(0);
+    expect(transport.position('1', 'gate')?.period).toBe(1);
+    advance(3.2);
+    expect(calls.gateCancels).toEqual([['1', 2.08]]);
+    expect(calls.gateOns.map(([, time]) => time)).toEqual([.08, 2.08 + .25 * 4]);
+    expect(transport.position('1', 'gate')?.period).toBe(.5);
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(1.12 / 4, 9);
+    transport.stop('1');
+  });
+  it('hands a playing recording target to its monitor on the next bar head and leaves the backing running', async () => {
+    // 120 BPM: one bar is 2 s. Timbre 1 has Gates at the bar head and mid-bar; both loop 1 bar from 0.08 s.
+    const { transport, calls, advance } = setup({
+      '1': { stretch: true, gates: { 'user-1': gate(1, [{ onSec: 0, offSec: .1 }, { onSec: .5, offSec: .6 }]) } },
+      '2': { stretch: true, gates: { 'user-1': gate(1, [{ onSec: 0, offSec: .1 }]) } }
+    }, [1, 1, 1, 1, 1, 1, 1, 1]);
+    await transport.playAll();
+    advance(.5);
+    expect(transport.nextGridBar(.53)).toBeCloseTo(2.08, 9);
+    transport.setRecordingTarget('1', 'gate');
+    // The recorder starts on the bar head; the old playback keeps its mid-bar Gate until then.
+    transport.playRetained('1', { gate: .5, pitch: .5 }, 1, true, false, 2.08);
+    advance(4.2);
+    const ons = (id: string) => calls.gateOns.filter(([item]) => item === id).map(([, time]) => time);
+    expect(ons('1')).toEqual([.08, 1.08, 2.08, 3.08, 4.08]);
+    expect(ons('2')).toEqual([.08, 2.08, 4.08]);
+    expect(calls.gateCancels).toEqual([['1', 2.08]]);
+    transport.setRecordingTarget(null);
+    transport.stopAll();
+  });
+  it('has no bar grid to wait for when no other Stretch timbre plays', async () => {
+    const { transport, advance } = setup({
+      '1': { stretch: true, gates: { 'user-1': gate(1, [{ onSec: 0, offSec: .1 }]) } },
+      '2': { stretch: false, gates: { 'user-1': gate(1, [{ onSec: 0, offSec: .1 }]) } }
+    }, [1, 1, 1, 1, 1, 1, 1, 1]);
+    await transport.playAll();
+    advance(.5);
+    expect(transport.nextGridBar(.53, '1')).toBeNull();
+    expect(transport.nextGridBar(.53, '2')).toBeCloseTo(2.08, 9);
+    transport.stopAll();
+  });
+  it('rescales the bar grid on a BPM change at the current position without re-sending ON', async () => {
+    const { transport, song, calls, advance } = setup({
+      '1': { stretch: true, gates: { 'user-1': gate(1, [{ onSec: 0, offSec: .8 }]) } }
+    }, [1, 1, 1, 1, 1, 1, 1, 1]);
+    await transport.play('1');
+    advance(.58);
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.25, 9);
+    song.bpm = 60;
+    transport.stretchTimingChanged();
+    expect(calls.songCancels).toEqual([['1', .58]]);
+    expect(calls.gateOns.map(([, time]) => time)).toEqual([.08]);
+    advance(1.58);
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.5, 9);
+    transport.stop('1');
+  });
+  it('restarts a loop whose bar count changed on the next bar head', async () => {
+    const { transport, bars, calls, advance } = setup({
+      '1': { stretch: true, gates: { 'user-1': gate(1, [{ onSec: 0, offSec: .1 }]) } }
+    }, [1, 1, 1, 1, 1, 1, 1, 1]);
+    await transport.play('1');
+    advance(.5);
+    bars[0] = 2;
+    transport.stretchTimingChanged();
+    advance(2.5);
+    expect(calls.gateCancels).toEqual([['1', 2.08]]);
+    expect(transport.playingPeriods().map(item => item.seconds)).toEqual([4]);
+    expect(transport.position('1', 'gate')?.elapsed).toBeCloseTo(.42 / 4, 9);
+    transport.stop('1');
+  });
+  it('warns when a timbre at its own speed loops against the bar grid', async () => {
+    const { transport, advance } = setup({
+      '1': { stretch: true, gates: { 'user-1': gate(1, [{ onSec: 0, offSec: .1 }]) } },
+      '2': { stretch: false, gates: { 'user-1': gate(1.5, [{ onSec: 0, offSec: .1 }]) } }
+    }, [1, 1, 1, 1, 1, 1, 1, 1]);
+    await transport.playAll();
+    advance(.2);
+    expect(transport.playAllMismatch()).toBe(true);
+    transport.stopAll();
   });
 });

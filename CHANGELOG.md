@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0-rc.1 — 2026-10-19 — Bars looper, Loop / Chain and SONG grid Pages candidate
+
+- One Seconds | Bars time mode for the whole app; the app starts in Bars. Bars accepts fractional Pattern lengths (1/2–1/16) and up to 32 bars from a menu.
+- In Bars, playback and recording stretch each selection to its Pattern length on one shared BPM bar grid, with record Grid lines, a click and bar-aligned backing; a recording joins a playing grid at the next bar head.
+- Pitch settings and Separate stay editable while recording; Song BPM is locked while recording.
+- SongFrame: each timbre keeps its own Pattern length, and the Song has one Frame per Session. `⚠ Loops drift` warns only for periods that are not whole multiples.
+- SONG grid of Timbre × Pattern: choose Patterns for the Song, jump from a cell or a timbre name to SEQUENCE, and see what Play plays. Pattern edits apply while the Song plays.
+- Looper-first SEQUENCE: a header SEQUENCE button, and Loop / Chain at the top of SONG in place of the header Play All.
+- Copy Pattern carries Pattern bars; Timbre Clear sits away from Mute and Clear/Init ask for confirmation.
+- FILES opens as a dialog, and results show in a header status line.
+- Logarithmic PEnv is scheduled with linear ramps, fixing a hang when changing Song BPM during playback.
+- Save formats move to timbre-v18 / session-v21; older files are migrated on load.
+- Publish as a release candidate pending full real-device and listening acceptance.
+
 ## 0.3.0-rc.2 — 2026-10-09 — Sequence Mute and Song BPM Pages candidate
 
 - Lane Mute silences output only; Gate/Pitch loop clocks, cursors and phase keep running in Play, Play All and Song.

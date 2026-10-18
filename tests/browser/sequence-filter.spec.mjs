@@ -119,6 +119,7 @@ for (const viewport of [{ width: 1440, height: 900 }, { width: 1024, height: 768
 test('manual, recorded and live edited Pitch keep both outputs synchronized across User, mute, clear and stop', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 });
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   await page.evaluate(async () => {
     const { ChannelSynth } = await import('/src/audio/core/ChannelSynth.ts');
     const original = ChannelSynth.prototype.setSequencePitch;

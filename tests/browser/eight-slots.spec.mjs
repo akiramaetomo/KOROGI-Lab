@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { openFiles } from './editor-helpers.mjs';
 
 test('Eight compact slots expose TRG, Play and Level while one detail panel opens at a time', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1024, height: 768 });
@@ -56,7 +57,7 @@ test('Slots 5 to 8 play together, accept digit Gates and round-trip individual t
   expect(timbre.name).toBe('Eighth');
   await page.locator('#timbre-file-7').setInputFiles({ name: 'eighth.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
   await expect(page.locator('#select-7')).toContainText('Eighth');
-  await page.locator('#play-all').click();
+  await page.locator('#sequence-open').click(); await page.locator('#play-all').click();
   for (const id of ['1', '5', '6', '7', '8']) await expect(page.locator(`#play-${id}`)).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#play-8')).toHaveAttribute('aria-label', 'Stop timbre 8');
   await page.locator('#play-all').click();
@@ -65,11 +66,11 @@ test('Slots 5 to 8 play together, accept digit Gates and round-trip individual t
   for (const id of ['5', '8']) await expect(page.locator(`#gate-${id}`)).toHaveClass(/on/);
   await page.keyboard.up('5'); await page.keyboard.up('8');
   for (const id of ['5', '8']) await expect(page.locator(`#gate-${id}`)).not.toHaveClass(/on/);
-  await page.locator('[data-panel-target="patch"]').first().click();
+  await openFiles(page);
   const sessionDownload = page.waitForEvent('download');
   await page.locator('#export-patch').click();
   const session = JSON.parse(await readFile(await (await sessionDownload).path(), 'utf8'));
-  expect(session.formatVersion).toBe('KOROGI-Lab/session-v20');
+  expect(session.formatVersion).toBe('KOROGI-Lab/session-v21');
   expect(session.channels).toHaveLength(8);
   expect(session.channels[7]).toMatchObject({ id: '8', gainDb: -12, timbre: { name: 'Eighth' } });
   await page.locator('#patch-file').setInputFiles({ name: 'eight.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) });

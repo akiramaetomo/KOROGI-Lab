@@ -20,6 +20,7 @@ async function dragEditHandle(page, edge, ratio) {
 
 test('Gate quantize uses an independent edit range and only the last operation can be undone', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   const timbre = await saveTimbre(page);
   timbre.sequence.gateMode = 'user';
   timbre.gatePatterns[0].recording = { durationSec: 2, selectionStartSec: 0, selectionEndSec: 2,
@@ -29,8 +30,12 @@ test('Gate quantize uses an independent edit range and only the last operation c
   await page.locator('#trigger-menu').click();
   await page.locator('.gate-quantize-details > summary').click();
   await expect(page.locator('#gate-quantize')).toBeDisabled();
-  await page.locator('.song-timing-field [role="radio"][data-value="bars"]').click();
+  await expect(page.locator('#gate-quantize-note')).toBeVisible();
+  await expect(page.locator('#gate-apply-bars')).toBeHidden();
+  await page.locator('#time-mode-bars').click();
   await expect(page.locator('#gate-quantize')).toBeEnabled();
+  await expect(page.locator('#gate-quantize-note')).toBeHidden();
+  await expect(page.locator('#gate-apply-bars')).toBeVisible();
   await page.locator('#gate-quantize-grid').selectOption('32');
   await page.locator('#gate-quantize').click();
   const fine = (await saveTimbre(page)).gatePatterns[0].recording;
@@ -51,11 +56,11 @@ test('Gate quantize uses an independent edit range and only the last operation c
   expect((await saveTimbre(page)).gatePatterns[0].recording).toEqual(fine);
   await page.locator('#gate-quantize-redo').click();
   expect((await saveTimbre(page)).gatePatterns[0].recording).toEqual(coarse);
-  await page.locator('.song-timing-field [role="radio"][data-value="original"]').click();
+  await page.locator('#time-mode-seconds').click();
   await expect(page.locator('#gate-quantize')).toBeDisabled();
   await expect(page.locator('#gate-quantize-undo')).toBeDisabled();
   await page.locator('#timbre-file-1').setInputFiles({ name: 'quantized.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(await saveTimbre(page))) });
-  await page.locator('.song-timing-field [role="radio"][data-value="bars"]').click();
+  await page.locator('#time-mode-bars').click();
   await expect(page.locator('#gate-quantize-undo')).toBeDisabled();
   expect((await saveTimbre(page)).gatePatterns[0].recording).toEqual(coarse);
 });
@@ -70,7 +75,7 @@ test('recorded OFF reaches the engine before the next quantized ON', async ({ pa
   await expect(page.locator('#patch-status')).toContainText('Loaded timbre 1:');
   await page.locator('#trigger-menu').click();
   await page.locator('.gate-quantize-details > summary').click();
-  await page.locator('.song-timing-field [role="radio"][data-value="bars"]').click();
+  await page.locator('#time-mode-bars').click();
   await page.locator('#gate-quantize-grid').selectOption('4');
   await dragEditHandle(page, 'start', .25);
   await dragEditHandle(page, 'end', .3);
@@ -101,7 +106,7 @@ test('dedicated range handles accept touch and keyboard without moving the playb
   await expect(page.locator('#patch-status')).toContainText('Loaded timbre 1:');
   await page.locator('#trigger-menu').click();
   await page.locator('.gate-quantize-details > summary').click();
-  await page.locator('.song-timing-field [role="radio"][data-value="bars"]').click();
+  await page.locator('#time-mode-bars').click();
   const handle = page.locator('#gate-edit-start-handle');
   await handle.scrollIntoViewIfNeeded();
   const origin = await handle.boundingBox(); const track = await page.locator('#gate-edit-timeline').boundingBox();

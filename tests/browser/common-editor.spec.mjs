@@ -1,11 +1,11 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { openCommonEditors, openTimbreEditors, compactNumericRows, expectCompactNumericRows } from './editor-helpers.mjs';
+import { openCommonEditors, openTimbreEditors, openFiles, compactNumericRows, expectCompactNumericRows } from './editor-helpers.mjs';
 
 const layout = page => page.locator('.space-card.active').evaluateAll(nodes => nodes.map(node => node.dataset.commonCard));
 async function start(page) { await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); }
 async function save(page) {
-  await page.locator('#files-menu').click(); const pending = page.waitForEvent('download'); await page.locator('#export-patch').click();
+  await openFiles(page); const pending = page.waitForEvent('download'); await page.locator('#export-patch').click();
   return JSON.parse(await readFile(await (await pending).path(), 'utf8'));
 }
 
@@ -27,11 +27,12 @@ test('Near and Far edit both effects independently and close/reorder never chang
   await page.locator('#play-1').click();
   await page.locator('[data-common-card="near"] .editor-card-close').click();
   await expect(page.locator('#play-1')).toHaveAttribute('aria-pressed', 'true');
+  const kept = await layout(page);
   const session = await save(page);
+  expect(await layout(page)).toEqual(kept); // The FILES dialog leaves the cards as they were.
   expect(session.near.effects[0].type).toBe('delay'); expect(session.near.effects[0].delayTimeSec).toBe(.44);
   expect(session.far.effects[0].type).toBe('distortion'); expect(session.far.effects[0].distortionDriveDb).toBe(18);
   expect(session).not.toHaveProperty('commonEditorLayout');
-  await page.locator('#flow-far-fx2').click(); expect(await layout(page)).toEqual(['far']);
   await page.locator('#flow-osc1').click(); await page.locator('#flow-far-fx2').click(); expect(await layout(page)).toEqual(['far']);
   await page.locator('#flow-far-fx3').click(); expect(await layout(page)).toEqual([]);
 });
@@ -62,7 +63,7 @@ test('COMMON SPACE stacks two Small cards and keeps the arrangement only during 
   expect(await columns.evaluateAll(nodes => nodes.map(column => [...column.querySelectorAll('.space-card.active')].map(card => card.dataset.commonCard)))).toEqual([['near'], ['near-gain', 'far-gain']]);
   const session = await save(page);
   expect(session).not.toHaveProperty('commonEditorLayout');
-  await page.locator('#flow-near-fx2').click();
+  await page.locator('#flow-osc1').click(); await page.locator('#flow-near-fx2').click();
   expect(await columns.evaluateAll(nodes => nodes.map(column => [...column.querySelectorAll('.space-card.active')].map(card => card.dataset.commonCard)))).toEqual([['near'], ['near-gain', 'far-gain']]);
 });
 

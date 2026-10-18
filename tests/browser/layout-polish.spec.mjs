@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { openTimbreEditors, openCommonEditors } from './editor-helpers.mjs';
+import { openTimbreEditors, openCommonEditors, openFiles } from './editor-helpers.mjs';
 
 async function start(page) {
   await page.goto('/');
@@ -25,15 +25,16 @@ test('Record Write controls and Patterns remain aligned across supported widths'
         gate: choices('.source-choice:first-child button'), pitch: choices('.source-choice:last-child button'),
         pageWidth: document.documentElement.scrollWidth, viewport: innerWidth };
     });
-    // One PATTERN / RECORD / PLAY panel: Patterns over Record/Write on the left,
-    // counter over ● ▶ over Speed on the right, New Pattern Length along the bottom.
+    // One PATTERN / RECORD / PLAY panel: Patterns over Record/Write on the left, counter over ● ▶ over Speed
+    // over New Pattern Length on the right (the Bars box takes that place in Bars), Copy along the bottom.
     expect(boxes.control.left).toBeGreaterThanOrEqual(boxes.record.left);
     expect(boxes.control.bottom).toBeLessThanOrEqual(boxes.write[0].box.top);
-    // Copy Pattern sits right of New Pattern Length and wraps to one extra row only when the panel is too narrow.
-    const copyWrapped = boxes.copy.top >= boxes.newLength.bottom - 1;
-    if (!copyWrapped) expect(Math.abs((boxes.copy.top + boxes.copy.bottom) / 2 - (boxes.newLength.top + boxes.newLength.bottom) / 2)).toBeLessThanOrEqual(6);
+    // Copy Pattern sits alone at the left of the bottom row, under Record/Write (author's layout, 2026-10-18).
+    expect(boxes.copy.top).toBeGreaterThanOrEqual(boxes.write[0].box.bottom);
+    expect(boxes.copy.left).toBeLessThanOrEqual(boxes.gateLabel.left + 2);
     expect(boxes.copy.bottom).toBeLessThanOrEqual(boxes.record.bottom);
-    expect(boxes.record.height - (copyWrapped ? boxes.copy.height + 6 : 0)).toBeLessThanOrEqual(165);
+    // 165 px until Stretch moved under Play/Rec Speed in two rows (author's choice, 2026-10-16): measured 209–217 px.
+    expect(boxes.record.height).toBeLessThanOrEqual(220);
     expect(boxes.recordButton.width).toBe(64);
     expect(boxes.counterText.bottom).toBeLessThanOrEqual(boxes.recordButton.top);
     expect(boxes.play.left).toBeGreaterThanOrEqual(boxes.recordButton.right);
@@ -46,7 +47,8 @@ test('Record Write controls and Patterns remain aligned across supported widths'
     expect(boxes.write[0].box.top).toBe(boxes.modes[0].box.top);
     expect(boxes.write[0].box.height).toBeGreaterThan(boxes.gate[0].box.height);
     expect(boxes.write[1].box.right).toBeLessThanOrEqual(boxes.recordButton.left);
-    expect(boxes.newLength.top).toBeGreaterThanOrEqual(boxes.write[0].box.bottom);
+    expect(boxes.newLength.top).toBeGreaterThanOrEqual(boxes.speed.bottom);
+    expect(boxes.newLength.left).toBeGreaterThanOrEqual(boxes.gate[7].box.right);
     expect(boxes.newLength.right).toBeLessThanOrEqual(boxes.record.right);
     expect(boxes.gate[0].box.width).toBeLessThan(65);
     expect(boxes.gate).toHaveLength(8); expect(boxes.pitch).toHaveLength(8);
@@ -138,7 +140,7 @@ test('1280x800 fits Sequence without scrolling and keeps controls aligned', asyn
   expect(layout.modeButtons[0].right).toBeLessThanOrEqual(layout.modeButtons[1].left);
   expect(layout.modeButtons[1].right).toBeLessThanOrEqual(layout.modeButtons[2].left);
   expect(layout.modeButtons[0].top).toBeGreaterThan(layout.pitchUsers.bottom);
-  expect(layout.length.top).toBeGreaterThan(layout.modeButtons[0].bottom);
+  expect(layout.length.top).toBeGreaterThan(layout.playSpeed.bottom);
   expect(layout.length.bottom).toBeLessThanOrEqual(layout.record.bottom);
   expect(layout.auto.top).toBeLessThan(layout.gateTimeline.top);
   expect(layout.tonControl.top).toBe(layout.repeatControl.top);
@@ -191,6 +193,8 @@ test('Length Lock and dt fit the iPad reference width and narrow local scroll', 
   expect(layout.lockRight).toBeLessThanOrEqual(layout.targetLeft);
   expect(layout.values.every(value => value.left >= value.areaLeft && value.right <= value.areaRight)).toBe(true);
   // Second labels mark 0, the middle and the end of the full timeline; Start/End/dt sit left of Match on one row.
+  // Match Fit to Bars is a Bars operation, shown only in Bars (ADR 0010).
+  await page.locator('#time-mode-bars').click();
   const ticks = await page.locator('.trigger-editor').evaluate(editor => ['gate', 'pitch'].map(lane => {
     const area = editor.querySelector(`.${lane}-timeline-area`), rect = node => node.getBoundingClientRect();
     const [zero, middle, end] = [...area.querySelectorAll('.record-ticks span')].map(rect);
@@ -220,7 +224,7 @@ test('TIMBRES width resizes, scrolls below 65 percent, and collapses without sta
   const divider = page.locator('#mixer-divider');
   const mixer = page.locator('.mixer-panel');
   const width = () => mixer.evaluate(node => node.getBoundingClientRect().width);
-  const headerControls = await page.locator('#map-toggle, #fullscreen-toggle, #files-menu, #play-all, #trigger').evaluateAll(nodes => nodes.map(node => {
+  const headerControls = await page.locator('#map-toggle, #fullscreen-toggle, #files-menu, #sequence-open, #trigger, #status-line').evaluateAll(nodes => nodes.map(node => {
     const rect = node.getBoundingClientRect(); return { id: node.id, left: rect.left, right: rect.right, visible: rect.width > 0 && rect.height > 0 };
   }));
   const headerLayout = await page.locator('.topbar').evaluate(node => ({ innerWidth, rect: node.getBoundingClientRect().toJSON(),
@@ -409,9 +413,10 @@ test('1024x768 uses equal diagram/editor heights, permits dragging, and confines
   }
   for (const node of ['trigger-menu', 'files-menu']) {
     if (node === 'trigger-menu') await openTimbreEditors(page, ['sequence']);
-    else await page.locator(`#${node}`).click();
+    else await openFiles(page);
     if (node === 'trigger-menu') await page.screenshot({ path: testInfo.outputPath('trigger-1024x768.png') });
-    const scrollArea = node === 'trigger-menu' ? page.locator('.function-editor') : page.locator('.function-panel.active:visible');
+    else await page.screenshot({ path: testInfo.outputPath('files-1024x768.png') });
+    const scrollArea = node === 'trigger-menu' ? page.locator('.function-editor') : page.locator('#files-dialog');
     fits.push(await scrollArea.evaluate((panel, node) => ({ node, scroll: panel.scrollHeight, client: panel.clientHeight }), node));
   }
   expect(fits.filter(({ node, scroll, client }) => !['trigger-menu', 'mod'].includes(node) && scroll > client + 1)).toEqual([]);
@@ -595,7 +600,7 @@ test('Audio resume failure is visible and the next Auto gesture retries', async 
     };
   });
   await page.goto('/');
-  await expect(page.locator('#play-all')).toBeEnabled();
+  await expect(page.locator('#play-all')).toBeEnabled(); await page.locator('#sequence-open').click();
   await page.evaluate(async () => {
     const context = window.__testAudioContext;
     await context.suspend();
@@ -641,3 +646,38 @@ test('divider hides the diagram completely and restores it by keyboard and point
   await page.mouse.move(bar.x + bar.width / 2, column.y + 1, { steps: 5 }); await page.mouse.up();
   await expect(divider).toHaveAttribute('aria-valuenow', '0');
 });
+
+for (const [width, height] of [[1024, 768], [768, 1024], [390, 844]]) {
+  test(`header status line truncates long results without growing the top bar at ${width}x${height}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height });
+    await start(page);
+    const status = page.locator('#status-line');
+    await expect(status).toBeVisible();
+    const before = await page.locator('.topbar').boundingBox();
+    const message = 'Loaded: A very long Session name for checking the header · Legacy PEnv Amount/Time was ignored; new PEnv is neutral. · Song sections now share one Frame length (4 bars).';
+    await page.locator('#patch-status').evaluate((node, text) => { node.textContent = text; }, message);
+    await page.screenshot({ path: testInfo.outputPath(`header-status-${width}x${height}.png`) });
+    const after = await page.locator('.topbar').boundingBox();
+    expect(after.height).toBeCloseTo(before.height, 0);
+    const [size, root] = await status.evaluate(node => [getComputedStyle(node).fontSize, getComputedStyle(document.documentElement).fontSize].map(parseFloat));
+    expect(size).toBeGreaterThanOrEqual(root * .8 - .01);
+    expect(await status.evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(width);
+  });
+}
+
+for (const [width, height] of [[820, 1180], [1180, 820], [390, 844]]) {
+  test(`FILES dialog keeps its content height and stays centred at ${width}x${height}`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height });
+    await start(page); await openFiles(page);
+    const dialog = page.locator('#files-dialog');
+    const box = await dialog.boundingBox();
+    const content = await dialog.evaluate(node => [...node.children].reduce((sum, child) => sum + child.getBoundingClientRect().height, 0));
+    expect(box.height).toBeLessThan(content + 80);
+    expect(box.height).toBeLessThan(height * .6);
+    expect(Math.abs(box.x + box.width / 2 - width / 2)).toBeLessThan(2);
+    expect(Math.abs(box.y + box.height / 2 - height / 2)).toBeLessThan(2);
+    expect(box.x).toBeGreaterThanOrEqual(0); expect(box.x + box.width).toBeLessThanOrEqual(width);
+    await page.screenshot({ path: testInfo.outputPath(`files-${width}x${height}.png`) });
+  });
+}

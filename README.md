@@ -1,8 +1,8 @@
-# KOROGI-Lab 0.3.0-rc.2
+# KOROGI-Lab 0.4.0-rc.1
 
 KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するWeb Audio研究用アプリです。8つの独立したTimbreを、共通のNear／Far空間処理へ送って重ねられます。
 
-現在の公開候補は **0.3.0-rc.2** です。実機操作・聴感の受入前のため、安定版とは区別します。[GitHub PagesでKOROGI-Labを開く](https://akiramaetomo.github.io/KOROGI-Lab/)。
+現在の公開候補は **0.4.0-rc.1** です。実機操作・聴感の受入前のため、安定版とは区別します。[GitHub PagesでKOROGI-Labを開く](https://akiramaetomo.github.io/KOROGI-Lab/)。
 
 ## 特徴
 - 秋の虫の鳴き声に寄せた目的指向のシンセサイザ
@@ -16,7 +16,7 @@ KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するW
 
 ## クイックスタート
 - 画面右上ボタン `Trigger` でsin波が鳴ることを確認してください。または `Audio ready · Tap` の操作でオーディオエンジンが開始します。
-- Demoメニューから `Akino-mushi`、`Filter-Acid1`、`Filter-Acid2` を読み込めます。Demoは `Play All` ボタンで再生できます。
+- Demoメニューから `Akino-mushi`、`Filter-Acid1`、`Filter-Acid2` を読み込めます。ヘッダーの `SEQUENCE` を開き、SONG欄の `▶ Loop` で再生できます。
 - Timbre は１音色の単位です。Session はプロジェクト全体の単位です。それぞれ、ファイルの保存・読込が可能です。
 
 ## 主な機能
@@ -24,13 +24,16 @@ KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するW
 - 8 Timbres、各2 OSC、PEnv、MOD、2 Filter、AEnv、BURST、FX1
 - TimbreごとのL/R Pan、Level、Mute、Near／Far送信
 - 共通Near／Farバス、各FX2／FX3、Bus Gain、Output Balance、Master、Limiter
-- Manual／Auto／USER 1～8のGate・Pitch再生と記録、SongのSeconds／Bars再生
-- BPM（30～480）と小節数による選択区間の比例配置（Bars）、Seconds方式のSong Speed、Patternのコピー
-- Gate／PitchレーンのMute（出力だけを止め、Loopの時計と位置は進め続ける）
+- Manual／Auto／Pattern 1～8のGate・Pitch再生と記録
+- アプリ全体の時間方式 `Seconds | Bars`（既定はBars）。BarsではTimbre×Patternごとの長さ（1/16～32小節）とBPM（30～480）へ選択区間を伸縮し、共通の小節格子で再生・録音。録音のGrid線とクリック
+- Loop（各Timbreの独立ループ）とChain（Frame長の区間でPattern 1→8を順送り）
+- SONG欄のTimbre×Pattern格子（Chainで鳴らすPatternの選択、SEQUENCEへの移動、鳴っているPatternの表示）
+- Gate／PitchレーンのMute（出力だけを止め、Loopの時計と位置は進め続ける）、Patternのコピー
 - Bars方式のGateクオンタイズ（1/4～1/32、ONのみ／ON-OFF、Gap、Undo／Redo）
-- SEQUENCEのSeparate（独立GateボタンとPitch専用スライダ）
+- SEQUENCEのSeparate（独立GateボタンとPitch専用スライダ）。録音中もPitch設定とSeparateを変更可能
+- FILESダイアログとヘッダーのステータス行
 - エディットカードを1列に最大3枚まで縦積み、OFFのカードはグレー表示
-- Timbre保存 `timbre-v17`、Session保存 `session-v20`。対応する旧形式は読込時に正規化。3段の列を含むファイルは0.2.0-rc.1では読込めません
+- Timbre保存 `timbre-v18`、Session保存 `session-v21`。対応する旧形式は読込時に正規化。新形式は0.3.0-rc.2以前では読込めません
 - PC、タブレット、スマートフォン向けの固定viewportと領域別スクロール。iPad Air縦向き（820×1180）を下限とし、上部の`TIMBRES`／`Map`で各領域を開閉
 
 ## ローカル実行

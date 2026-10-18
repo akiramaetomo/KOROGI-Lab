@@ -40,6 +40,28 @@ describe('bounded envelope history', () => {
     expect(env.valueAt(.25)).toBeCloseTo(.2 - .4 * Math.log1p(4.5) / Math.log(10));
     expect(env.valueAt(.3)).toBeCloseTo(-.2);
   });
+  it('reschedules an in-flight logarithmic PEnv with linear ramps, never a ValueCurve', () => {
+    const calls: Array<{ method: string; value?: number; time: number }> = [];
+    const offset = { value: 0, cancelAndHoldAtTime: (time: number) => calls.push({ method: 'hold', time }),
+      setValueAtTime: (value: number, time: number) => calls.push({ method: 'set', value, time }),
+      setValueCurveAtTime: (_curve: Float32Array, time: number) => calls.push({ method: 'curve', time }),
+      linearRampToValueAtTime: (value: number, time: number) => calls.push({ method: 'ramp', value, time }) };
+    const { clock, context } = harness();
+    const node = () => ({ gain: { value: 0, cancelAndHoldAtTime() {}, setValueAtTime() {} }, offset,
+      connect(target: unknown) { return target; }, start() {} });
+    Object.assign(clock, { createGain: node, createConstantSource: node });
+    const env = new PitchEnvelopeControl(context, { ...pitch, mode: 'one-shot', curve: 'logarithmic',
+      start: 1, attack: .82, sustain: -.48, release: -.75, attackSec: 0, decaySec: .098, releaseSec: .169, scale: 1 });
+    env.gateOn(0);
+    clock.currentTime = .15; calls.length = 0;
+    env.preserveCurrent(.15);
+    expect(calls.some(call => call.method === 'curve')).toBe(false);
+    const ramps = calls.filter(call => call.method === 'ramp');
+    expect(ramps).toHaveLength(64);
+    expect(ramps.every((ramp, index) => index === 0 ? ramp.time > .15 : ramp.time > ramps[index - 1]!.time)).toBe(true);
+    expect(ramps.at(-1)).toMatchObject({ value: -.75, time: .098 + .169 });
+    expect(ramps[31]!.value).toBeCloseTo(env.valueAt(ramps[31]!.time), 9);
+  });
   for (const mode of ['gate', 'one-shot'] as const) for (const interval of [.1, .025]) {
     it(`${mode}, ${interval * 1000} ms: 8 timbres retain bounded history for 5000 notes`, () => {
       const { clock, context } = harness();

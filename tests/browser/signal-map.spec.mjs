@@ -1,13 +1,13 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { openTimbreEditors, openCommonEditors } from './editor-helpers.mjs';
+import { openTimbreEditors, openCommonEditors, openFiles } from './editor-helpers.mjs';
 
 async function start(page) {
   await page.goto('/');
   await expect(page.locator('#osc1-frequency')).toBeEnabled();
 }
 async function save(page) {
-  await page.locator('#files-menu').click(); const pending = page.waitForEvent('download'); await page.locator('#export-patch').click();
+  await openFiles(page); const pending = page.waitForEvent('download'); await page.locator('#export-patch').click();
   return JSON.parse(await readFile(await (await pending).path(), 'utf8'));
 }
 
@@ -28,9 +28,10 @@ test('Graph opens settings without focusing an input or select, including SEQUEN
   await page.locator('#trigger-menu').focus(); await page.keyboard.press('Enter'); await expect(page.locator('[data-panel="triggering"] .editor-card-handle')).toBeFocused();
   await expect(page.locator('[data-panel="triggering"] .editor-card-handle')).toHaveText('SEQUENCE');
   await expect(page.locator('#active-path')).toHaveText('Viewing: SEQUENCE');
-  await page.locator('#files-menu').click(); await expect(page.locator('[data-panel="patch"]')).toHaveClass(/active/);
+  await openFiles(page); await expect(page.locator('[data-panel="triggering"]')).toHaveClass(/active/);
   const value = await save(page);
-  expect(value.formatVersion).toBe('KOROGI-Lab/session-v20'); expect(value.channels[0].timbre.formatVersion).toBe('KOROGI-Lab/timbre-v17');
+  await expect(page.locator('#files-dialog')).toBeHidden(); await expect(page.locator('#active-path')).toHaveText('Viewing: SEQUENCE');
+  expect(value.formatVersion).toBe('KOROGI-Lab/session-v21'); expect(value.channels[0].timbre.formatVersion).toBe('KOROGI-Lab/timbre-v18');
   expect(value.channels[0].timbre.settings).not.toHaveProperty('channelGainDb'); expect(value.channels[0].timbre.settings.blocksEnabled).not.toHaveProperty('channelGain');
   expect(errors).toEqual([]);
 });
@@ -72,6 +73,7 @@ test('Channel inputs replace summaries; mixer selection and send coefficients re
   await page.locator('#level-2').evaluate(input => { input.value = '-9'; input.dispatchEvent(new Event('input', { bubbles: true })); });
   await expect(page.locator('#level-2')).toHaveValue('-9');
   await page.locator('#mute-2').click(); await expect(wire).toHaveCSS('opacity', '0.15');
+  page.once('dialog', dialog => void dialog.accept());
   await page.locator('#clear-2').click(); await expect(page.locator('#voice-title')).toContainText('Empty');
   await expect(wire).toHaveCSS('opacity', '0.15'); await expect(page.locator('#fx1-type')).toBeDisabled();
 });
@@ -102,7 +104,7 @@ test('Every block in the current editor is illuminated, including bypassed block
   await page.locator('.source-group [data-block-toggle="filter1"]').click();
   await expect(page.locator('#flow-filter1')).not.toHaveClass(/bypassed/);
   await openTimbreEditors(page, ['sequence']); await expect.poll(active).toEqual(['trigger-menu']);
-  await page.locator('#files-menu').click(); await expect.poll(active).toEqual([]);
+  await openFiles(page); await expect.poll(active).toEqual(['trigger-menu']);
 });
 
 for (const [width, height] of [[1024, 768], [1194, 834], [768, 768]]) {

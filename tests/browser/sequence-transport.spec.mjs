@@ -30,17 +30,17 @@ test('Play All aligns mixed Auto and User while skipping an empty User source', 
     AudioEngine.prototype.startAuto = function (id, time) { window.sequenceStarts.push({ id, time, kind: 'auto' }); return start.call(this, id, time); };
     AudioEngine.prototype.gateOn = function (id, time) { if (id === '2') window.sequenceStarts.push({ id, time, kind: 'user' }); return gate.call(this, id, time); };
   });
-  await page.locator('#play-all').click();
+  await page.locator('#sequence-open').click(); await page.locator('#play-all').click();
   await expect(page.locator('#play-1')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#play-2')).toHaveAttribute('aria-pressed', 'true');
   await expect(page.locator('#play-3')).toHaveAttribute('aria-pressed', 'false');
-  await expect(page.locator('#play-all')).toHaveText('Stop All');
+  await expect(page.locator('#play-all')).toHaveText('■ Stop Loop');
   await expect.poll(() => page.evaluate(() => window.sequenceStarts.length)).toBeGreaterThanOrEqual(2);
   const starts = await page.evaluate(() => window.sequenceStarts.slice(0, 2));
   expect(starts.map(item => item.kind)).toEqual(['auto', 'user']);
   expect(starts[0].time).toBe(starts[1].time);
   await page.locator('#play-all').click();
-  await expect(page.locator('#play-all')).toHaveText('Play All');
+  await expect(page.locator('#play-all')).toHaveText('▶ Loop');
   await expect(page.locator('#play-2')).toHaveAttribute('aria-pressed', 'false');
 });
 
@@ -90,13 +90,13 @@ test('Stop All retains the held Trigger Gate', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   await page.locator('#trigger-menu').click();
   await page.locator('#play-all').click();
-  await expect(page.locator('#play-all')).toHaveText('Stop All');
+  await expect(page.locator('#play-all')).toHaveText('■ Stop Loop');
   await page.locator('#record-gate').scrollIntoViewIfNeeded();
   const box = await page.locator('#record-gate').boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down();
   await expect(page.locator('#gate-lamp-panel')).toHaveAttribute('aria-label', 'Gate on');
   await page.locator('#play-all').evaluate(node => node.click());
-  await expect(page.locator('#play-all')).toHaveText('Play All');
+  await expect(page.locator('#play-all')).toHaveText('▶ Loop');
   await expect(page.locator('#gate-lamp-panel')).toHaveAttribute('aria-label', 'Gate on');
   await page.mouse.up();
   await expect(page.locator('#gate-lamp-panel')).toHaveAttribute('aria-label', 'Gate off');
@@ -114,7 +114,7 @@ test('two User sequences loop independently and one slot can stop alone', async 
     const original = AudioEngine.prototype.gateOn;
     AudioEngine.prototype.gateOn = function (id, time) { window.userOns.push({ id, time }); return original.call(this, id, time); };
   });
-  await page.locator('#play-all').click();
+  await page.locator('#sequence-open').click(); await page.locator('#play-all').click();
   await expect.poll(() => page.evaluate(() => window.userOns.length)).toBeGreaterThanOrEqual(2);
   const starts = await page.evaluate(() => window.userOns.slice(0, 2));
   // Per-slot lookahead timers may reserve simultaneous ONs in either call order.
@@ -131,6 +131,7 @@ test('two User sequences loop independently and one slot can stop alone', async 
 
 test('User Gate and Pitch use independent periods under the same Play Speed', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   const user = await saveTimbre(page);
   user.gatePatterns[0].recording = { durationSec: .4, selectionStartSec: 0, selectionEndSec: .4, gates: [{ onSec: 0, offSec: .05 }] };
   user.pitchPatterns[0].recording = { durationSec: .2, selectionStartSec: 0, selectionEndSec: .2,
@@ -173,6 +174,7 @@ test('User Gate and Pitch use independent periods under the same Play Speed', as
 
 test('Auto Gate and Pitch receive one common start and source Play Speed', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   const timbre = await saveTimbre(page);
   timbre.pitchPatterns[2].recording = { durationSec: .2, selectionStartSec: 0, selectionEndSec: .2,
     points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: .1, valueNormalized: 1 }, { timeSec: .2, valueNormalized: 0 }] };
@@ -215,6 +217,7 @@ test('replacement cancels a Play All start waiting for audio resume in that slot
   });
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   const timbre = await saveTimbre(page); await loadTimbre(page, '2', timbre);
+  await page.locator('#sequence-open').click();
   await page.evaluate(() => window.testAudioContext.suspend());
   await page.evaluate(async () => {
     const { AudioEngine } = await import('/src/audio/core/AudioEngine.ts');

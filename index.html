@@ -24,7 +24,7 @@
             </div>
           </div>
           <span>8 Timbres · Near / Far</span>
-          <small class="play-hint">Hold GATE or press Play All</small>
+          <button id="status-line" class="status-line" type="button" aria-haspopup="dialog" aria-controls="files-dialog" aria-label="Last result; open FILES to read it in full"><small id="patch-status" role="status" aria-live="polite">No patch operation yet.</small></button>
           <small id="audio-error" class="audio-error" role="alert" hidden></small>
           <small id="display-error" class="display-error" role="alert" hidden></small>
         </div>
@@ -39,9 +39,10 @@
           <button id="timbres-toggle" class="map-toggle" type="button" aria-label="TIMBRES panel" aria-pressed="true" title="Hide TIMBRES">TIMBRES</button>
           <button id="map-toggle" class="map-toggle" type="button" aria-label="Signal map" aria-pressed="true" title="Hide signal map">Map</button>
           <button id="fullscreen-toggle" class="fullscreen-toggle" type="button" aria-label="Enter fullscreen" aria-pressed="false" title="Fullscreen" hidden>⛶</button>
-          <button id="files-menu" data-panel-target="patch">FILES</button>
-          <button id="play-all" disabled>Play All</button>
-          <span id="loop-drift-warning" class="loop-drift-warning" role="status" hidden>⚠ Loops drift</span>
+          <button id="files-menu" type="button" aria-haspopup="dialog" aria-controls="files-dialog">FILES</button>
+          <div id="time-mode" class="time-mode" role="group" aria-label="Time mode for every timbre, Loop and Chain" title="Seconds: tape-like loops at Play/Rec Speed. Bars: every timbre fits its Pattern's bars at the BPM."><button id="time-mode-seconds" type="button" aria-pressed="true" aria-label="Seconds">Sec<span class="time-mode-long">onds</span></button><button id="time-mode-bars" type="button" aria-pressed="false" aria-label="Bars">Bars</button></div>
+          <label id="header-bpm-field" class="header-bpm" hidden><span>BPM</span><input id="header-bpm" type="text" inputmode="numeric" value="120" aria-label="BPM, 30 to 480"></label>
+          <button id="sequence-open" type="button" data-editor-target="sequence" title="Open SEQUENCE: Loop, Chain and the Pattern board">SEQUENCE</button>
           <button id="trigger" class="header-trigger" disabled aria-label="Hold Trigger for selected timbre">Trigger</button>
         </div>
       </header>
@@ -355,16 +356,19 @@
                 <details class="song-controls trigger-group" open>
                   <summary class="song-summary">SONG</summary>
                   <div class="song-controls-body">
-                  <button id="song-toggle" type="button" aria-pressed="false">▶ Play Song</button>
-                  <label class="choice-field song-timing-field"><span>Timing</span><select id="song-timing" hidden><option value="original">Seconds</option><option value="bars">Bars</option></select></label>
-                  <fieldset id="song-bars-group" class="song-bars-group" disabled><legend>Fit to Bars</legend>
-                    <label>PATTERN <select id="song-user" aria-label="Pattern to fit to bars"><option value="1">Pattern 1</option><option value="2">Pattern 2</option><option value="3">Pattern 3</option><option value="4">Pattern 4</option><option value="5">Pattern 5</option><option value="6">Pattern 6</option><option value="7">Pattern 7</option><option value="8">Pattern 8</option></select></label>
-                    <label>Bars <input id="song-bars" type="text" inputmode="numeric" value="1" aria-label="Bars to fit the selected Pattern"></label>
+                  <!-- Loop is the looper: every timbre loops its own SEQUENCE Patterns. Chain plays the columns in order. -->
+                  <button id="play-all" type="button" aria-pressed="false" disabled>▶ Loop</button>
+                  <span id="loop-drift-warning" class="loop-drift-warning" role="status" hidden>⚠ Loops drift</span>
+                  <button id="song-toggle" type="button" aria-pressed="false">▶ Chain</button>
+                  <fieldset id="song-frame-group" class="song-frame-group" disabled><legend>SongFrame</legend>
+                    <label>Frame <select id="song-frame" aria-label="Frame: bars of every Song section"><option value="4">4</option></select> bars</label>
                   </fieldset>
                   <div id="song-bpm-row" class="song-speed-row" hidden><label>BPM <input id="song-bpm" type="text" inputmode="numeric" value="120" aria-label="Song BPM, 30 to 480"></label><input id="song-bpm-slider" type="range" min="30" max="480" step="1" value="120" aria-label="Song BPM slider"></div>
                   <div id="song-speed-row" class="song-speed-row"><label>Song Speed <input id="song-speed" type="text" inputmode="decimal" value="1" aria-label="Song Speed multiplier, 0.25 to 4"></label><input id="song-speed-slider" type="range" min="0.25" max="4" step="0.01" value="1" aria-label="Song Speed slider"></div>
-                  <output id="song-duration">Seconds: empty · Bars: 2.00 s</output>
-                  <output id="song-clock">Song stopped</output>
+                  <!-- The grid shows the sections and the playing Pattern; these readouts stay for debugging only. -->
+                  <output id="song-duration" hidden>Seconds: empty · Bars: 2.00 s</output>
+                  <output id="song-clock" hidden>Song stopped</output>
+                  <div id="song-arrange" class="song-arrange" aria-label="Pattern board: Loop selection and Chain choice for each timbre"></div>
                   </div>
                 </details>
                 <div class="trigger-top-row">
@@ -386,16 +390,25 @@
                         <div class="transport-buttons">
                           <button id="record-toggle" type="button" aria-label="Start Recording" title="Start Recording" disabled>●</button>
                           <button id="sequence-panel" type="button" aria-label="Play" title="Play" disabled aria-pressed="false">▶</button>
+                          <div class="record-click" title="Click (metronome) while recording. Sounds and patterns are set in src/config/metronome.ts."><select id="record-click" aria-label="Recording click"><option value="off">Click Off</option></select><div id="record-beat-lamp" class="record-beat-lamp" aria-hidden="true"></div></div>
                         </div>
                         <label class="play-speed-label">Play/Rec Speed<input id="sequence-play-speed" data-audio-control data-numeric-stops="0.25,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2,2.1,2.2,2.3,2.4,2.5,2.6,2.7,2.8,2.9,3,3.1,3.2,3.3,3.4,3.5,3.6,3.7,3.8,3.9,4" type="number" value="1" disabled></label>
+                        <!-- One place below Play/Rec Speed: New Pattern Length in Seconds, the Bars box in Bars. -->
+                        <div class="transport-length-slot">
+                          <fieldset id="record-new-length" class="record-settings" aria-labelledby="record-new-length-title" title="Used only when the selected Gate and Pitch Patterns are both Null. A recorded Pattern keeps its length; edit its selection on the timeline.">
+                              <span id="record-new-length-title" class="record-new-length-title">New Pattern Length</span>
+                              <label class="record-bars-label" hidden><span>Unit</span><select id="record-length-mode"><option value="seconds">Seconds</option><option value="bars">Bars</option></select></label>
+                              <label class="record-length-label"><span class="record-length-heading" hidden>Length</span><input id="record-length" type="text" inputmode="decimal" value="30" aria-label="Record length in seconds, 1 to 300"></label>
+                              <label class="record-bpm-label" hidden><span>BPM (Song)</span><input id="record-bpm" type="text" inputmode="numeric" value="120" aria-label="Recording BPM, 30 to 480" disabled></label>
+                          </fieldset>
+                          <fieldset id="sequence-stretch-group" class="record-settings stretch-settings" aria-label="Bars of the selected Pattern" title="Bars: the selected Gate Pattern (or the Pitch Pattern when there is no Gate) and its Pitch play and record in that Pattern's bars at the BPM. Bars belong to this timbre; Song fits a Pattern longer than its Frame to the Frame. ×: playback speed against the recorded seconds." hidden>
+                              <label><span>Bars</span><select id="sequence-stretch-bars" aria-label="Bars of the selected Pattern of this timbre"><option value="1">1</option></select></label>
+                              <label><span>BPM</span><input id="sequence-stretch-bpm" type="text" inputmode="numeric" value="120" aria-label="Session BPM, 30 to 480"></label>
+                              <output id="sequence-stretch-readout">Pattern 1 · 2.00 s</output>
+                          </fieldset>
+                        </div>
                       </div>
                       <div class="record-bottom-row">
-                        <fieldset id="record-new-length" class="record-settings" aria-labelledby="record-new-length-title" title="Used only when the selected Gate and Pitch Patterns are both Null. A recorded Pattern keeps its length; edit its selection on the timeline.">
-                            <span id="record-new-length-title" class="record-new-length-title">New Pattern Length</span>
-                            <label class="record-bars-label"><span>Unit</span><select id="record-length-mode"><option value="seconds">Seconds</option><option value="bars">Bars</option></select></label>
-                            <label class="record-length-label"><span class="record-length-heading">Length</span><input id="record-length" type="text" inputmode="decimal" value="30" aria-label="Record length in seconds, 1 to 300"></label>
-                            <label class="record-bpm-label"><span>BPM (Song)</span><input id="record-bpm" type="text" inputmode="numeric" value="120" aria-label="Recording BPM, 30 to 480" disabled></label>
-                        </fieldset>
                         <div class="record-copy" role="group" aria-label="Copy Pattern within the selected timbre"><label>Copy <select id="copy-from"><option value="user-1">Pattern 1</option><option value="user-2">Pattern 2</option><option value="user-3">Pattern 3</option><option value="user-4">Pattern 4</option><option value="user-5">Pattern 5</option><option value="user-6">Pattern 6</option><option value="user-7">Pattern 7</option><option value="user-8">Pattern 8</option></select></label> <span>→</span><select id="copy-to" aria-label="Copy destination Pattern"><option value="user-1">Pattern 1</option><option value="user-2">Pattern 2</option><option value="user-3">Pattern 3</option><option value="user-4">Pattern 4</option><option value="user-5">Pattern 5</option><option value="user-6">Pattern 6</option><option value="user-7">Pattern 7</option><option value="user-8">Pattern 8</option></select> <button id="copy-user" type="button">Copy Pattern</button></div>
                       </div>
                       <!-- Status and Record log stay in the DOM for debugging but are not shown. -->
@@ -409,17 +422,17 @@
                   <div class="sequence-timelines">
                     <div class="timeline-row gate-timeline-row"><button id="gate-mute" type="button">Mute</button><div class="record-timeline-area gate-timeline-area">
                       <div class="record-timeline-label"><strong>Gate timeline</strong><span id="record-target">Timbre 1 · No recording</span><button id="gate-clear" type="button">Clear</button></div>
-                      <details class="gate-quantize-details"><summary>Quantize</summary>
+                      <details class="gate-quantize-details"><summary>Quantize<span id="gate-quantize-note" class="gate-quantize-note" hidden> · Bars only</span></summary>
                         <div class="gate-quantize-controls" role="group" aria-label="Gate quantize controls"><label>Grid <select id="gate-quantize-grid"><option value="4">1/4</option><option value="8">1/8</option><option value="16" selected>1/16</option><option value="32">1/32</option></select></label><label>Edges <select id="gate-quantize-mode"><option value="on">ON · keep length</option><option value="on-off">ON/OFF</option></select></label><label>Gap <select id="gate-quantize-gap" aria-label="Gate quantize Gap in milliseconds"></select> ms</label><button id="gate-quantize" type="button" disabled>Quantize</button><button id="gate-quantize-undo" type="button" disabled>Undo</button><button id="gate-quantize-redo" type="button" disabled>Redo</button></div>
                         <div class="gate-edit-range-area"><span>Quantize range <output id="gate-edit-start-value">0.00 s</output>–<output id="gate-edit-end-value">0.00 s</output></span><div id="gate-edit-timeline" class="gate-edit-timeline" role="group" aria-label="Gate quantize edit range"><div id="gate-edit-selection" class="gate-edit-selection"></div><button id="gate-edit-start-handle" class="gate-edit-handle start" type="button" role="slider" aria-label="Quantize range start" disabled></button><button id="gate-edit-end-handle" class="gate-edit-handle end" type="button" role="slider" aria-label="Quantize range end" disabled></button></div></div>
                       </details>
-                      <div id="record-timeline" class="record-timeline" role="group" aria-label="Recorded Gate positions along time"><div id="record-selection" class="record-selection"></div><div id="record-gates" class="record-gates"></div><button id="record-start-handle" class="record-selection-handle start" type="button" role="slider" aria-label="Selection start" disabled></button><button id="record-end-handle" class="record-selection-handle end" type="button" role="slider" aria-label="Selection end" disabled></button><div id="record-playhead" class="record-playhead"></div></div>
+                      <div id="record-timeline" class="record-timeline" role="group" aria-label="Recorded Gate positions along time"><div id="record-selection" class="record-selection"></div><div id="record-grid" class="record-grid" hidden></div><div id="record-gates" class="record-gates"></div><button id="record-start-handle" class="record-selection-handle start" type="button" role="slider" aria-label="Selection start" disabled></button><button id="record-end-handle" class="record-selection-handle end" type="button" role="slider" aria-label="Selection end" disabled></button><div id="record-playhead" class="record-playhead"></div></div>
                       <div class="record-ticks"><span>0</span><span id="record-midpoint">15 s</span><span id="record-endpoint">30 s</span></div>
                       <div class="record-timeline-footer"><div class="record-selection-values"><span>Start <output id="record-start-value">0.00 s</output></span><span>End <output id="record-end-value">30.00 s</output></span><span>dt <output id="record-duration-value">30.00 s</output></span></div><button id="gate-apply-bars" class="selection-bars-action" type="button" disabled>Match Fit to Bars length</button></div>
                     </div></div>
                     <div class="timeline-row pitch-timeline-row"><button id="pitch-mute" type="button">Mute</button><div class="record-timeline-area pitch-timeline-area">
                       <div class="record-timeline-label"><strong>Pitch timeline</strong><button id="sequence-link" type="button" aria-pressed="false">Link OFF</button><button id="sequence-length-lock" type="button" aria-label="Length Lock" aria-pressed="false">Lock OFF</button><span id="pitch-record-target">Timbre 1 · No recording</span><button id="pitch-clear" type="button">Clear</button></div>
-                      <div id="pitch-timeline" class="record-timeline pitch-timeline" role="group" aria-label="Recorded Pitch curve along time"><div id="pitch-selection" class="record-selection"></div><svg id="pitch-curve" class="pitch-curve" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="50" x2="1000" y2="50" class="pitch-zero-line"></line><polyline id="pitch-curve-line" class="pitch-curve-line" points=""></polyline></svg><button id="pitch-start-handle" class="record-selection-handle start" type="button" role="slider" aria-label="Pitch selection start" disabled></button><button id="pitch-end-handle" class="record-selection-handle end" type="button" role="slider" aria-label="Pitch selection end" disabled></button><div id="pitch-playhead" class="record-playhead"></div></div>
+                      <div id="pitch-timeline" class="record-timeline pitch-timeline" role="group" aria-label="Recorded Pitch curve along time"><div id="pitch-selection" class="record-selection"></div><div id="pitch-grid" class="record-grid" hidden></div><svg id="pitch-curve" class="pitch-curve" viewBox="0 0 1000 100" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="50" x2="1000" y2="50" class="pitch-zero-line"></line><polyline id="pitch-curve-line" class="pitch-curve-line" points=""></polyline></svg><button id="pitch-start-handle" class="record-selection-handle start" type="button" role="slider" aria-label="Pitch selection start" disabled></button><button id="pitch-end-handle" class="record-selection-handle end" type="button" role="slider" aria-label="Pitch selection end" disabled></button><div id="pitch-playhead" class="record-playhead"></div></div>
                       <div class="record-ticks"><span>0</span><span id="pitch-midpoint">15 s</span><span id="pitch-endpoint">30 s</span></div>
                       <div class="record-timeline-footer"><div class="record-selection-values"><span>Start <output id="pitch-start-value">0.00 s</output></span><span>End <output id="pitch-end-value">30.00 s</output></span><span>dt <output id="pitch-duration-value">30.00 s</output></span></div><button id="pitch-apply-bars" class="selection-bars-action" type="button" disabled>Match Fit to Bars length</button></div>
                     </div></div>
@@ -533,27 +546,6 @@
             </div>
           </section>
 
-          <section class="function-panel" data-panel="patch">
-            <div class="panel-heading">
-              <div><strong>FILES / SESSION</strong><span>Save or load all eight timbres and their common settings.</span></div>
-            </div>
-            <div class="control-columns two patch-layout">
-              <fieldset>
-                <legend>Session File</legend>
-                <label>Session Name<input id="patch-name" type="text" value="KOROGI Session" /></label>
-                <div class="transport-clone">
-                  <button id="export-patch" data-audio-control disabled>Save Session</button>
-                  <button id="import-patch" data-audio-control disabled>Load Session</button>
-                  <input id="patch-file" type="file" accept="application/json,.json" hidden />
-                </div>
-              </fieldset>
-              <fieldset>
-                <legend>Status</legend>
-                <div class="patch-status" id="patch-status">No patch operation yet.</div>
-                <div class="readout-line">Use Load and Save in TIMBRES for individual timbres. Session files include all eight slots, independent Gate and Pitch Patterns, Song settings, and COMMON SPACE. New files use timbre-v17 / session-v20; supported older files can be loaded. Legacy PEnv Amount/Time is ignored on import.</div>
-              </fieldset>
-            </div>
-          </section>
         </div>
       </section>
 
@@ -565,6 +557,26 @@
         <span>Numeric edit: place caret at a digit, then ↑ / ↓ changes that decade</span>
         <span id="sample-rate">sampleRate: -- Hz</span>
       </footer>
+      <dialog id="files-dialog" class="files-dialog" aria-labelledby="files-dialog-title">
+        <div class="files-dialog-heading">
+          <div><strong id="files-dialog-title">FILES / SESSION</strong><span>Save or load all eight timbres and their common settings.</span></div>
+          <button id="files-close" class="files-close" type="button" aria-label="Close FILES" title="Close">×</button>
+        </div>
+        <fieldset>
+          <legend>Session File</legend>
+          <label>Session Name<input id="patch-name" type="text" value="KOROGI Session" /></label>
+          <div class="transport-clone">
+            <button id="export-patch" data-audio-control disabled>Save Session</button>
+            <button id="import-patch" data-audio-control disabled>Load Session</button>
+            <input id="patch-file" type="file" accept="application/json,.json" hidden />
+          </div>
+        </fieldset>
+        <fieldset>
+          <legend>Status</legend>
+          <div id="files-status" class="files-status">No patch operation yet.</div>
+        </fieldset>
+        <div class="readout-line">Use Load and Save in TIMBRES for individual timbres. Session files include all eight slots, independent Gate and Pitch Patterns, Song settings, and COMMON SPACE. New files use timbre-v18 / session-v21; supported older files can be loaded. Legacy PEnv Amount/Time is ignored on import. The header shows the latest result; tap it to open this dialog.</div>
+      </dialog>
     </main>
     <script type="module" src="/src/bootstrap.ts"></script>
   </body>

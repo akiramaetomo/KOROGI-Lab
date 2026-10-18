@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { openTimbreEditors, compactNumericRows, expectCompactNumericRows } from './editor-helpers.mjs';
+import { openTimbreEditors, closeFiles, openFiles, compactNumericRows, expectCompactNumericRows } from './editor-helpers.mjs';
 
 const card = (page, id) => page.locator(`[data-editor-card="${id}"]`);
 const layout = page => page.locator('.editor-card.active').evaluateAll(nodes => nodes.map(node => node.dataset.editorCard));
@@ -58,17 +58,18 @@ test('reorders by keyboard and mouse without replacing controls or their values'
 test('retains unsaved layouts per timbre, exports both formats and restores files including empty layouts', async ({ page }) => {
   await start(page); await closeAll(page); await select(page, 'filter1'); await select(page, 'osc1');
   const timbre = await saved(page, '#save-1');
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v17'); expect(timbre.editorLayout).toEqual([['filter1'], ['osc1']]);
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v18'); expect(timbre.editorLayout).toEqual([['filter1'], ['osc1']]);
   await page.locator('#select-2').click(); await page.locator('#standard-2').click(); await closeAll(page);
   await page.locator('#select-1').click(); expect(await layout(page)).toEqual(['filter1', 'osc1']);
   await page.locator('#files-menu').click(); const session = await saved(page, '#export-patch');
-  expect(session.formatVersion).toBe('KOROGI-Lab/session-v20'); expect(session.channels[1].timbre.editorLayout).toEqual([]);
+  expect(session.formatVersion).toBe('KOROGI-Lab/session-v21'); expect(session.channels[1].timbre.editorLayout).toEqual([]);
   await page.locator('#patch-file').setInputFiles({ name: 'session.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) });
   await expect(page.locator('#patch-status')).toContainText('Loaded');
-  await select(page, 'filter1'); expect(await layout(page)).toEqual(['filter1', 'osc1']);
+  expect(await layout(page)).toEqual(['filter1', 'osc1']);
   await page.locator('#select-2').click(); expect(await layout(page)).toEqual([]); await expect(page.locator('.function-editor .editor-empty')).toBeVisible();
   await page.locator('#timbre-file-2').setInputFiles({ name: 'timbre.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
   await expect(page.locator('#patch-status')).toContainText('Loaded timbre 2'); expect(await layout(page)).toEqual(['filter1', 'osc1']);
+  page.once('dialog', dialog => void dialog.accept());
   await page.locator('#standard-2').click(); expect(await layout(page)).toEqual(['osc1', 'osc2']);
 });
 
@@ -138,7 +139,7 @@ test('columns stack up to three cards by drag and keys, refuse a fourth and roun
   await handle('filter1').press('Shift+ArrowLeft'); expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
   await handle('mod').press('Shift+ArrowLeft'); expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
   const timbre = await saved(page, '#save-1');
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v17'); expect(timbre.editorLayout).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v18'); expect(timbre.editorLayout).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
   await page.locator('#timbre-file-2').setInputFiles({ name: 'triple.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
   await page.locator('#select-2').click();
   expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
@@ -185,13 +186,59 @@ test('OFF cards grey out their body but keep the heading switch and remain edita
   expect(await grey(card(page, 'mod').locator(':scope > fieldset'))).toBe(true);
 });
 
-test('dedicated COMMON SPACE and FILES preserve the selected timbre layout', async ({ page }) => {
+test('dedicated COMMON SPACE preserves the selected timbre layout', async ({ page }) => {
   await start(page); await select(page, 'filter1');
-  for (const id of ['flow-near-fx2', 'flow-master', 'files-menu']) {
+  for (const id of ['flow-near-fx2', 'flow-master']) {
     await page.locator(`#${id}`).click(); await expect(page.locator('.function-editor')).toBeHidden();
     await expect(page.locator('#flow-osc1')).not.toHaveClass(/active/);
     await select(page, 'filter1'); expect(await layout(page)).toEqual(['osc1', 'osc2', 'filter1']);
   }
+});
+
+test('FILES is a dialog over the cards: close, Esc and the backdrop leave them as they were', async ({ page }) => {
+  await start(page); await select(page, 'filter1'); await select(page, 'sequence');
+  const before = await layout(page);
+  // With MAP and TIMBRES hidden nothing else could bring the cards back.
+  await page.locator('#map-toggle').click(); await page.locator('#timbres-toggle').click();
+  for (const close of ['button', 'escape', 'backdrop']) {
+    await openFiles(page);
+    await expect(page.locator('.function-editor')).toBeVisible();
+    if (close === 'button') await page.locator('#files-close').click();
+    else if (close === 'escape') await page.keyboard.press('Escape');
+    else await page.mouse.click(5, 5);
+    await expect(page.locator('#files-dialog')).toBeHidden();
+    await expect(page.locator('#files-menu')).toBeFocused();
+    expect(await layout(page)).toEqual(before);
+    await expect(page.locator('#active-path')).toHaveText(`Viewing: ${before.map(id => id.toUpperCase()).join(' / ')}`);
+  }
+  // A click inside the dialog, away from its controls, keeps it open.
+  await openFiles(page);
+  const box = await page.locator('#files-dialog').boundingBox();
+  await page.mouse.click(box.x + 3, box.y + box.height - 3);
+  await expect(page.locator('#files-dialog')).toBeVisible();
+  await closeFiles(page);
+});
+
+test('FILES closes after Save and Load and the header shows every result', async ({ page }) => {
+  await start(page);
+  await openFiles(page); const session = await saved(page, '#export-patch');
+  await expect(page.locator('#files-dialog')).toBeHidden();
+  await expect(page.locator('#patch-status')).toHaveText(`Exported: ${session.name}`);
+  await expect(page.locator('#status-line')).toHaveAttribute('title', `Exported: ${session.name}`);
+  await openFiles(page);
+  await page.locator('#patch-file').setInputFiles({ name: 'session.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) });
+  await expect(page.locator('#patch-status')).toContainText('Loaded:'); await expect(page.locator('#files-dialog')).toBeHidden();
+  await openFiles(page);
+  await page.locator('#patch-file').setInputFiles({ name: 'broken.json', mimeType: 'application/json', buffer: Buffer.from('{') });
+  await expect(page.locator('#patch-status')).toContainText('Import failed:'); await expect(page.locator('#files-dialog')).toBeHidden();
+  // Results from outside FILES are visible without opening it, and a tap on the line shows them in full in FILES.
+  await saved(page, '#save-1');
+  await expect(page.locator('#patch-status')).toContainText('Exported timbre:');
+  await expect(page.locator('#patch-status')).toBeVisible();
+  await page.locator('#status-line').click();
+  await expect(page.locator('#files-dialog')).toBeVisible();
+  await expect(page.locator('#files-status')).toHaveText(await page.locator('#patch-status').textContent());
+  await closeFiles(page); await expect(page.locator('#status-line')).toBeFocused();
 });
 
 test('touch dragging reorders and pointer cancellation preserves order', async ({ browser }) => {
@@ -262,6 +309,7 @@ test('Small numeric controls use caption/value, bounds/name and slider rows with
 for (const closeBy of ['button', 'diagram']) {
 test(`closing Sequence by ${closeBy} releases its held screen Trigger while recording and playback continue`, async ({ page }) => {
   await start(page); await closeAll(page); await select(page, 'sequence');
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   await page.locator('#record-length').fill('10'); await page.locator('#record-length').dispatchEvent('change');
   await page.locator('#record-toggle').click(); await expect(page.locator('#record-toggle')).toHaveAttribute('aria-label', 'End Recording');
   await page.locator('#record-gate').scrollIntoViewIfNeeded();
@@ -321,6 +369,7 @@ test('Medium takes priority over Small and AEnv choices fit even at the Medium m
 
 test('Sequence Record title, horizontal modes, unit and full timer fit the smallest inner editor', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1180, height: 820 }); await start(page);
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   await openTimbreEditors(page, ['sequence', 'osc1']);
   await page.locator('#record-length').fill('300'); await page.locator('#record-length').dispatchEvent('change');
   const geometry = await card(page, 'sequence').evaluate(root => {
@@ -430,7 +479,7 @@ test('live AoE width grows capacity, caps cards and retains wide layouts across 
   const expected = ['sequence', 'osc1', 'aenv']; expect(await layout(page)).toEqual(expected);
   const timbre = await saved(page, '#save-1');
   await page.locator('#files-menu').click(); const session = await saved(page, '#export-patch');
-  await select(page, 'sequence'); await page.setViewportSize({ width: 1024, height: 768 });
+  await page.setViewportSize({ width: 1024, height: 768 });
   await expect.poll(() => layout(page)).toEqual(expected);
   await expect.poll(async () => (await card(page, 'sequence').boundingBox()).width).toBeCloseTo(602.67, 0);
   expect(await page.locator('.function-editor').evaluate(node => node.scrollWidth > node.clientWidth)).toBe(true);

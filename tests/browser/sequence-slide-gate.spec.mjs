@@ -156,6 +156,7 @@ test('slide Gate has a large edge-safe target and distinguishes release motion f
 
 test('Pitch recording retains the immediate return and reloads without a Gate recording', async ({ page }) => {
   await openSequence(page);
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   await setStopTime(page, 400);
   await page.locator('#record-mode + .segmented-choice [data-value="pitch"]').click();
   await page.locator('#record-length').fill('1');
@@ -198,6 +199,7 @@ test('Pitch recording retains the immediate return and reloads without a Gate re
 
 test('one slide Gate gesture records both independent lanes in Both mode', async ({ page }) => {
   await openSequence(page);
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   await page.locator('#record-mode + .segmented-choice [data-value="both"]').click();
   await page.locator('#record-length').fill('1');
   await page.locator('#record-toggle').click();

@@ -1,7 +1,9 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
+import { openFiles } from './editor-helpers.mjs';
 
 async function exportPatch(page) {
+  await openFiles(page);
   const downloaded = page.waitForEvent('download');
   await page.locator('#export-patch').click();
   const file = await downloaded;
@@ -20,15 +22,14 @@ async function edit(page, selector, value) {
 
 test('FILES reports the current timbre and session formats', async ({ page }) => {
   await page.goto('/');
-  await page.locator('[data-panel-target="patch"]').first().click();
-  await expect(page.locator('[data-panel="patch"]')).toContainText('New files use timbre-v17 / session-v20');
+  await openFiles(page);
+  await expect(page.locator('#files-dialog')).toContainText('New files use timbre-v18 / session-v21');
 });
 
 test('Earlier formats and malformed session are rejected without changing settings or Auto', async ({ page }) => {
   await page.goto('/');
   await page.locator('.signal-map [data-block-toggle="osc1"]').click();
-  await page.locator('#play-all').click();
-  await page.locator('[data-panel-target="patch"]').first().click();
+  await page.locator('#sequence-open').click(); await page.locator('#play-all').click();
   const original = await exportPatch(page);
   const invalid = structuredClone(original);
   delete invalid.channels[0].timbre.settings.fx1;

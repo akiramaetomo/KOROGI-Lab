@@ -27,14 +27,12 @@ async function gateFor(page, milliseconds = 100) {
   await page.mouse.up();
 }
 
-test('Replace keeps its new Gate take across an untouched next lap in Bars mode', async ({ page }) => {
+test('Replace keeps its new Gate take across an untouched next lap', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
   const timbre = await saveTimbre(page);
   const old = { onSec: .05, offSec: .2 };
   timbre.gatePatterns[0].recording = { durationSec: 1, selectionStartSec: 0, selectionEndSec: 1, gates: [old] };
-  await page.locator('#record-length-mode').evaluate(select => { select.value = 'bars'; select.dispatchEvent(new Event('change', { bubbles: true })); });
   await loadTimbre(page, timbre);
-  await expect(page.locator('#record-length-mode')).toHaveValue('bars');
   await expect(page.locator('#record-length')).toBeDisabled();
   await page.locator('#record-toggle').click();
   await expect(page.locator('#record-status')).toContainText('Recording · Loop');
@@ -52,9 +50,7 @@ test('Replace allows an empty first lap and keeps the second-lap take through an
   const timbre = await saveTimbre(page);
   const old = { onSec: .05, offSec: .2 };
   timbre.gatePatterns[0].recording = { durationSec: 1, selectionStartSec: 0, selectionEndSec: 1, gates: [old] };
-  await page.locator('#record-length-mode').evaluate(select => { select.value = 'bars'; select.dispatchEvent(new Event('change', { bubbles: true })); });
   await loadTimbre(page, timbre);
-  await expect(page.locator('#record-length-mode')).toHaveValue('bars');
   await page.locator('#record-toggle').click();
   await expect(page.locator('#record-counter')).toContainText('Lap 2', { timeout: 3000 });
   await page.waitForTimeout(280);

@@ -1,8 +1,10 @@
 import { test, expect } from '@playwright/test';
 import { readFile } from 'node:fs/promises';
-import { openCommonEditors, openTimbreEditors } from './editor-helpers.mjs';
+import { closeFiles, openCommonEditors, openFiles, openTimbreEditors } from './editor-helpers.mjs';
 
 async function panel(page, name) {
+  if (name === 'patch') { await openFiles(page); return; }
+  await closeFiles(page);
   if (name === 'space-effects') {
     await openCommonEditors(page, ['near', 'near-gain']);
   } else if (name === 'space-output') {
@@ -129,8 +131,8 @@ test('Timbre and session round-trip independently; old formats are rejected with
   await edit(page, '#name-2', 'Second'); await expect(page.locator('#select-2')).toContainText('Second');
   const timbre = await save(page, 'save-2');
   await expect(page.locator('#select-2')).toHaveAttribute('aria-pressed', 'true');
-  await panel(page, 'patch'); await expect(page.locator('#timbre-name, #export-timbre')).toHaveCount(0);
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v17'); expect(timbre).not.toHaveProperty('near'); expect(timbre).not.toHaveProperty('pan');
+  await panel(page, 'patch'); await expect(page.locator('#timbre-name, #export-timbre')).toHaveCount(0); await closeFiles(page);
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v18'); expect(timbre).not.toHaveProperty('near'); expect(timbre).not.toHaveProperty('pan');
   await page.locator('#level-2').evaluate(input => { input.value = '-9'; input.dispatchEvent(new Event('input')); });
   await page.locator('#balance-2').evaluate(input => { input.value = '.8'; input.dispatchEvent(new Event('input')); });
   await page.locator('#pan-2').evaluate(input => { input.value = '-.65'; input.dispatchEvent(new Event('input')); });
@@ -139,7 +141,7 @@ test('Timbre and session round-trip independently; old formats are rejected with
   await panel(page, 'space-output'); await edit(page, '#master-gain', -21);
   await edit(page, '#crossfade', 70);
   await page.locator('#master-mute').click(); const saved = await save(page);
-  expect(saved.formatVersion).toBe('KOROGI-Lab/session-v20'); expect(saved.channels[1].pan).toBe(-.65);
+  expect(saved.formatVersion).toBe('KOROGI-Lab/session-v21'); expect(saved.channels[1].pan).toBe(-.65);
   await file(page, '#timbre-file-3', timbre); await expect(page.locator('#patch-status')).toContainText('Loaded timbre 3: Second');
   const afterTimbre = await save(page); expect(afterTimbre.near).toEqual(saved.near); expect(afterTimbre.crossfade).toBe(.7);
   expect(afterTimbre.channels[1].pan).toBe(-.65); expect(afterTimbre.channels[2].pan).toBe(0);

@@ -25,6 +25,7 @@ async function setNumber(page, selector, value) {
 
 test('Pitch User records and displays a simplified curve while Auto Gate plays', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled(); await page.locator('#trigger-menu').click();
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   await expect(page.locator('#pitch-record-target')).toContainText('Null');
   await expect(page.locator('#pitch-curve-line')).toHaveAttribute('points', '');
   await expect(page.locator('#record-mode')).toHaveValue('both');
@@ -75,6 +76,7 @@ test('Pitch User records and displays a simplified curve while Auto Gate plays',
 
 test('User Gate and Pitch recording lanes can be replaced independently', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   const initial = await savedTimbre(page);
   const oldGate = { durationSec: .5, selectionStartSec: 0, selectionEndSec: .5, gates: [{ onSec: .1, offSec: .2 }] };
   const oldPitch = { durationSec: .5, selectionStartSec: 0, selectionEndSec: .5,

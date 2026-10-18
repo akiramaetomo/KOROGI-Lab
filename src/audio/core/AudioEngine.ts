@@ -5,10 +5,12 @@ import { EffectSlot } from '../effects/EffectSlot';
 import { LIMITS, PARAM_SMOOTH_SEC } from '../constants';
 import { clamp, dbToGain, smoothAudioParam } from '../dsp/params';
 import { defaultBus, defaultSongSettings, defaultTimbre, DEFAULT_CHANNEL_MIX, normalizeSession, normalizeSongSettings, normalizeTimbre } from '../../model/documents';
-import { normalizeTriggerRecording } from '../../model/triggerRecording';
+import { normalizeTriggerRecording, USER_PATTERN_IDS } from '../../model/triggerRecording';
+import { isPatternBars, patternBars } from '../../model/stretch';
 import { normalizePitchRecording, normalizeSequenceSettings } from '../../model/sequencePitch';
 import { PARAMETER_RANGES as P } from '../../config/parameterRanges';
-import type { BusAssignment, BusEffectSlotIndex, BusSettings, ChannelMixSettings, EffectParameter, EffectSlotSettings, EffectType, GatePattern, MasterInputMode, PitchPattern, PitchRecording, SequenceSelection, SequenceSettings, SessionChannel, SessionDocument, SongSettings, TimbreDocument, TriggerRecording, UserPatternId } from '../types';
+import { METRONOME_ATTACK_MS, METRONOME_LEVEL_DB, METRONOME_NOTE_MS, METRONOME_RELEASE_MS, METRONOME_WAVEFORM } from '../../config/metronome';
+import type { BusAssignment, BusEffectSlotIndex, BusSettings, ChannelMixSettings, EffectParameter, EffectSlotSettings, EffectType, GatePattern, MasterInputMode, PatternBars, PitchPattern, PitchRecording, SequenceSelection, SequenceSettings, SessionChannel, SessionDocument, SongSettings, TimbreDocument, TriggerRecording, UserPatternId } from '../types';
 
 export function equalPower(position: number): [number, number] {
   const u = clamp(position, 0, 1);
@@ -58,6 +60,7 @@ class ChannelStrip {
   editorLayout: EditorLayout;
   gatePatterns: GatePattern[];
   pitchPatterns: PitchPattern[];
+  patternBars: PatternBars;
   sequence: SequenceSelection;
   mix: ChannelMixSettings;
   private active = false;
@@ -66,7 +69,7 @@ class ChannelStrip {
   constructor(private readonly context: AudioContext, noise: WhiteNoiseFactory, id: string, timbre: TimbreDocument, mix: ChannelMixSettings,
     buses: Record<BusAssignment, SpaceBus>, directInput: AudioNode) {
     this.editorLayout = structuredClone(timbre.editorLayout); this.name = timbre.name; this.gatePatterns = structuredClone(timbre.gatePatterns);
-    this.pitchPatterns = structuredClone(timbre.pitchPatterns); this.sequence = structuredClone(timbre.sequence);
+    this.pitchPatterns = structuredClone(timbre.pitchPatterns); this.patternBars = [...timbre.patternBars]; this.sequence = structuredClone(timbre.sequence);
     this.mix = { gainDb: mix.gainDb, muted: mix.muted, balance: mix.balance, pan: mix.pan };
     this.synth = new ChannelSynth(context, noise, timbre.settings, timbre.detuneNormalized, id);
     this.synth.setDetuneRangeCent(timbre.detuneRangeCent);
@@ -92,8 +95,8 @@ class ChannelStrip {
     equalPower(this.mix.balance).forEach((gain, i) => smoothAudioParam(this.sends[i]!.gain, gain, now, PARAM_SMOOTH_SEC));
   }
   timbre(): TimbreDocument {
-    return { formatVersion: 'KOROGI-Lab/timbre-v17', editorLayout: structuredClone(this.editorLayout), name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(),
-      gatePatterns: structuredClone(this.gatePatterns), pitchPatterns: structuredClone(this.pitchPatterns), sequence: structuredClone(this.sequence) };
+    return { formatVersion: 'KOROGI-Lab/timbre-v18', editorLayout: structuredClone(this.editorLayout), name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(),
+      gatePatterns: structuredClone(this.gatePatterns), pitchPatterns: structuredClone(this.pitchPatterns), patternBars: [...this.patternBars], sequence: structuredClone(this.sequence) };
   }
   fadeOut(): void {
     smoothAudioParam(this.fader.gain, 0, this.context.currentTime, PARAM_SMOOTH_SEC);
@@ -132,6 +135,7 @@ export class AudioEngine {
   private disposed = false;
   private sourcesStartedWhileSuspended: boolean;
   private readonly retired = new Map<ChannelStrip, ReturnType<typeof setTimeout>>();
+  private readonly clicks = new Set<OscillatorNode>();
   constructor(context = new AudioContext(), initial?: SessionDocument) {
     this.context = context; this.noise = new WhiteNoiseFactory(context);
     this.sourcesStartedWhileSuspended = context.state !== 'running';
@@ -144,7 +148,7 @@ export class AudioEngine {
     this.output.threshold.value = -3; this.output.knee.value = 0; this.output.ratio.value = 20;
     this.output.attack.value = .003; this.output.release.value = .1;
     const session = normalizeSession(initial ?? {
-      formatVersion: 'KOROGI-Lab/session-v20', name: 'Untitled', savedAt: '', channels: [{ id: '1', ...DEFAULT_CHANNEL_MIX, timbre: defaultTimbre() }],
+      formatVersion: 'KOROGI-Lab/session-v21', name: 'Untitled', savedAt: '', channels: [{ id: '1', ...DEFAULT_CHANNEL_MIX, timbre: defaultTimbre() }],
       near: defaultBus(), far: defaultBus(), crossfade: P.crossfade.defaultValue / 100, masterGainDb: P['master-gain'].defaultValue, masterMuted: false, song: defaultSongSettings()
     });
     this.graph = this.prepareGraph(session);
@@ -164,7 +168,7 @@ export class AudioEngine {
     this.graph.strips.get(id)?.setMix(this.getChannelMix(id));
   }
   replaceChannel(id: string, raw: TimbreDocument): void {
-    this.assertReady(); const timbre = normalizeTimbre(raw); const existing = this.graph.slots.find(slot => slot.id === id);
+    this.assertReady(); const timbre = normalizeTimbre(raw, this.song.bpm); const existing = this.graph.slots.find(slot => slot.id === id);
     if (!id.trim()) throw new Error('Channel ID is empty.');
     const slot = existing ?? { id, ...DEFAULT_CHANNEL_MIX, timbre: null };
     const candidate = new ChannelStrip(this.context, this.noise, id, timbre, slot, this.graph.buses, this.directMonitorGain);
@@ -179,13 +183,18 @@ export class AudioEngine {
     const old = this.graph.strips.get(id); this.graph.strips.delete(id); if (old) this.retire(old);
   }
   removeChannel(id: string): void { this.clearChannel(id); this.graph.slots = this.graph.slots.filter(slot => slot.id !== id); }
+  getTimbreName(id: string): string { return this.strip(id).name; }
   setTimbreName(id: string, name: string): void { this.assertReady(); this.strip(id).name = name.trim() || 'Untitled'; }
-  createTimbre(id: string): TimbreDocument { return this.strip(id).timbre(); }
+  createTimbre(id: string): TimbreDocument { return this.withTimeMode(this.strip(id).timbre()); }
   getEditorLayout(id: string): EditorLayout { return structuredClone(this.strip(id).editorLayout); }
   setEditorLayout(id: string, layout: readonly (readonly string[])[]): void {
     this.assertReady(); this.strip(id).editorLayout = normalizeEditorLayout(layout);
   }
-  getSequenceSelection(id: string): SequenceSelection { return structuredClone(this.strip(id).sequence); }
+  /** Stretch follows the app-wide time mode (ADR 0010): every timbre stretches to bars in Bars, none in Seconds. */
+  getSequenceSelection(id: string): SequenceSelection { return { ...structuredClone(this.strip(id).sequence), stretch: this.song.timingMode === 'bars' }; }
+  private withStripTimbre(id: string): TimbreDocument | null { const strip = this.graph.strips.get(id); return strip ? this.withTimeMode(strip.timbre()) : null; }
+  /** Files carry `stretch` as the time mode, so an older Lab reading them stretches the same timbres. */
+  private withTimeMode(timbre: TimbreDocument): TimbreDocument { return { ...timbre, sequence: { ...timbre.sequence, stretch: this.song.timingMode === 'bars' } }; }
   getSongSettings(): SongSettings { return structuredClone(this.song); }
   setSongSettings(settings: SongSettings): void { this.assertReady(); this.song = normalizeSongSettings(settings); }
   copyUserPattern(id: string, from: UserPatternId, to: UserPatternId): void {
@@ -209,6 +218,15 @@ export class AudioEngine {
   }
   getGateMuted(id: string, patternId: UserPatternId): boolean { return this.gatePattern(this.strip(id), patternId).muted; }
   setGateMuted(id: string, patternId: UserPatternId, muted: boolean): void { this.assertReady(); this.gatePattern(this.strip(id), patternId).muted = muted; }
+  /** Bars of one timbre's Pattern number: its loop length under Bars (ADR 0011). */
+  getPatternBars(id: string, patternId: UserPatternId): number { return patternBars(this.strip(id), patternId); }
+  setPatternBars(id: string, patternId: UserPatternId, bars: number): void {
+    this.assertReady();
+    if (!isPatternBars(bars, P['song-bars'].max)) throw new Error('Pattern bars must be 1/16, 1/8, 1/4, 1/2 or 1 to 32 whole bars.');
+    this.strip(id).patternBars[USER_PATTERN_IDS.indexOf(patternId)] = bars;
+  }
+  getPatternInSong(id: string, patternId: UserPatternId): boolean { return this.gatePattern(this.strip(id), patternId).inSong; }
+  setPatternInSong(id: string, patternId: UserPatternId, inSong: boolean): void { this.assertReady(); this.gatePattern(this.strip(id), patternId).inSong = inSong; }
   getPitchRecording(id: string, patternId: UserPatternId): PitchRecording | null {
     return structuredClone(this.pitchPattern(this.strip(id), patternId).recording);
   }
@@ -294,8 +312,8 @@ export class AudioEngine {
   setMasterMuted(muted: boolean): void { this.assertReady(); this.masterMuted = muted; smoothAudioParam(this.preLimiterOutput.gain, muted ? 0 : 1, this.context.currentTime, PARAM_SMOOTH_SEC); }
   isMasterMuted(): boolean { return this.masterMuted; }
   createSession(name: string): SessionDocument {
-    return { formatVersion: 'KOROGI-Lab/session-v20', name: name.trim() || 'Untitled', savedAt: new Date().toISOString(),
-      channels: this.graph.slots.map(slot => ({ id: slot.id, ...this.getChannelMix(slot.id), timbre: this.graph.strips.get(slot.id)?.timbre() ?? null })),
+    return { formatVersion: 'KOROGI-Lab/session-v21', name: name.trim() || 'Untitled', savedAt: new Date().toISOString(),
+      channels: this.graph.slots.map(slot => ({ id: slot.id, ...this.getChannelMix(slot.id), timbre: this.withStripTimbre(slot.id) })),
       near: this.getBusSettings('near'), far: this.getBusSettings('far'), crossfade: this.crossfade, masterGainDb: this.masterGainDb, masterMuted: this.masterMuted, song: this.getSongSettings() };
   }
   async applySession(raw: SessionDocument): Promise<void> {
@@ -318,7 +336,31 @@ export class AudioEngine {
   }
   dispose(): void {
     if (this.disposed) return;
-    this.disposed = true; this.disposeGraph(this.graph); this.disposeRetired(); this.commonMonitorGain.disconnect(); this.directMonitorGain.disconnect(); this.masterGain.disconnect(); this.preLimiterOutput.disconnect(); this.output.disconnect();
+    this.disposed = true; this.cancelClicks(); this.disposeGraph(this.graph); this.disposeRetired(); this.commonMonitorGain.disconnect(); this.directMonitorGain.disconnect(); this.masterGain.disconnect(); this.preLimiterOutput.disconnect(); this.output.disconnect();
+  }
+  /**
+   * One recording click into Master Gain. Each click owns its oscillator and gain, so a
+   * cancel only stops nodes and never cancels or holds a running automation.
+   */
+  scheduleClick(time: number, frequencyHz: number): void {
+    if (this.disposed) return;
+    const start = Math.max(time, this.context.currentTime);
+    const length = METRONOME_NOTE_MS / 1000, attack = METRONOME_ATTACK_MS / 1000, release = METRONOME_RELEASE_MS / 1000;
+    const oscillator = this.context.createOscillator(), gain = this.context.createGain();
+    oscillator.type = METRONOME_WAVEFORM; oscillator.frequency.value = frequencyHz;
+    const level = dbToGain(METRONOME_LEVEL_DB);
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(level, start + attack);
+    gain.gain.setValueAtTime(level, start + length - release);
+    gain.gain.linearRampToValueAtTime(0, start + length);
+    oscillator.connect(gain); gain.connect(this.masterGain);
+    oscillator.addEventListener('ended', () => { this.clicks.delete(oscillator); oscillator.disconnect(); gain.disconnect(); });
+    this.clicks.add(oscillator);
+    oscillator.start(start); oscillator.stop(start + length + .001);
+  }
+  /** Stops clicks that have not finished; a click already sounding ends at once. */
+  cancelClicks(): void {
+    for (const oscillator of this.clicks) { try { oscillator.stop(); } catch { /* Already stopped. */ } }
   }
   async close(): Promise<void> { this.dispose(); await this.context.close(); }
   private slot(id: string): SessionChannel { const slot = this.graph.slots.find(slot => slot.id === id); if (!slot) throw new Error(`Unknown channel: ${id}`); return slot; }

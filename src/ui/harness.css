@@ -135,9 +135,18 @@ button.primary { border-color: var(--color-button-primary-border); background: v
 /* Shown while independently looping timbres have different real periods (details in its title). */
 .loop-drift-warning { align-self: center; color: var(--color-burst-timing-warnings-text); font-size: .8rem; cursor: help; }
 .loop-drift-warning[hidden] { display: none; }
+/* App-wide time mode (ADR 0010): two always-visible choices, Bars in the colour that marks stretching. */
+.time-mode { display: inline-flex; }
+.time-mode button { min-width: 0; padding-inline: .45rem; }
+.time-mode button + button { margin-left: -1px; }
+.time-mode #time-mode-seconds[aria-pressed="true"] { border-color: var(--color-map-toggle-pressed-border); color: var(--color-map-toggle-pressed-text); background: var(--color-map-toggle-pressed-background); }
+.time-mode #time-mode-bars[aria-pressed="true"] { border-width: 2px; border-color: var(--color-sequence-stretch-pressed-border); color: var(--color-sequence-stretch-pressed-text); background: var(--color-sequence-stretch-pressed-background); }
+.header-bpm { display: inline-flex; align-items: center; gap: .25rem; font-size: .8rem; }
+.header-bpm[hidden] { display: none; }
+.header-bpm input { width: 3.2rem; text-align: right; }
 .fullscreen-toggle { width: 30px; min-width: 30px; padding-inline: 0; font-size: 1rem; line-height: 1; }
 .map-toggle { min-width: 44px; padding-inline: .4rem; }
-.map-toggle[aria-pressed="true"] { border-color: var(--color-map-toggle-pressed-border); color: var(--color-map-toggle-pressed-text); background: var(--color-map-toggle-pressed-background); }
+.map-toggle[aria-pressed="true"], #sequence-open.active { border-color: var(--color-map-toggle-pressed-border); color: var(--color-map-toggle-pressed-text); background: var(--color-map-toggle-pressed-background); }
 .fullscreen-toggle[aria-pressed="true"] { border-color: var(--color-fullscreen-toggle-pressed-border); color: var(--color-fullscreen-toggle-pressed-text); background: var(--color-fullscreen-toggle-pressed-background); }
 .display-error {
   position: fixed;
@@ -467,15 +476,30 @@ label > .unit { display: none; }
   gap: 0.22rem;
 }
 
-.patch-layout fieldset { align-content: start; }
-.patch-status {
-  min-height: 3.2rem;
-  padding: 0.55rem;
-  border: 1px solid var(--color-patch-status-border);
-  background: var(--color-patch-status-background);
-  color: var(--color-patch-status-text);
-  white-space: pre-wrap;
+/* FILES: a temporary dialog over the editor. Centred explicitly with its height from the content:
+   the default modal insets (top and bottom 0) let WebKit stretch it to the viewport height. */
+.files-dialog {
+  position: fixed; inset: auto; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 0;
+  width: min(34rem, calc(100vw - 2rem)); height: auto;
+  max-height: calc(100dvh - 2rem);
+  padding: 0.58rem 0.72rem 0.72rem;
+  overflow: auto;
+  border: 1px solid var(--color-card-border);
+  background: linear-gradient(var(--color-card-background), var(--color-card-background)), var(--color-app-background);
+  color: var(--color-app-text);
 }
+.files-dialog[open] { display: grid; align-content: start; gap: 0.5rem; }
+.files-status { color: var(--color-status-line-text); white-space: pre-wrap; overflow-wrap: anywhere; }
+.files-dialog::backdrop { background: var(--color-files-dialog-backdrop); }
+.files-dialog-heading {
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  border-bottom: 1px solid var(--color-panel-heading-border); padding-bottom: 0.42rem;
+}
+.files-dialog-heading div { display: grid; gap: 0.15rem; min-width: 0; }
+.files-dialog-heading strong { font-size: 1rem; letter-spacing: 0.04em; }
+.files-dialog-heading span { color: var(--color-panel-heading-text); font-size: 0.88rem; }
+.files-close { flex: 0 0 auto; min-width: 32px; min-height: 32px; padding: 0; font-size: 1.2rem; line-height: 1; }
+.files-dialog > fieldset { background: var(--color-card-content-background); border-color: var(--color-card-content-border); }
 
 input:focus,
 select:focus,
@@ -632,6 +656,9 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
   .audio-state { display: flex; }
   .brand span { display: none; }
   .brand-title { flex-wrap: wrap; }
+  /* Demo stays beside the title; the build label wraps after it when Bars adds the header BPM. */
+  .brand-title .demo-picker { order: 1; }
+  .brand #lab-build-label { order: 2; }
 }
 @media (max-width: 900px) {
   .audio-state #status, .audio-state .state-dot { display: none; }
@@ -804,6 +831,9 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .gate-edit-handle::after { content: ''; position: absolute; top: 0; bottom: 0; left: 10px; width: 4px; border-radius: 2px; background: var(--color-record-selection-handle-background); box-shadow: 0 0 0 1px var(--color-record-selection-handle-shadow); }
 .gate-edit-handle:hover:not(:disabled), .gate-edit-handle:focus-visible { background: var(--color-record-selection-handle-hover-disabled-background); }
 .gate-edit-handle:disabled { opacity: .35; }
+/* Bar (strong) and beat (weak) lines over the selection; drawn as gradients by TriggerRecorder. */
+.record-grid { position: absolute; inset-block: 0; pointer-events: none; }
+.record-grid[hidden] { display: none; }
 .record-playhead { position: absolute; z-index: 2; top: 0; bottom: 0; width: 2px; background: var(--color-record-playhead-background); pointer-events: none; }
 .record-ticks { font-variant-numeric: tabular-nums; }
 .record-selection-values { display: flex; justify-content: space-between; gap: .7rem; color: var(--color-record-selection-values-text); font-size: .8rem; }
@@ -909,6 +939,16 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .record-options :is(.record-mode-field, .record-write-field) { display: flex; flex: 0 0 auto; align-items: center; gap: .3rem; }
 .record-mode-field .segmented-choice { width: 150px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .record-write-field .segmented-choice { width: 140px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* Click choice and beat lamp share the ● ▶ row. One lamp dot per click step; the bar's first click (pi) has its own colour. */
+.record-click { display: grid; align-content: center; justify-items: center; gap: 4px; }
+.record-click[hidden], .selection-bars-action[hidden], .gate-quantize-note[hidden], .record-bars-label[hidden], .record-bpm-label[hidden] { display: none; }
+.gate-quantize-note { color: var(--color-button-disabled-text); font-weight: normal; }
+.record-click select { min-height: 26px; padding-block: 0; font-size: .8rem; }
+.record-beat-lamp { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; max-width: 84px; }
+.record-beat-lamp span { width: 10px; height: 10px; border-radius: 50%; border: 1px solid var(--color-beat-lamp-border); background: var(--color-beat-lamp-background); }
+.record-beat-lamp span.on { border-color: var(--color-beat-lamp-on-border); background: var(--color-beat-lamp-on-background); }
+.record-beat-lamp span[data-tone="pi"].on { border-color: var(--color-beat-lamp-accent-border); background: var(--color-beat-lamp-accent-background); }
+.record-beat-lamp.off { opacity: .35; }
 .record-options .segmented-choice button { min-height: 36px; }
 .control-transport { grid-area: transport; display: grid; justify-items: center; align-content: center; gap: .3rem; min-width: 0; }
 .control-transport #record-counter { white-space: pre-line; text-align: center; }
@@ -933,6 +973,8 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .control-transport .numeric-control[data-numeric-control="sequence-play-speed"] .numeric-slider-axis { width: 100%; min-width: 0; }
 .control-transport .numeric-control[data-numeric-control="sequence-play-speed"] .numeric-slider-axis input[type="range"] { height: 20px; }
 .control-transport .numeric-control[data-numeric-control="sequence-play-speed"] :is(.numeric-slider-name, .slider-scale) { display: none; }
+/* Disabled (recording, or Stretch on): grey out the heading, field and bar together. */
+.control-transport .numeric-control[data-numeric-control="sequence-play-speed"]:has(> input:disabled) { opacity: .4; }
 .record-bottom-row { grid-area: length; display: flex; flex-wrap: wrap; align-items: center; gap: .35rem .9rem; min-width: 0; }
 .record-settings { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .2rem .4rem; min-width: 0; margin: 0; padding: 0 .45rem; border: 1px solid var(--color-trigger-group-border); border-radius: 4px; }
 .record-new-length-title { padding: 0; font-size: .8rem; color: var(--color-trigger-group-title-text); white-space: nowrap; }
@@ -941,6 +983,24 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .record-settings #record-length-mode { width: 5.6rem; }
 .record-settings :is(#record-length, #record-bpm) { width: 3.2rem; text-align: right; }
 .record-settings[disabled] { opacity: .46; }
+/* Stretch: ON is a thicker teal frame and fill; the readout names the Pattern whose bars set the loop. */
+/* Seconds keeps the bars frame's place so switching the time mode does not move the panel. */
+.stretch-settings[hidden] { visibility: hidden; }
+/* New Pattern Length (Seconds) and the Bars box (Bars) share one cell below Play/Rec Speed; the hidden one keeps its
+   size, so the cell fits the larger and switching the time mode moves nothing (author's layout, 2026-10-18). */
+.transport-length-slot { display: grid; justify-items: center; align-items: center; min-width: 0; max-width: 100%; }
+.transport-length-slot > * { grid-area: 1 / 1; }
+#record-new-length[hidden] { visibility: hidden; }
+.control-transport #record-new-length { justify-content: center; padding-block: .2rem; }
+.stretch-settings #sequence-stretch-bpm { width: 3.2rem; text-align: right; }
+.stretch-settings #sequence-stretch-bars { width: auto; }
+.stretch-settings #sequence-stretch-readout { font-size: .8rem; white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* Song fits a Pattern longer than the Frame (ADR 0011); the note may wrap on a narrow column. */
+.stretch-settings .stretch-song-fit { color: var(--color-burst-timing-warnings-text); white-space: normal; }
+/* Under Play/Rec Speed: controls on the first row, the readout on its own row when the column is narrow. */
+.control-transport .stretch-settings { justify-content: center; padding-block: .2rem; }
+.control-transport .stretch-settings #sequence-stretch-readout { flex-basis: 100%; text-align: center; }
+.slot-play { position: relative; }
 .record-settings:not([disabled]) .record-bpm-label:has(input:disabled) { opacity: .5; }
 .record-performance .source-choice > span { min-width: 35px; color: var(--color-record-performance-source-choice-text); font-size: .8rem; }
 .record-performance .source-choice button { display: flex; justify-content: space-between; align-items: center; gap: .25rem; min-height: 28px; white-space: nowrap; }
@@ -959,21 +1019,51 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .song-controls label { display: inline-flex; align-items: center; gap: .3rem; white-space: nowrap; }
 .song-controls .song-timing-field .segmented-choice { width: 130px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .song-controls input { width: 3.5rem; min-height: 32px; }
-.song-bars-group { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .5rem; width: max-content; max-width: 100%; min-width: 0; margin: 0; padding: .15rem .45rem .35rem; border: 1px solid var(--color-trigger-group-border); border-radius: 4px; }
-.song-bars-group legend { padding-inline: .25rem; font-size: .8rem; color: var(--color-trigger-group-title-text); }
-.song-bars-group[disabled] { opacity: .46; }
+.song-frame-group { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .5rem; width: max-content; max-width: 100%; min-width: 0; margin: 0; padding: .15rem .45rem .35rem; border: 1px solid var(--color-trigger-group-border); border-radius: 4px; }
+.song-frame-group legend { padding-inline: .25rem; font-size: .8rem; color: var(--color-trigger-group-title-text); }
+.song-frame-group[disabled] { opacity: .46; }
 /* Room for "Pattern 8" plus the native arrow (same as the Copy selects). */
-.song-bars-group select { width: 9.5rem; }
+.song-frame-group select { width: 9.5rem; }
+.song-frame-group #song-frame { width: auto; }
 :is(#song-toggle, #play-all, .slot-play) { border-color: var(--color-song-button-border); background: var(--color-song-button-background); color: var(--color-song-button-text); }
 :is(#song-toggle, #play-all, .slot-play):hover:not(:disabled):not([aria-pressed="true"]) { background: var(--color-song-button-hover-background); }
 :is(#song-toggle, #play-all, .slot-play)[aria-pressed="true"] { border-color: var(--color-song-button-active-border); background: var(--color-song-button-active-background); color: var(--color-song-button-text); }
 :is(#song-toggle, #play-all, .slot-play):disabled { border-color: var(--color-button-border); background: var(--color-button-background); color: var(--color-button-disabled-text); }
-.song-controls #song-toggle { flex: 0 0 auto; white-space: nowrap; }
+.song-controls :is(#song-toggle, #play-all) { flex: 0 0 auto; white-space: nowrap; }
 .song-controls .song-speed-row { display: flex; align-items: center; gap: .55rem; flex: 0 0 100%; min-width: 0; }
 .song-controls .song-speed-row[hidden] { display: none; }
 .song-controls .song-speed-row input[type="range"] { flex: 0 1 clamp(160px, 30vw, 320px); min-width: 150px; max-width: 320px; width: 100%; min-height: 24px; }
 .song-controls select, .song-controls button { min-height: 32px; }
 .song-controls output { min-width: 210px; font-variant-numeric: tabular-nums; }
+/* SONG Timbre × Frame grid: ON and OFF differ in fill, border width and text; empty cells only select.
+   The framed cell is the one SEQUENCE edits (a blue outline outside the border); a tap on it turns it on or off. */
+.song-controls .song-arrange { flex: 0 0 100%; display: grid; gap: .2rem; min-width: 0; }
+.song-arrange-row { display: grid; grid-template-columns: minmax(6rem, 9rem) repeat(8, minmax(2.4rem, 3.2rem)); gap: .2rem; align-items: center; }
+.song-arrange-row[hidden] { display: none; }
+.song-arrange-corner, .song-arrange-label { font-size: .8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.song-arrange-corner { color: var(--color-trigger-group-title-text); }
+.song-arrange-head { font-size: .8rem; text-align: center; padding: .1rem 0; border-radius: 3px; color: var(--color-song-arrange-head-skipped-text); }
+.song-arrange-head[data-in-song] { color: var(--color-song-arrange-head-text); font-weight: 700; }
+.song-arrange-head[data-song-playing] { background: var(--color-song-button-active-background); color: var(--color-song-button-text);
+  box-shadow: 0 0 0 2px var(--color-song-button-active-border), 0 0 10px 2px var(--color-song-button-active-shadow); }
+.song-controls .song-arrange button { min-height: 28px; padding: 0; font-size: .8rem; font-variant-numeric: tabular-nums;
+  border: 1px solid var(--color-song-arrange-off-border); background: var(--color-song-arrange-off-background); color: var(--color-song-arrange-off-text); }
+.song-controls .song-arrange button[aria-pressed="true"] { border: 2px solid var(--color-song-arrange-on-border);
+  background: var(--color-song-arrange-on-background); color: var(--color-song-arrange-on-text); font-weight: 700; }
+.song-controls .song-arrange button[data-empty] { border-color: var(--color-button-border); background: transparent; color: var(--color-button-disabled-text); }
+.song-controls .song-arrange button[data-focus] { outline: 2px solid var(--color-song-arrange-focus-outline); outline-offset: 1px; }
+/* A timbre name is a button that selects only the timbre; the selected one is blue like the framed cell. */
+.song-controls .song-arrange button.song-arrange-label { min-height: 28px; padding: 0 .35rem; text-align: left; font-variant-numeric: normal;
+  border: 1px solid var(--color-song-arrange-off-border); background: transparent; color: var(--color-song-arrange-head-text); }
+.song-controls .song-arrange-row[data-selected] button.song-arrange-label { border: 2px solid var(--color-song-arrange-focus-outline);
+  background: transparent; color: var(--color-song-arrange-focus-outline); font-weight: 700; }
+/* What Play and Play All play: a bar at the top for the Gate Pattern and at the bottom for the Pitch Pattern
+   (the order of the SEQUENCE rows), grey when chosen and red while the timbre plays. */
+.song-controls .song-arrange button[data-sequence] { --song-sequence-bar: var(--color-song-arrange-sequence-bar); }
+.song-controls .song-arrange button[data-sequence-playing] { --song-sequence-bar: var(--color-song-button-active-border); }
+.song-controls .song-arrange button[data-sequence~="gate"] { box-shadow: inset 0 4px 0 var(--song-sequence-bar); }
+.song-controls .song-arrange button[data-sequence~="pitch"] { box-shadow: inset 0 -4px 0 var(--song-sequence-bar); }
+.song-controls .song-arrange button[data-sequence="gate pitch"] { box-shadow: inset 0 4px 0 var(--song-sequence-bar), inset 0 -4px 0 var(--song-sequence-bar); }
 /* Copy Pattern belongs to PATTERN / RECORD / PLAY: it copies within the selected timbre. */
 .record-copy { display: inline-flex; flex: 0 0 auto; align-items: center; gap: .35rem; width: max-content; max-width: 100%; font-size: .8rem; }
 .record-copy label { display: inline-flex; align-items: center; gap: .3rem; white-space: nowrap; }
@@ -1093,11 +1183,13 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 }
 .source-group, .common-space { min-height: 0; overflow: visible; }
 .signal-wires { pointer-events: none; }
-.brand { display: grid; gap: 0; }
+.brand { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0; }
 .brand > span { display: none; }
-.play-hint { color: var(--color-play-hint-text); font-size: .72rem; font-weight: 400; white-space: nowrap; }
+/* Zero width with a full min-width: a long result never widens the header, it fills the brand column.
+   It is a plain-looking button; a tap opens FILES, which shows the result in full. */
+.status-line { display: block; width: 0; min-width: 100%; min-height: 0; padding: 0; overflow: hidden; border: 0; background: none; color: var(--color-status-line-text); font: inherit; font-size: .8rem; font-weight: 400; text-align: left; white-space: nowrap; text-overflow: ellipsis; cursor: pointer; }
+.status-line:hover:not(:disabled) { background: none; text-decoration: underline; }
 .audio-error { color: var(--color-audio-error-text); font-size: .72rem; font-weight: 600; white-space: nowrap; }
-.audio-running .play-hint { color: var(--color-audio-running-play-hint-text); }
 .slot-gate { cursor: pointer; touch-action: none; min-width: 40px; padding: 0 .15rem; font-size: .8rem; }
 
 .filter-control-grid {
@@ -1262,7 +1354,7 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .flow-toggle, .voice-grid .signal-block .flow-toggle, .bus-group .signal-block .flow-toggle,
 .channel-inputs small, .channel-input, .diagram-gain > strong, .diagram-gain .numeric-caption,
 .output-node output, #flow-limiter, #flow-limiter strong, #flow-master #master-mute,
-.play-hint, .audio-error, .voice-heading span, .bus-group::before,
+.status-line, .audio-error, .voice-heading span, .bus-group::before,
 .common-mix small, .common-gains .numeric-caption, .editor-column .function-tab {
   font-size: max(.8rem, 10.4px);
 }
@@ -1410,15 +1502,15 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 :is(.editor-card, .space-card) .trigger-editor-inner { min-width: 760px; padding-top: 12px; }
 .editor-empty { margin: 0; font-size: .9rem; }
 
-/* Small cards and Medium cards except the envelopes: caption + value / low · axis name · high / slider. Narrow cells keep the value on its own row. */
+/* Small cards and Medium cards except the envelopes: caption + value / low · axis name · high / slider. Narrow cells keep the value on its own row.
+   Flex wrapping gives the 160px break (caption floor 160px - 6rem, .5rem gap, 5.5rem value) and the former 1fr : minmax(5.5rem, .8fr) split (5 : 4).
+   No size container: Chrome left inline-size containers at zero height when slider-scale text and a sibling's height changed in one frame. */
 :is(:is(.editor-card, .space-card)[data-rank="small"], :is(.editor-card, .space-card)[data-rank="medium"]:not([data-editor-card="aenv"], [data-editor-card="fenv"], [data-editor-card="penv"])) .numeric-control {
-  container-type: inline-size; grid-template-columns: minmax(0, 1fr) minmax(5.5rem, .8fr); align-items: center; column-gap: .5rem; row-gap: .2rem;
+  display: flex; flex-wrap: wrap; align-items: center; column-gap: .5rem; row-gap: .2rem;
 }
-:is(:is(.editor-card, .space-card)[data-rank="small"], :is(.editor-card, .space-card)[data-rank="medium"]:not([data-editor-card="aenv"], [data-editor-card="fenv"], [data-editor-card="penv"])) .numeric-control > * { grid-column: 1 / -1; }
-@container (min-width: 160px) {
-  :is(:is(.editor-card, .space-card)[data-rank="small"], :is(.editor-card, .space-card)[data-rank="medium"]:not([data-editor-card="aenv"], [data-editor-card="fenv"], [data-editor-card="penv"])) .numeric-control > .numeric-heading { grid-column: 1; }
-  :is(:is(.editor-card, .space-card)[data-rank="small"], :is(.editor-card, .space-card)[data-rank="medium"]:not([data-editor-card="aenv"], [data-editor-card="fenv"], [data-editor-card="penv"])) .numeric-control > input { grid-column: 2; }
-}
+:is(:is(.editor-card, .space-card)[data-rank="small"], :is(.editor-card, .space-card)[data-rank="medium"]:not([data-editor-card="aenv"], [data-editor-card="fenv"], [data-editor-card="penv"])) .numeric-control > * { flex: 1 0 100%; min-width: 0; }
+:is(:is(.editor-card, .space-card)[data-rank="small"], :is(.editor-card, .space-card)[data-rank="medium"]:not([data-editor-card="aenv"], [data-editor-card="fenv"], [data-editor-card="penv"])) .numeric-control > .numeric-heading { flex: 5 1 0; min-width: calc(160px - 6rem); }
+:is(:is(.editor-card, .space-card)[data-rank="small"], :is(.editor-card, .space-card)[data-rank="medium"]:not([data-editor-card="aenv"], [data-editor-card="fenv"], [data-editor-card="penv"])) .numeric-control > input { flex: 4 1 0; min-width: 5.5rem; }
 :is(:is(.editor-card, .space-card)[data-rank="small"], :is(.editor-card, .space-card)[data-rank="medium"]:not([data-editor-card="aenv"], [data-editor-card="fenv"], [data-editor-card="penv"])) .numeric-slider-axes { gap: .3rem; padding-block: 0; }
 :is(:is(.editor-card, .space-card)[data-rank="small"], :is(.editor-card, .space-card)[data-rank="medium"]:not([data-editor-card="aenv"], [data-editor-card="fenv"], [data-editor-card="penv"])) .numeric-slider-axis[data-axis="horizontal"] {
   position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); grid-template-rows: auto auto;
@@ -1450,12 +1542,17 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
   .audio-state { display: flex; grid-column: 1 / -1; grid-row: 2; min-width: 0; }
   .audio-state #status, .audio-state .state-dot { display: inline-flex; }
   .audio-state #status { overflow: hidden; text-overflow: ellipsis; }
-  .play-hint { display: none; }
   .brand strong { font-size: 1rem; }
   .transport { gap: .25rem; }
   .transport button:not(.primary) { padding-inline: .3rem; }
   .transport .fullscreen-toggle { width: 28px; min-width: 28px; padding-inline: 0; }
   .transport .map-toggle { min-width: 0; padding-inline: .3rem; }
+  /* The header BPM moves out of the way on phones; SONG and the bars frame still edit it. */
+  .transport .header-bpm, .time-mode-long { display: none; }
+  .topbar { grid-template-columns: max-content minmax(0, 1fr); }
+  .transport { flex-wrap: wrap; justify-content: flex-end; row-gap: .25rem; }
+  .time-mode { order: 1; }
+  .time-mode button { padding-inline: .3rem; }
   /* No room beside the build label on phones; a tap on the collapsed divider restores TIMBRES. */
   .transport #timbres-toggle { display: none; }
 }

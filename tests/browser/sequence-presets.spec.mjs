@@ -426,6 +426,7 @@ test('390px viewport keeps horizontal Record modes and eight Pattern choices rea
 
 test('PATTERN / RECORD / PLAY groups the transport, and New Pattern Length is editable only for Null Gate and Pitch', async ({ page }) => {
   await page.goto('/'); await expect(page.locator('#play-1')).toBeEnabled();
+  await page.locator('#time-mode-seconds').click(); // These steps begin in Seconds; a new app starts in Bars.
   const timbre = await saveTimbre(page);
   timbre.gatePatterns[0].recording = { durationSec: 1, selectionStartSec: 0, selectionEndSec: .5, gates: [{ onSec: .1, offSec: .2 }] };
   await page.locator('#trigger-menu').click();
@@ -446,7 +447,7 @@ test('PATTERN / RECORD / PLAY groups the transport, and New Pattern Length is ed
     expect(Math.abs(value * 10 - Math.round(value * 10))).toBeLessThan(1e-9);
   }
   const newLength = page.locator('#record-new-length');
-  await expect(newLength).toHaveAccessibleName('New Pattern Length');
+  await expect(newLength).toHaveAccessibleName('New Pattern Length (s)');
   await expect(newLength).toHaveJSProperty('disabled', false);
   await page.locator('#record-length').fill('12'); await page.locator('#record-length').dispatchEvent('change');
 

@@ -34,7 +34,7 @@ export class MixerPanel {
         </div>
         <div id="slot-details-${id}" class="slot-details" hidden>
           <div class="slot-name-row"><input id="name-${id}" type="text" aria-label="Timbre ${id} name" disabled><button id="mute-${id}" class="slot-mute" aria-pressed="false">Mute</button></div>
-          <div class="slot-files"><button id="load-${id}">Load</button><button id="save-${id}">Save</button><button id="standard-${id}">Init</button><button id="clear-${id}">Clear</button><input id="timbre-file-${id}" type="file" accept="application/json,.json" hidden></div>
+          <div class="slot-files"><button id="clear-${id}">Clear</button><button id="standard-${id}">Init</button><button id="load-${id}">Load</button><button id="save-${id}">Save</button><input id="timbre-file-${id}" type="file" accept="application/json,.json" hidden></div>
           <label class="mix-range">Near ↔ Far <output id="balance-readout-${id}">50%</output><input id="balance-${id}" type="range" aria-label="Slot ${id} Near Far balance"></label>
           <div class="slot-pan"><label class="mix-range">Pan <output id="pan-readout-${id}">C</output><input id="pan-${id}" type="range" aria-label="Slot ${id} pan, left to right"></label><div class="slot-pan-scale" aria-hidden="true"><span>L</span><span>C</span><span>R</span></div></div>
         </div>`;
@@ -49,10 +49,7 @@ export class MixerPanel {
       get<HTMLButtonElement>('select').addEventListener('click', () => {
         if (this.protectedId) return;
         this.expandedId = this.expandedId === id ? null : id;
-        const selectionChanged = this.selectedId !== id;
-        this.selectedId = id;
-        this.refresh();
-        if (selectionChanged) this.selectionChanged();
+        this.select(id);
       });
       get<HTMLInputElement>('name').addEventListener('change', event => {
         const engine = this.engine();
@@ -74,8 +71,20 @@ export class MixerPanel {
           slider.dispatchEvent(new Event('input', { bubbles: true }));
         });
       }
-      get<HTMLButtonElement>('standard').addEventListener('click', () => { this.beforeReplace(id); this.manual.forgetSource(id); this.engine()?.replaceChannel(id, defaultTimbre()); this.refresh(); this.selectionChanged(); });
-      get<HTMLButtonElement>('clear').addEventListener('click', () => { this.beforeReplace(id); this.manual.forgetSource(id); this.engine()?.clearChannel(id); this.refresh(); this.selectionChanged(); });
+      // Clear and Init discard the slot's sound and Patterns, so they sit away from Mute and ask first.
+      const confirmDiscard = (action: string) => {
+        const engine = this.engine();
+        return !engine?.getChannel(id) || window.confirm(`${action} Timbre ${id} (${engine.createTimbre(id).name})? `
+          + 'Its unsaved sound settings and Gate/Pitch Patterns will be lost. Save it first to keep them.');
+      };
+      get<HTMLButtonElement>('standard').addEventListener('click', () => {
+        if (!confirmDiscard('Initialize')) return;
+        this.beforeReplace(id); this.manual.forgetSource(id); this.engine()?.replaceChannel(id, defaultTimbre()); this.refresh(); this.selectionChanged();
+      });
+      get<HTMLButtonElement>('clear').addEventListener('click', () => {
+        if (!confirmDiscard('Clear')) return;
+        this.beforeReplace(id); this.manual.forgetSource(id); this.engine()?.clearChannel(id); this.refresh(); this.selectionChanged();
+      });
       const fileInput = get<HTMLInputElement>('timbre-file');
       get<HTMLButtonElement>('load').addEventListener('click', () => fileInput.click());
       get<HTMLButtonElement>('save').addEventListener('click', () => this.saveTimbre(id));
@@ -84,10 +93,14 @@ export class MixerPanel {
         this.loading = true; this.refresh();
         try {
           const source = await file.text();
-          const { timbre, notices } = parseTimbreWithNotices(source);
+          // A timbre saved before SongFrame reads its Pattern bars from its selections at this Session's BPM (ADR 0011).
+          const bpm = this.engine()?.getSongSettings().bpm;
+          const { timbre, notices } = parseTimbreWithNotices(source, bpm);
+          const recorded = timbre.gatePatterns.some(item => item.recording) || timbre.pitchPatterns.some(item => item.recording);
           this.beforeReplace(id);
           this.manual.forgetSource(id); this.engine()?.replaceChannel(id, timbre); this.refresh(); this.selectionChanged();
-          this.report(`Loaded timbre ${id}: ${timbre.name}${notices.legacyPitchEnvelopeIgnored ? ' · Legacy PEnv Amount/Time was ignored; new PEnv is neutral.' : ''}`);
+          this.report(`Loaded timbre ${id}: ${timbre.name}${notices.legacyPitchEnvelopeIgnored ? ' · Legacy PEnv Amount/Time was ignored; new PEnv is neutral.' : ''}` +
+            (notices.patternBarsFromSelections && recorded ? ` · Pattern bars were read from the selections at ${bpm ?? 120} BPM.` : ''));
         } catch (error) { this.report(`Timbre import failed: ${error instanceof Error ? error.message : String(error)}`); }
         finally { this.loading = false; fileInput.value = ''; this.refresh(); }
       });
@@ -96,6 +109,18 @@ export class MixerPanel {
     this.refresh();
   }
   setEnabled(enabled: boolean, release = true): void { this.enabled = enabled; this.manual.setEnabled(enabled, release); this.refresh(); }
+  /**
+   * Make a timbre the one the editors show, as its card does, without opening or closing a card; SONG uses it
+   * while TIMBRES is hidden. Refused while a recording holds the selection or a timbre file is loading.
+   */
+  select(id: string): boolean {
+    if (this.protectedId || !this.enabled || this.loading) return false;
+    const selectionChanged = this.selectedId !== id;
+    this.selectedId = id;
+    this.refresh();
+    if (selectionChanged) this.selectionChanged();
+    return true;
+  }
   protectSource(id: string | null): void { this.protectedId = id; this.manual.blockSource(id); this.refresh(); }
   refresh(): void {
     const engine = this.engine();

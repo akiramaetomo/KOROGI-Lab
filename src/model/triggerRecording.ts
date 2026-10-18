@@ -9,7 +9,7 @@ export const LEGACY_USER_PATTERN_IDS = ['user-1', 'user-2'] as const satisfies r
 export function emptyUserPatterns(): UserPattern[] {
   return LEGACY_USER_PATTERN_IDS.map(id => ({ id, gateRecording: null, pitchRecording: null, settings: defaultSequenceSettings() }));
 }
-export function emptyGatePatterns(): GatePattern[] { return USER_PATTERN_IDS.map(id => ({ id, recording: null, muted: false })); }
+export function emptyGatePatterns(): GatePattern[] { return USER_PATTERN_IDS.map(id => ({ id, recording: null, muted: false, inSong: true })); }
 export function emptyPitchPatterns(): PitchPattern[] { return USER_PATTERN_IDS.map(id => ({ id, recording: null, muted: false,
   pitchMode: { kind: 'smooth', scale: 'equal', portamentoSec: 0 }, filterAmountCent: 0, filterAmountWide: false, pitchScaleCent: defaultSequenceSettings().pitchScaleCent })); }
 
