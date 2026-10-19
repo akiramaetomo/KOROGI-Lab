@@ -43,9 +43,21 @@ import { PARAMETER_RANGES as P, parameterForInput, parameterValueBounds } from '
 import { validateParameterRanges } from './config/parameterSafety';
 import { DEMO_SESSIONS } from './demoSessions';
 import { METRONOME_PATTERNS } from './config/metronome';
+import { MultiOscEditor } from './ui/MultiOscEditor';
 
 const amplitudeEditor = new ADSREditor(document.querySelector<HTMLElement>('[data-adsr="aenv"]')!, 'aenv');
 const filterEnvelopeEditor = new ADSREditor(document.querySelector<HTMLElement>('[data-adsr="fenv"]')!, 'fenv');
+const amplitudeEditor2 = new ADSREditor(document.querySelector<HTMLElement>('[data-adsr="aenv2"]')!, 'aenv2');
+const FILTER2_ROUTE_LABELS: Record<Filter2Route, string> = { mod: 'MOD', 'filter1-cutoff': 'F1 CUTOFF', 'aenv-in': 'AEnv IN', 'aenv-out': 'AEnv OUT' };
+
+function filter2Route(): Filter2Route {
+  return requireElement<HTMLSelectElement>('#filter2-route').value as Filter2Route;
+}
+
+function syncFilter2RouteControls(route: Filter2Route): void {
+  requireElement<HTMLElement>('.cutoff-depth-control').hidden = route !== 'filter1-cutoff';
+  requireElement<HTMLElement>('.osc-balance-control').hidden = route !== 'aenv-in' && route !== 'aenv-out';
+}
 const numericSliders = new Map<HTMLInputElement, NumericSliderControl>();
 const commonCards = prepareCommonSpaceCards(document.querySelector<HTMLElement>('.panel-deck')!);
 mountPitchEnvelopeGuide(document.querySelector<HTMLElement>('#penv-shape-guide')!);
@@ -509,6 +521,7 @@ function setAudioControlsEnabled(enabled: boolean): void {
   applyRecordingLock();
   syncSongSettings();
   if (!enabled) { recordBpmInput.disabled = headerBpmInput.disabled = true; songFrameGroup.disabled = true; timeModeSecondsButton.disabled = timeModeBarsButton.disabled = true; }
+  refreshMultiEditors();
 }
 
 function applyRecordingLock(): void {
@@ -528,7 +541,7 @@ function applyRecordingLock(): void {
 }
 
 function syncModAvailability(): void {
-  const routed = requireElement<HTMLSelectElement>('#filter2-route').value === 'mod';
+  const routed = filter2Route() === 'mod';
   const editable = !!engine && !!selectedChannel() && !loadingSession && routed;
   document.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLButtonElement>(
     '.mod-editor [data-audio-control], [data-block-toggle="mod"]'
@@ -829,11 +842,11 @@ function applyPitchEnvelope(): void {
 }
 
 function updateModReadout(mode: ModMode): void {
-  const cutoff = requireElement<HTMLSelectElement>('#filter2-route').value === 'filter1-cutoff';
-  requireElement<HTMLElement>('#source-path-osc2').textContent = `OSC2 → FILTER2 → ${cutoff ? 'F1 CUTOFF' : 'MOD'}`;
-  requireElement<HTMLElement>('#mod-path-label').textContent = `OSC2 → FILTER2 → ${cutoff ? 'F1 CUTOFF' : 'MOD'}`;
-  if (cutoff) {
-    modReadout.textContent = 'FILTER2 → F1 CUTOFF; MOD mode and depth retained';
+  const route = filter2Route(), label = FILTER2_ROUTE_LABELS[route];
+  requireElement<HTMLElement>('#source-path-osc2').textContent = `OSC2 → FILTER2 → ${label}`;
+  requireElement<HTMLElement>('#mod-path-label').textContent = `OSC2 → FILTER2 → ${label}`;
+  if (route !== 'mod') {
+    modReadout.textContent = `FILTER2 → ${label}; MOD mode and depth retained`;
     requireElement<HTMLElement>('.mod-depth-am').hidden = true;
     requireElement<HTMLElement>('.mod-depth-fm').hidden = true;
     return;
@@ -1098,21 +1111,39 @@ for (const id of ['osc1', 'osc2'] as const) {
   });
 }
 
+const multiEditors = ([1, 2] as const).map(oscillator => new MultiOscEditor(oscillator, () => {
+  const channel = selectedChannel();
+  if (!engine || !channel) return null;
+  const context = engine.context;
+  return {
+    settings: () => channel.getSettings()[oscillator === 1 ? 'osc1' : 'osc2'],
+    apply: (voiceMode, multi) => channel.setOscVoices(oscillator, voiceMode, multi),
+    sampleRate: () => context.sampleRate
+  };
+}, setValue, numberValue));
+function refreshMultiEditors(clearMessage = false): void {
+  multiEditors.forEach(editor => editor.refresh(clearMessage));
+}
+
 requireElement<HTMLSelectElement>('#osc1-type').addEventListener('change', async (event) => {
   await selectedChannel()?.setOsc1Type((event.currentTarget as HTMLSelectElement).value as OscSourceType);
   refreshDetuneReadouts();
+  refreshMultiEditors();
 });
 requireElement<HTMLInputElement>('#osc1-frequency').addEventListener('change', () => {
   selectedChannel()?.setOsc1Frequency(numberValue('#osc1-frequency'));
   refreshDetuneReadouts();
+  refreshMultiEditors();
 });
 requireElement<HTMLSelectElement>('#osc2-type').addEventListener('change', async (event) => {
   await selectedChannel()?.setOsc2Type((event.currentTarget as HTMLSelectElement).value as OscSourceType);
   refreshDetuneReadouts();
+  refreshMultiEditors();
 });
 requireElement<HTMLInputElement>('#osc2-frequency').addEventListener('change', () => {
   selectedChannel()?.setOsc2Frequency(numberValue('#osc2-frequency'));
   refreshDetuneReadouts();
+  refreshMultiEditors();
 });
 requireElement<HTMLInputElement>('#osc1-duty').addEventListener('change', () => {
   selectedChannel()?.setOsc1DutyRatio(numberValue('#osc1-duty') / 100);
@@ -1147,12 +1178,19 @@ requireElement<HTMLInputElement>('#fm-depth').addEventListener('change', () => {
 requireElement<HTMLSelectElement>('#filter2-route').addEventListener('change', event => {
   const route = (event.currentTarget as HTMLSelectElement).value as Filter2Route;
   selectedChannel()?.setFilter2Route(route);
-  requireElement<HTMLElement>('.cutoff-depth-control').hidden = route !== 'filter1-cutoff';
+  syncFilter2RouteControls(route);
   updateModReadout(requireElement<HTMLSelectElement>('#mod-mode').value as ModMode);
   refreshBlockSwitches(); signalMap.refresh();
 });
 requireElement<HTMLInputElement>('#filter1-cutoff-depth').addEventListener('change', () => {
   selectedChannel()?.setFilter1CutoffDepthCent(numberValue('#filter1-cutoff-depth'));
+});
+requireElement<HTMLInputElement>('#osc-balance').addEventListener('change', () => {
+  selectedChannel()?.setOscBalance(numberValue('#osc-balance') / 100);
+});
+requireElement<HTMLInputElement>('#fenv-filter2-depth').addEventListener('change', () => {
+  selectedChannel()?.setFilter2FenvDepth(numberValue('#fenv-filter2-depth') / 100);
+  signalMap.refresh();
 });
 
 function wireFilter(index: 1 | 2): void {
@@ -1183,6 +1221,12 @@ wireFilter(1);
 wireFilter(2);
 
 amplitudeEditor.wire(applyAmplitudeEnvelope);
+amplitudeEditor2.wire((curve, mode, timing) => {
+  const channel = selectedChannel(); if (!channel) return;
+  const next = amplitudeEditor2.read(channel.getSettings().ampEnvelope2, curve, mode, timing);
+  channel.setAmplitudeEnvelope2(next);
+  amplitudeEditor2.sync(next, setValue);
+});
 filterEnvelopeEditor.wire((curve, mode, timing) => {
   const channel = selectedChannel(); if (!channel) return;
   const next = { ...filterEnvelopeEditor.read(channel.getSettings().filterEnvelope, curve, mode, timing),
@@ -1354,6 +1398,7 @@ function syncUiFromTimbre(timbre: TimbreDocument): void {
   setValue('#osc2-duty', Number((ch.osc2.dutyRatio * 100).toFixed(1)));
   setValue('#phase-mode-osc1', ch.phaseMode);
   setValue('#phase-mode-osc2', ch.phaseMode);
+  refreshMultiEditors(true);
   setValue('#penv-start', ch.pitchEnvelope.start * 100);
   setValue('#penv-attack-level', ch.pitchEnvelope.attack * 100);
   setValue('#penv-sustain-level', ch.pitchEnvelope.sustain * 100);
@@ -1380,8 +1425,11 @@ function syncUiFromTimbre(timbre: TimbreDocument): void {
   setValue('#filter2-q', ch.filter2.q);
   setValue('#filter2-route', ch.filter2Route);
   setValue('#filter1-cutoff-depth', ch.filter1CutoffDepthCent);
-  requireElement<HTMLElement>('.cutoff-depth-control').hidden = ch.filter2Route !== 'filter1-cutoff';
+  setValue('#osc-balance', ch.oscBalance * 100);
+  setValue('#fenv-filter2-depth', ch.filter2FenvDepth * 100);
+  syncFilter2RouteControls(ch.filter2Route);
   amplitudeEditor.sync(ch.ampEnvelope, setValue);
+  amplitudeEditor2.sync(ch.ampEnvelope2, setValue);
   filterEnvelopeEditor.sync(ch.filterEnvelope, setValue);
   const fenvAmount = requireElement<HTMLInputElement>('#fenv-amount');
   fenvAmount.dataset.sliderMin = String(ch.filterEnvelope.amountWide ? -7200 : -4800);
@@ -1584,21 +1632,22 @@ function refreshBlockSwitches(): void {
     const enabled = block === 'mixGain' ? engine?.isMixGainEnabled(targetBus) ?? true
       : block.startsWith('fx') ? fx?.enabled ?? true
       : blocks?.[block as ChannelBlock] ?? true;
-    const unavailable = block === 'mod' && requireElement<HTMLSelectElement>('#filter2-route').value === 'filter1-cutoff';
+    const route = filter2Route();
+    const unavailable = (block === 'mod' && route !== 'mod') || (block === 'aenv2' && route !== 'aenv-out');
     button.textContent = unavailable ? 'N/A' : enabled ? 'ON' : 'OFF';
     button.toggleAttribute('data-unavailable', unavailable);
     button.setAttribute('aria-pressed', String(enabled));
-    button.title = unavailable ? 'FILTER2 is routed to F1 CUTOFF; MOD settings are retained'
-      : block === 'aenv' ? 'OFF: unity bypass / continuous sound' : 'ON/OFF (settings retained)';
+    button.title = unavailable ? `FILTER2 is routed to ${FILTER2_ROUTE_LABELS[route]}; ${block === 'mod' ? 'MOD' : 'AEnv2'} settings are retained`
+      : block === 'aenv' || block === 'aenv2' ? 'OFF: unity bypass / continuous sound' : 'ON/OFF (settings retained)';
     const node = button.parentElement?.querySelector<HTMLButtonElement>('[data-flow-block]');
     if (node) {
       node.classList.toggle('enabled', enabled && !unavailable);
       node.classList.toggle('bypassed', !enabled || unavailable);
-      node.title = unavailable ? 'MOD is outside the current FILTER2 route' : enabled ? 'ON' : 'OFF';
+      node.title = unavailable ? `${block === 'mod' ? 'MOD' : 'AEnv2'} is outside the current FILTER2 route` : enabled ? 'ON' : 'OFF';
       if (block === 'fx1') node.textContent = 'FX1';
     }
   });
-  if (selectedChannel() && !blocks?.mod && requireElement<HTMLSelectElement>('#filter2-route').value === 'mod') modReadout.textContent = 'MOD bypassed (mode and depth retained)';
+  if (selectedChannel() && !blocks?.mod && filter2Route() === 'mod') modReadout.textContent = 'MOD bypassed (mode and depth retained)';
   else updateModReadout(requireElement<HTMLSelectElement>('#mod-mode').value as ModMode);
   syncModAvailability();
 }
@@ -1630,7 +1679,7 @@ document.querySelectorAll<HTMLButtonElement>('[data-flow-block]').forEach((node)
 
 const panelSwitches: Record<string, ChannelBlock> = {
   'OSC1 / Carrier': 'osc1', 'OSC2 / Modulator': 'osc2', PEnv: 'penv', 'MOD Mode / Depth': 'mod',
-  'FILTER1 / Audio Path': 'filter1', 'FILTER2 / Modulation Path': 'filter2', 'AEnv / ADSR': 'aenv', 'FEnv / ADSR': 'fenv'
+  'FILTER1 / Audio Path': 'filter1', 'FILTER2 / Modulation Path': 'filter2', 'AEnv / ADSR': 'aenv', 'AEnv2 / ADSR': 'aenv2', 'FEnv / ADSR': 'fenv'
 };
 document.querySelectorAll<HTMLElement>('legend').forEach((legend) => {
   const label = legend.textContent?.trim() ?? '';
@@ -1671,7 +1720,7 @@ try {
   try { validateParameterRanges(P, context.sampleRate); }
   catch (error) { void context.close(); throw error; }
   engine = new AudioEngine(context, {
-    formatVersion: 'KOROGI-Lab/session-v21', name: 'KOROGI Session', savedAt: '',
+    formatVersion: 'KOROGI-Lab/session-v23', name: 'KOROGI Session', savedAt: '',
     channels: LAB_SLOT_IDS.map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
     near: defaultBus(), far: defaultBus(), crossfade: P.crossfade.defaultValue / 100, masterGainDb: P['master-gain'].defaultValue, masterMuted: false, song: defaultSongSettings()
   });

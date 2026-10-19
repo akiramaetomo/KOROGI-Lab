@@ -7,6 +7,7 @@ export const EDITOR_CARDS = {
   filter2: { label: 'FILTER2', rank: 'small', panel: 'filters' },
   fenv: { label: 'FEnv', rank: 'medium', panel: 'fenv' },
   aenv: { label: 'AEnv', rank: 'medium', panel: 'amp' },
+  aenv2: { label: 'AEnv2', rank: 'medium', panel: 'amp2' },
   burst: { label: 'BURST', rank: 'small', panel: 'burst' },
   fx1: { label: 'FX1', rank: 'small', panel: 'voice-effects' },
   detune: { label: 'DETUNE', rank: 'small', panel: 'output' },

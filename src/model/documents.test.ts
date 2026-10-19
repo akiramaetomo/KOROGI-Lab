@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
 import { defaultBus, defaultSongSettings, defaultTimbre, DEFAULT_CHANNEL_MIX, LAB_SLOT_IDS, normalizeTimbre, normalizeSession, normalizeSongSettings, parseTimbre, parseTimbreWithNotices, parseLabSession, parseLabSessionWithNotices, parseSession } from './documents';
 import type { SessionDocument } from '../audio/types';
+import { DEFAULT_CHANNEL_SETTINGS, LIMITS } from '../audio/constants';
 import { PARAMETER_RANGES as P, parameterValueBounds } from '../config/parameterRanges';
 
 function session(): SessionDocument {
-  return { formatVersion: 'KOROGI-Lab/session-v21', name: 'Four', savedAt: '2026-09-19', channels: ['1', '2', '3', '4'].map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
+  return { formatVersion: 'KOROGI-Lab/session-v23', name: 'Four', savedAt: '2026-09-19', channels: ['1', '2', '3', '4'].map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),
     near: defaultBus(), far: defaultBus(), crossfade: .5, masterGainDb: -18, masterMuted: false, song: defaultSongSettings() };
 }
 /** A Session saved before SongFrame (session-v20): one bar count per Pattern number, shared by every timbre. */
@@ -93,7 +94,7 @@ describe('Timbre and session boundaries', () => {
     oldSettings.autoTrigger = { tonSec: .25, toffSec: .25, oneShotRepeatSec: .5 };
     delete (oldSettings.ampEnvelope as Record<string, unknown>).releaseTiming;
     const migrated = normalizeTimbre(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v18');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v20');
     expect(migrated.settings.pitchEnvelope).toEqual(defaultTimbre().settings.pitchEnvelope);
     expect(migrated.settings.ampEnvelope.releaseTiming).toBe('time');
     const newTimbre = defaultTimbre();
@@ -264,9 +265,9 @@ describe('Timbre and session boundaries', () => {
     (settings.osc2 as Record<string, unknown>).baseFrequencyHz = 1_000_000;
     channels[0]!.gainDb = 6;
     const migrated = parseLabSession(JSON.stringify(old));
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v21');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v23');
     expect(migrated.channels.every(channel => channel.pan === 0)).toBe(true);
-    expect(migrated.channels[0]!.timbre?.formatVersion).toBe('KOROGI-Lab/timbre-v18');
+    expect(migrated.channels[0]!.timbre?.formatVersion).toBe('KOROGI-Lab/timbre-v20');
     expect(migrated.channels[0]!.timbre?.settings.phaseMode).toBe('free');
     expect(migrated.channels[0]!.timbre?.settings.filter2Route).toBe('mod');
     expect(migrated.channels[0]!.timbre?.settings.filter1CutoffDepthCent).toBe(1200);
@@ -281,6 +282,35 @@ describe('Timbre and session boundaries', () => {
     const invalid = defaultTimbre();
     Reflect.set(invalid.settings, 'filter2Route', 'unknown');
     expect(() => normalizeTimbre(invalid)).toThrow('FILTER2 route');
+  });
+  it('migrates timbre-v19 to the OSC2 audio route defaults and validates AEnv2 and the four routes', () => {
+    const old = structuredClone(defaultTimbre()) as unknown as Record<string, any>;
+    old.formatVersion = 'KOROGI-Lab/timbre-v19';
+    old.settings.filter2Route = 'filter1-cutoff'; old.settings.ampEnvelope.mode = 'one-shot';
+    delete old.settings.ampEnvelope2; delete old.settings.oscBalance; delete old.settings.filter2FenvDepth; delete old.settings.blocksEnabled.aenv2;
+    const migrated = normalizeTimbre(old);
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v20');
+    expect(migrated.settings.filter2Route).toBe('filter1-cutoff');
+    expect(migrated.settings.oscBalance).toBe(0); expect(migrated.settings.filter2FenvDepth).toBe(0);
+    expect(migrated.settings.ampEnvelope2).toEqual(DEFAULT_CHANNEL_SETTINGS.ampEnvelope2);
+    expect(migrated.settings.blocksEnabled.aenv2).toBe(true);
+    expect(normalizeTimbre(migrated)).toEqual(migrated);
+    for (const route of ['mod', 'filter1-cutoff', 'aenv-in', 'aenv-out'] as const) {
+      const current = defaultTimbre(); current.settings.filter2Route = route;
+      expect(normalizeTimbre(current).settings.filter2Route).toBe(route);
+    }
+    const edited = defaultTimbre();
+    edited.settings.oscBalance = 3; edited.settings.filter2FenvDepth = -3;
+    edited.settings.ampEnvelope2 = { ...edited.settings.ampEnvelope2, mode: 'one-shot', releaseSec: 99 };
+    const clamped = normalizeTimbre(edited).settings;
+    expect(clamped.oscBalance).toBe(1); expect(clamped.filter2FenvDepth).toBe(-1);
+    expect(clamped.ampEnvelope2).toMatchObject({ mode: 'one-shot', releaseSec: LIMITS.envelopeSec.max });
+    const rate = defaultTimbre(); rate.settings.ampEnvelope2 = { ...rate.settings.ampEnvelope2, releaseTiming: 'rate', releaseCurve: 'exponential' };
+    expect(() => normalizeTimbre(rate)).toThrow('AEnv2 Rate requires a Linear Release curve.');
+    const mode = defaultTimbre(); Reflect.set(mode.settings.ampEnvelope2, 'mode', 'hold');
+    expect(() => normalizeTimbre(mode)).toThrow('AEnv2 mode');
+    const missing = structuredClone(defaultTimbre()) as unknown as Record<string, any>; delete missing.settings.ampEnvelope2;
+    expect(() => normalizeTimbre(missing)).toThrow();
   });
   it('loads v3 with empty User patterns and preserves two current recordings independently', () => {
     const old = structuredClone(session()) as unknown as Record<string, unknown>;
@@ -305,7 +335,7 @@ describe('Timbre and session boundaries', () => {
     timbre.formatVersion = 'KOROGI-Lab/timbre-v4'; delete timbre.playbackSource;
     timbre.recording = { durationSec: 1, selectionStartSec: 0, selectionEndSec: 1, gates: [{ onSec: .1, offSec: .2 }] };
     const migrated = normalizeSession(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v21');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v23');
     expect(migrated.channels[0]!.timbre!.sequence.gateMode).toBe('auto');
     expect(migrated.channels[0]!.timbre!.gatePatterns[0]!.recording).toEqual(timbre.recording);
     expect(migrated.channels[0]!.timbre!.gatePatterns[1]!.recording).toBeNull();
@@ -331,7 +361,7 @@ describe('Timbre and session boundaries', () => {
     old.patterns = [{ id: 'user-1', recording: { durationSec: 1, selectionStartSec: 0, selectionEndSec: 1,
       gates: [{ onSec: .1, offSec: .4 }] } }, { id: 'user-2', recording: null }];
     const migrated = normalizeTimbre(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v18');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v20');
     expect(migrated.pitchPatterns[2]!.recording).toBeNull();
     expect(migrated.gatePatterns[0]!.recording).toEqual((old.patterns as Array<Record<string, unknown>>)[0]!.recording);
     expect(migrated.pitchPatterns.map(pattern => pattern.recording)).toEqual(Array(8).fill(null));
@@ -424,7 +454,7 @@ describe('Timbre and session boundaries', () => {
         points: [{ timeSec: 0, valueNormalized: 0 }, { timeSec: 16, valueNormalized: 0 }] };
     });
     const { session: loaded, notices } = parseLabSessionWithNotices(JSON.stringify(old));
-    expect(loaded.formatVersion).toBe('KOROGI-Lab/session-v21');
+    expect(loaded.formatVersion).toBe('KOROGI-Lab/session-v23');
     expect(loaded.song.frameBars).toBe(4);
     expect(loaded.channels[0]!.timbre!.patternBars).toEqual([4, 2, 8, 1, 1, 1, 1, 1]);
     expect(loaded.channels[1]!.timbre!.patternBars).toEqual([4, 2, 8, 1, 1, 1, 1, 1]);
@@ -457,6 +487,34 @@ describe('Timbre and session boundaries', () => {
     const silent = parseLabSessionWithNotices(JSON.stringify(legacySession([8, 1, 1, 1, 1, 1, 1, 1])));
     expect(silent.session.song.frameBars).toBe(P['song-frame'].defaultValue);
     expect(silent.notices.songFrameMerged).toBeNull();
+  });
+  it('reads timbre-v18 OSCs as Single, round-trips Multi, and rejects invalid Multi tables', () => {
+    const old = structuredClone(defaultTimbre()) as unknown as Record<string, any>;
+    old.formatVersion = 'KOROGI-Lab/timbre-v18';
+    for (const key of ['osc1', 'osc2']) { delete old.settings[key].voiceMode; delete old.settings[key].multi; }
+    const migrated = normalizeTimbre(old);
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v20');
+    expect(migrated.settings.osc1.voiceMode).toBe('single');
+    expect(migrated.settings.osc2.multi).toEqual(defaultTimbre().settings.osc2.multi);
+    const current = defaultTimbre();
+    current.settings.osc1.voiceMode = 'multi';
+    current.settings.osc1.multi = { definition: 'table', partials: [{ ratio: .559, amplitude: .167 }, { ratio: 1.425, amplitude: .167 }, { ratio: 99, amplitude: 2 }],
+      spread: { count: 5, spreadCent: 12.5 } };
+    const saved = parseTimbre(JSON.stringify(current));
+    expect(saved.settings.osc1.voiceMode).toBe('multi');
+    expect(saved.settings.osc1.multi.partials).toEqual([{ ratio: .559, amplitude: .167 }, { ratio: 1.425, amplitude: .167 }, { ratio: 64, amplitude: 1 }]);
+    expect(saved.settings.osc1.multi.spread).toEqual({ count: 5, spreadCent: 12.5 });
+    const inSession = session(); inSession.channels[0]!.timbre = current;
+    expect(parseLabSession(JSON.stringify(inSession)).channels[0]!.timbre?.settings.osc1.multi.partials).toHaveLength(3);
+    const empty = structuredClone(current) as unknown as Record<string, any>; empty.settings.osc1.multi.partials = [];
+    expect(() => normalizeTimbre(empty)).toThrow('Multi Table');
+    const tooMany = structuredClone(current) as unknown as Record<string, any>;
+    tooMany.settings.osc1.multi.partials = Array.from({ length: 17 }, () => ({ ratio: 1, amplitude: .1 }));
+    expect(() => normalizeTimbre(tooMany)).toThrow('Multi Table');
+    const badMode = structuredClone(current) as unknown as Record<string, any>; badMode.settings.osc2.voiceMode = 'dual';
+    expect(() => normalizeTimbre(badMode)).toThrow('Single/Multi');
+    const badCount = structuredClone(current) as unknown as Record<string, any>; badCount.settings.osc1.multi.spread.count = 2.5;
+    expect(() => normalizeTimbre(badCount)).toThrow('Spread count');
   });
   it('round-trips the Pattern bars of a timbre-v18 file and reads older timbre files from their selections at the given BPM', () => {
     const current = defaultTimbre(); current.patternBars = [.25, 2, 1, 1, 1, 1, 1, 32];

@@ -58,11 +58,11 @@ test('reorders by keyboard and mouse without replacing controls or their values'
 test('retains unsaved layouts per timbre, exports both formats and restores files including empty layouts', async ({ page }) => {
   await start(page); await closeAll(page); await select(page, 'filter1'); await select(page, 'osc1');
   const timbre = await saved(page, '#save-1');
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v18'); expect(timbre.editorLayout).toEqual([['filter1'], ['osc1']]);
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v20'); expect(timbre.editorLayout).toEqual([['filter1'], ['osc1']]);
   await page.locator('#select-2').click(); await page.locator('#standard-2').click(); await closeAll(page);
   await page.locator('#select-1').click(); expect(await layout(page)).toEqual(['filter1', 'osc1']);
   await page.locator('#files-menu').click(); const session = await saved(page, '#export-patch');
-  expect(session.formatVersion).toBe('KOROGI-Lab/session-v21'); expect(session.channels[1].timbre.editorLayout).toEqual([]);
+  expect(session.formatVersion).toBe('KOROGI-Lab/session-v23'); expect(session.channels[1].timbre.editorLayout).toEqual([]);
   await page.locator('#patch-file').setInputFiles({ name: 'session.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(session)) });
   await expect(page.locator('#patch-status')).toContainText('Loaded');
   expect(await layout(page)).toEqual(['filter1', 'osc1']);
@@ -139,7 +139,7 @@ test('columns stack up to three cards by drag and keys, refuse a fourth and roun
   await handle('filter1').press('Shift+ArrowLeft'); expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
   await handle('mod').press('Shift+ArrowLeft'); expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
   const timbre = await saved(page, '#save-1');
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v18'); expect(timbre.editorLayout).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v20'); expect(timbre.editorLayout).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);
   await page.locator('#timbre-file-2').setInputFiles({ name: 'triple.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(timbre)) });
   await page.locator('#select-2').click();
   expect(await columnIds(page)).toEqual([['osc1', 'osc2', 'filter1'], ['mod']]);

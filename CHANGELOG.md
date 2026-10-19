@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0-rc.1 — 2026-10-20 — OSC Multi and OSC2 audio routes Pages candidate
+
+- OSC1 / OSC2 can be Single or Multi: Multi sums 1–16 oscillators of the same waveform, defined by Spread (count, ± cent) or by a Table of Hz and amplitude with paste/copy. Partials keep their ratio to Base Frequency, so PEnv, Detune, Sequence Pitch and FM move them together.
+- FILTER2 Destination adds AEnv IN and AEnv OUT, so the OSC2 path can be heard: AEnv IN mixes it at the AEnv1 input, AEnv OUT sends it through a new AEnv2 (own Gate/One-shot, retriggered by BURST pulses) and mixes it after AEnv1.
+- A single Balance sets the OSC1 / OSC2 mix in the audio routes, and FEnv reaches Filter2 through a signed Depth (−100…+100 % of Amount, default 0).
+- The TIMBRE map is three symmetric rows: OSC1 path on top, PEnv / FEnv / BURST in the middle, OSC2 path below.
+- Save formats move to timbre-v20 / session-v23; older files load with their sound unchanged. 0.4.0-rc.1 and earlier cannot read the new files.
+- Publish as a release candidate; known: SYNC restarts keep the previous oscillator set running for about 50 ms, multiplied by the Multi count.
+
 ## 0.4.0-rc.1 — 2026-10-19 — Bars looper, Loop / Chain and SONG grid Pages candidate
 
 - One Seconds | Bars time mode for the whole app; the app starts in Bars. Bars accepts fractional Pattern lengths (1/2–1/16) and up to 32 bars from a menu.

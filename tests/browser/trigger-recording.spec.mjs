@@ -50,7 +50,7 @@ test('records only the large Gate, trims without losing the take, loops and roun
   await page.locator('#record-toggle').click();
   await expect(page.locator('#record-status')).toHaveText('Recording complete');
   const timbre = await savedTimbre(page);
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v18');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v20');
   expect(userRecording(timbre).gates).toHaveLength(1);
   const gate = userRecording(timbre).gates[0];
   expect(gate.offSec - gate.onSec).toBeGreaterThan(.15);
@@ -108,7 +108,7 @@ test('records only the large Gate, trims without losing the take, loops and roun
   const sessionDownload = page.waitForEvent('download');
   await page.locator('#export-patch').click();
   const session = JSON.parse(await readFile(await (await sessionDownload).path(), 'utf8'));
-  expect(session.formatVersion).toBe('KOROGI-Lab/session-v21');
+  expect(session.formatVersion).toBe('KOROGI-Lab/session-v23');
   expect(userRecording(session.channels[0].timbre)).toEqual(userRecording(editedWhilePlaying));
   expect(session.channels[0].timbre.sequence).toMatchObject({ gateMode: 'user', gateUserId: 'user-1', pitchUserId: 'user-1' });
   expect(userRecording(session.channels[1].timbre)).toEqual(userRecording(trimmed));

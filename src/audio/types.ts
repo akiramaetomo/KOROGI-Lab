@@ -2,19 +2,32 @@ import type { EditorLayout } from '../model/editorLayout';
 export type OscSourceType = 'sine' | 'sawtooth' | 'triangle' | 'square' | 'white-noise';
 export type PhaseMode = 'sync' | 'free';
 export type ModMode = 'off' | 'am' | 'fm';
-export type Filter2Route = 'mod' | 'filter1-cutoff';
+/** OSC2/FILTER2 destination: control (MOD, F1 CUTOFF) or audio mixed at the AEnv1 input / output. */
+export type Filter2Route = 'mod' | 'filter1-cutoff' | 'aenv-in' | 'aenv-out';
 export type FilterType = 'off' | 'lowpass' | 'bandpass' | 'highpass';
 export type FilterOrder = 2 | 4;
 export type BusAssignment = 'near' | 'far';
 export type EffectType = 'off' | 'distortion' | 'delay' | 'chorus' | 'reverb';
 export type EffectSlotIndex = 1 | 2 | 3;
 export type BusEffectSlotIndex = 2 | 3;
-export type ChannelBlock = 'osc1' | 'osc2' | 'penv' | 'mod' | 'filter1' | 'filter2' | 'aenv' | 'fenv';
+export type ChannelBlock = 'osc1' | 'osc2' | 'penv' | 'mod' | 'filter1' | 'filter2' | 'aenv' | 'aenv2' | 'fenv';
+
+export type OscVoiceMode = 'single' | 'multi';
+export type MultiDefinition = 'table' | 'spread';
+/** One internal oscillator of Multi: frequency ratio to the OSC Base Frequency and linear gain. */
+export interface OscPartial { ratio: number; amplitude: number }
+export interface MultiOscillatorSettings {
+  definition: MultiDefinition;
+  partials: OscPartial[]; // Table definition, 1 .. 16 rows
+  spread: { count: number; spreadCent: number }; // symmetric, equally spaced, gain 1/N each
+}
 
 export interface OscillatorSettings {
   sourceType: OscSourceType;
   baseFrequencyHz: number;
   dutyRatio: number; // 0.01 .. 0.99; used by square only
+  voiceMode: OscVoiceMode; // Multi sums partials of the same waveform; white noise stays single
+  multi: MultiOscillatorSettings;
 }
 
 export interface PitchEnvelopeSettings {
@@ -92,7 +105,13 @@ export interface ChannelSettings {
   filter2: FilterSettings;
   filter2Route: Filter2Route;
   filter1CutoffDepthCent: number;
+  /** OSC1/OSC2 path balance for the audio routes, -1 (OSC1 only) .. 0 (both unity) .. +1 (OSC2 only). */
+  oscBalance: number;
+  /** Shared FEnv applied to Filter2 as a signed ratio of the FEnv Amount, -1..+1. */
+  filter2FenvDepth: number;
   ampEnvelope: AmplitudeEnvelopeSettings;
+  /** OSC2 path envelope; sounds only in the AEnv OUT route. */
+  ampEnvelope2: AmplitudeEnvelopeSettings;
   filterEnvelope: FilterEnvelopeSettings;
   fx1: EffectSlotSettings;
   autoTrigger: AutoTriggerSettings;
@@ -124,7 +143,7 @@ export interface BusSettings {
 
 export interface TimbreDocument {
   editorLayout: EditorLayout;
-  formatVersion: 'KOROGI-Lab/timbre-v18';
+  formatVersion: 'KOROGI-Lab/timbre-v20';
   name: string;
   settings: ChannelSettings;
   detuneRangeCent: number;
@@ -199,7 +218,7 @@ export interface SessionChannel extends ChannelMixSettings {
 
 /** The engine does not impose the Lab UI's four-slot limit. */
 export interface SessionDocument {
-  formatVersion: 'KOROGI-Lab/session-v21';
+  formatVersion: 'KOROGI-Lab/session-v23';
   name: string;
   savedAt: string;
   channels: SessionChannel[];

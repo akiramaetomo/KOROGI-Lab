@@ -25,7 +25,7 @@ export class FunctionEditor extends CardEditor<EditorCardId> {
     for (const panel of ['sources', 'modulation', 'filters']) deck.querySelector(`[data-panel="${panel}"]`)?.remove();
     const targets: Record<string, EditorCardId> = {
       'flow-osc1': 'osc1', 'flow-osc2': 'osc2', 'flow-penv': 'penv', 'flow-mod': 'mod',
-      'flow-filter1': 'filter1', 'flow-filter2': 'filter2', 'flow-aenv': 'aenv', 'flow-fenv': 'fenv', 'flow-burst': 'burst',
+      'flow-filter1': 'filter1', 'flow-filter2': 'filter2', 'flow-aenv': 'aenv', 'flow-aenv2': 'aenv2', 'flow-fenv': 'fenv', 'flow-burst': 'burst',
       'flow-fx1': 'fx1', 'flow-detune': 'detune', 'trigger-menu': 'sequence'
     };
     for (const [nodeId, id] of Object.entries(targets)) document.getElementById(nodeId)!.dataset.editorTarget = id;

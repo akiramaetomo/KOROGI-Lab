@@ -12,6 +12,7 @@ import { FilterChain } from '../dsp/FilterChain';
 import { PitchEnvelopeControl } from '../dsp/PitchEnvelopeControl';
 import { SequencePitchControl } from '../dsp/SequencePitchControl';
 import { SourceUnit } from '../dsp/SourceUnit';
+import { resolvePartials, sanitizeMulti } from '../dsp/multiOscillator';
 import { clamp, dbToGain, smoothAudioParam } from '../dsp/params';
 import { WhiteNoiseFactory } from '../dsp/WhiteNoiseFactory';
 import { AutoTriggerScheduler } from '../scheduler/AutoTriggerScheduler';
@@ -33,12 +34,15 @@ import type {
   GateScheduleEvent,
   ModMode,
   PitchEnvelopeSettings,
-  OscSourceType
+  MultiOscillatorSettings,
+  OscSourceType,
+  OscVoiceMode
 } from '../types';
 
-type BaseGateEvent = { kind: 'on'; time: number; amp: AmplitudeEnvelopeSettings; pitch: PitchEnvelopeSettings; filter: FilterEnvelopeSettings }
+type BaseGateEvent = { kind: 'on'; time: number; amp: AmplitudeEnvelopeSettings; amp2: AmplitudeEnvelopeSettings;
+  pitch: PitchEnvelopeSettings; filter: FilterEnvelopeSettings }
   | { kind: 'off'; time: number };
-type StructureItem = 'osc1' | 'osc2' | 'filter1' | 'filter2';
+type StructureItem = 'osc1' | 'osc2' | 'osc1-voices' | 'osc2-voices' | 'filter1' | 'filter2';
 
 function cloneDefaults(): ChannelSettings {
   return structuredClone(DEFAULT_CHANNEL_SETTINGS);
@@ -66,6 +70,13 @@ export class ChannelSynth {
   private readonly filter1: FilterChain;
   private readonly filter2: FilterChain;
   private readonly ampEnvelope: AmplitudeEnvelope;
+  /** OSC2 audio path: balance → AEnv1 input (AEnv IN) or → AEnv2 → after AEnv1 (AEnv OUT). */
+  private readonly osc1BalanceGain: GainNode;
+  private readonly osc2BalanceGain: GainNode;
+  private readonly aenvInRouteGain: GainNode;
+  private readonly ampEnvelope2: AmplitudeEnvelope;
+  private readonly aenvOutRouteGain: GainNode;
+  private readonly fenvFilter2Gain: GainNode;
   private readonly structureFade: GainNode;
   /** Latest requested structural value per item; one shared fade commits them together. */
   private readonly pendingStructure = new Map<StructureItem, () => void>();
@@ -99,7 +110,14 @@ export class ChannelSynth {
     this.settings.osc2.baseFrequencyHz = clamp(this.settings.osc2.baseFrequencyHz, LIMITS.osc2Hz.min, LIMITS.osc2Hz.max);
     this.settings.osc1.dutyRatio = clamp(this.settings.osc1.dutyRatio, LIMITS.dutyRatio.min, LIMITS.dutyRatio.max);
     this.settings.osc2.dutyRatio = clamp(this.settings.osc2.dutyRatio, LIMITS.dutyRatio.min, LIMITS.dutyRatio.max);
+    for (const osc of [this.settings.osc1, this.settings.osc2]) {
+      osc.voiceMode = osc.voiceMode === 'multi' ? 'multi' : 'single';
+      osc.multi = sanitizeMulti(osc.multi ?? DEFAULT_CHANNEL_SETTINGS.osc1.multi);
+    }
     this.settings.blocksEnabled = { ...DEFAULT_CHANNEL_SETTINGS.blocksEnabled, ...initial.blocksEnabled };
+    this.settings.ampEnvelope2 = { ...(initial.ampEnvelope2 ?? DEFAULT_CHANNEL_SETTINGS.ampEnvelope2) };
+    this.settings.oscBalance = clamp(initial.oscBalance ?? 0, LIMITS.oscBalance.min, LIMITS.oscBalance.max);
+    this.settings.filter2FenvDepth = clamp(initial.filter2FenvDepth ?? 0, LIMITS.filter2FenvDepth.min, LIMITS.filter2FenvDepth.max);
     this.detuneNormalized = clamp(detuneNormalized, -1, 1);
 
     this.pEnv = new PitchEnvelopeControl(context, this.settings.pitchEnvelope);
@@ -129,7 +147,8 @@ export class ChannelSynth {
       this.settings.osc1.sourceType,
       this.settings.osc1.baseFrequencyHz,
       [this.fmDepthGain, this.sequencePitchGain, this.controllerPitchGain],
-      this.settings.osc1.dutyRatio
+      this.settings.osc1.dutyRatio,
+      resolvePartials(this.settings.osc1)
     );
     this.osc2 = new SourceUnit(
       context,
@@ -138,7 +157,8 @@ export class ChannelSynth {
       this.settings.osc2.sourceType,
       this.settings.osc2.baseFrequencyHz,
       [this.sequencePitchGain, this.controllerPitchGain],
-      this.settings.osc2.dutyRatio
+      this.settings.osc2.dutyRatio,
+      resolvePartials(this.settings.osc2)
     );
 
     this.filter2 = new FilterChain(context, this.settings.filter2);
@@ -172,13 +192,31 @@ export class ChannelSynth {
     this.filter2.connectDetune(this.controllerFilterGain);
     this.fEnv = new FilterEnvelopeControl(context, this.settings.filterEnvelope);
     this.filter1.connectDetune(this.fEnv.output);
+    this.fenvFilter2Gain = context.createGain();
+    this.fenvFilter2Gain.gain.value = this.settings.filter2FenvDepth;
+    this.fEnv.output.connect(this.fenvFilter2Gain);
+    this.filter2.connectDetune(this.fenvFilter2Gain);
 
     this.ampEnvelope = new AmplitudeEnvelope(context, this.settings.ampEnvelope);
-    this.filter1.output.connect(this.ampEnvelope.node);
+    this.osc1BalanceGain = context.createGain();
+    this.filter1.output.connect(this.osc1BalanceGain);
+    this.osc1BalanceGain.connect(this.ampEnvelope.node);
+
+    this.osc2BalanceGain = context.createGain();
+    this.filter2.output.connect(this.osc2BalanceGain);
+    this.aenvInRouteGain = context.createGain();
+    this.osc2BalanceGain.connect(this.aenvInRouteGain);
+    this.aenvInRouteGain.connect(this.ampEnvelope.node);
+    this.ampEnvelope2 = new AmplitudeEnvelope(context, this.settings.ampEnvelope2);
+    this.osc2BalanceGain.connect(this.ampEnvelope2.node);
+    this.aenvOutRouteGain = context.createGain();
+    this.ampEnvelope2.node.connect(this.aenvOutRouteGain);
 
     this.structureFade = context.createGain();
     this.structureFade.gain.value = 1;
     this.ampEnvelope.node.connect(this.structureFade);
+    this.aenvOutRouteGain.connect(this.structureFade);
+    this.applyAudioRoute(context.currentTime, false);
 
     this.fxInputGain = context.createGain();
     this.fxInputGain.gain.value = dbToGain(VOICE_FX_INPUT_DB);
@@ -251,9 +289,8 @@ export class ChannelSynth {
     this.cancelPhaseResetsFrom(now);
     this.manualGateActive = false;
     this.baseGateEvents = [{ kind: 'off', time: now }];
-    this.ampEnvelope.preserveCurrent(now);
-    this.pEnv.preserveCurrent(now); this.fEnv.preserveCurrent(now);
-    if (!this.triggerHeld) { this.ampEnvelope.gateOff(now); this.pEnv.gateOff(now); this.fEnv.gateOff(now); }
+    this.preserveEnvelopes(now);
+    if (!this.triggerHeld) this.releaseEnvelopes(now);
     this.emitGate({ kind: 'reset', time: now });
     if (this.triggerHeld) this.emitGate({ kind: 'on', time: now });
   }
@@ -275,8 +312,7 @@ export class ChannelSynth {
     }
     this.cancelPhaseResetsFrom(boundary);
     this.baseGateEvents = this.baseGateEvents.filter(event => event.time < boundary);
-    this.ampEnvelope.preserveCurrent(boundary);
-    this.pEnv.preserveCurrent(boundary); this.fEnv.preserveCurrent(boundary);
+    this.preserveEnvelopes(boundary);
     this.emitGate({ kind: 'cancel', time: boundary });
     this.scheduleGateOff(boundary);
   }
@@ -292,8 +328,7 @@ export class ChannelSynth {
       return;
     }
     this.cancelPhaseResetsFrom(boundary);
-    this.ampEnvelope.preserveCurrent(boundary);
-    this.pEnv.preserveCurrent(boundary); this.fEnv.preserveCurrent(boundary);
+    this.preserveEnvelopes(boundary);
     this.emitGate({ kind: 'cancel', time: boundary });
   }
 
@@ -314,7 +349,7 @@ export class ChannelSynth {
     this.syncPhaseIfSilent(now);
     this.performGateOn(now);
     for (const event of future) {
-      if (event.kind === 'on') this.performGateOn(event.time, event.amp, event.pitch, event.filter);
+      if (event.kind === 'on') this.performGateOn(event.time, event.amp, event.pitch, event.filter, undefined, event.amp2);
     }
   }
 
@@ -330,12 +365,12 @@ export class ChannelSynth {
     this.triggerHeld = false;
     const future = this.futureBaseGates(now);
     const baseOn = this.baseGateIsOn(now);
-    if (baseOn) { this.ampEnvelope.preserveCurrent(now); this.pEnv.preserveCurrent(now); this.fEnv.preserveCurrent(now); }
-    else { this.ampEnvelope.gateOff(now); this.pEnv.gateOff(now); this.fEnv.gateOff(now); }
+    if (baseOn) this.preserveEnvelopes(now);
+    else this.releaseEnvelopes(now);
     this.emitGate({ kind: 'reset', time: now });
     if (baseOn) this.emitGate({ kind: 'on', time: now });
     for (const event of future) {
-      if (event.kind === 'on') this.performGateOn(event.time, event.amp, event.pitch, event.filter);
+      if (event.kind === 'on') this.performGateOn(event.time, event.amp, event.pitch, event.filter, undefined, event.amp2);
       else this.performGateOff(event.time);
     }
   }
@@ -408,13 +443,13 @@ export class ChannelSynth {
 
   private scheduleInputGateOn(time: number): void {
     if (this.controllerGateHeld) {
-      this.rememberBaseGate({ kind: 'on', time, amp: { ...this.settings.ampEnvelope },
+      this.rememberBaseGate({ kind: 'on', time, amp: { ...this.settings.ampEnvelope }, amp2: { ...this.settings.ampEnvelope2 },
         pitch: { ...this.settings.pitchEnvelope }, filter: { ...this.settings.filterEnvelope } });
       return;
     }
     if (!this.burstActive()) { this.scheduleGateOn(time); return; }
     const wasOn = this.baseGateIsOn(Math.max(this.context.currentTime, time - 1e-9));
-    const event: BaseGateEvent = { kind: 'on', time, amp: { ...this.settings.ampEnvelope }, pitch: { ...this.settings.pitchEnvelope }, filter: { ...this.settings.filterEnvelope } };
+    const event: BaseGateEvent = { kind: 'on', time, amp: { ...this.settings.ampEnvelope }, amp2: { ...this.settings.ampEnvelope2 }, pitch: { ...this.settings.pitchEnvelope }, filter: { ...this.settings.filterEnvelope } };
     this.rememberBaseGate(event);
     if (!wasOn && !this.triggerHeld) this.burstScheduler.gateOn(time);
   }
@@ -430,28 +465,30 @@ export class ChannelSynth {
     const amp = { ...this.settings.ampEnvelope };
     const pitch = { ...this.settings.pitchEnvelope };
     this.syncPhaseIfSilent(time);
-    this.performGateOn(time, amp, pitch, this.settings.filterEnvelope, this.ampEnvelope.oneShotEndTime(time, amp));
+    // A Gate-mode AEnv2 releases at the end of each pulse, like PEnv/FEnv.
+    this.performGateOn(time, amp, pitch, this.settings.filterEnvelope, this.ampEnvelope.oneShotEndTime(time, amp), { ...this.settings.ampEnvelope2 });
     this.emitGate({ kind: 'off', time: displayOffTime });
   }
 
   private cancelBurstPulsesFrom(time: number): void {
     const boundary = Math.max(time, this.context.currentTime);
     this.cancelPhaseResetsFrom(boundary);
-    this.ampEnvelope.preserveCurrent(boundary);
-    this.pEnv.preserveCurrent(boundary); this.fEnv.preserveCurrent(boundary);
+    this.preserveEnvelopes(boundary);
     this.emitGate({ kind: 'cancel', time: boundary });
   }
 
   private scheduleGateOn(time: number): void {
-    const event: BaseGateEvent = { kind: 'on', time, amp: { ...this.settings.ampEnvelope }, pitch: { ...this.settings.pitchEnvelope }, filter: { ...this.settings.filterEnvelope } };
+    const event: BaseGateEvent = { kind: 'on', time, amp: { ...this.settings.ampEnvelope }, amp2: { ...this.settings.ampEnvelope2 }, pitch: { ...this.settings.pitchEnvelope }, filter: { ...this.settings.filterEnvelope } };
     this.rememberBaseGate(event);
     if (this.controllerGateHeld) return;
     this.syncPhaseIfSilent(time);
-    this.performGateOn(time, event.amp, event.pitch, event.filter);
+    this.performGateOn(time, event.amp, event.pitch, event.filter, undefined, event.amp2);
   }
 
   private syncPhaseIfSilent(time: number): void {
     if (this.settings.phaseMode !== 'sync' || !this.ampEnvelope.isSilentAt(time)) return;
+    // AEnv OUT keeps OSC2 audible through AEnv2 after AEnv1 has finished.
+    if (this.settings.filter2Route === 'aenv-out' && !this.ampEnvelope2.isSilentAt(time)) return;
     this.osc1.syncPhaseAt(time); this.osc2.syncPhaseAt(time);
   }
 
@@ -460,11 +497,22 @@ export class ChannelSynth {
   }
 
   private performGateOn(time: number, amp = this.settings.ampEnvelope, pitch = this.settings.pitchEnvelope,
-    filter = this.settings.filterEnvelope, ownedPitchOffTime?: number): void {
+    filter = this.settings.filterEnvelope, ownedPitchOffTime?: number, amp2 = this.settings.ampEnvelope2): void {
     this.pEnv.gateOn(time, pitch, ownedPitchOffTime);
     this.fEnv.gateOn(time, filter, ownedPitchOffTime);
     this.ampEnvelope.gateOn(time, amp);
+    this.ampEnvelope2.gateOn(time, amp2, ownedPitchOffTime);
     this.emitGate({ kind: 'on', time });
+  }
+
+  private preserveEnvelopes(time: number): void {
+    this.ampEnvelope.preserveCurrent(time); this.ampEnvelope2.preserveCurrent(time);
+    this.pEnv.preserveCurrent(time); this.fEnv.preserveCurrent(time);
+  }
+
+  private releaseEnvelopes(time: number): void {
+    this.ampEnvelope.gateOff(time); this.ampEnvelope2.gateOff(time);
+    this.pEnv.gateOff(time); this.fEnv.gateOff(time);
   }
 
   private scheduleGateOff(time: number): void {
@@ -474,8 +522,7 @@ export class ChannelSynth {
   }
 
   private performGateOff(time: number): void {
-    this.ampEnvelope.gateOff(time);
-    this.pEnv.gateOff(time); this.fEnv.gateOff(time);
+    this.releaseEnvelopes(time);
     this.emitGate({ kind: 'off', time });
   }
 
@@ -510,7 +557,7 @@ export class ChannelSynth {
     const burst = this.burstActive();
     this.discardFutureBaseGates();
     this.scheduler.stop(true);
-    if (!burst) { this.ampEnvelope.preserveCurrent(this.context.currentTime); this.pEnv.preserveCurrent(this.context.currentTime); this.fEnv.preserveCurrent(this.context.currentTime); }
+    if (!burst) this.preserveEnvelopes(this.context.currentTime);
     this.emitGate({ kind: 'reset', time: this.context.currentTime });
     if (this.triggerHeld || this.controllerGateHeld) this.emitGate({ kind: 'on', time: this.context.currentTime });
   }
@@ -559,6 +606,12 @@ export class ChannelSynth {
     this.ampEnvelope.setSettings(settings);
   }
 
+  /** AEnv2 keeps its own Gate/One-shot mode; BURST still follows AEnv1 alone. */
+  setAmplitudeEnvelope2(settings: AmplitudeEnvelopeSettings): void {
+    this.settings.ampEnvelope2 = { ...settings };
+    this.ampEnvelope2.setSettings(settings);
+  }
+
   setBurstSettings(settings: BurstSettings): void {
     const wasActive = this.burstActive();
     const min = Math.round(clamp(settings.pulseCountMin, LIMITS.burstCount.min, LIMITS.burstCount.max));
@@ -590,6 +643,7 @@ export class ChannelSynth {
       case 'filter2': this.filter2.setEnabled(enabled); break;
       case 'fenv': this.fEnv.setEnabled(enabled); break;
       case 'aenv': this.ampEnvelope.setEnabled(enabled); break;
+      case 'aenv2': this.ampEnvelope2.setEnabled(enabled); break;
     }
   }
 
@@ -621,6 +675,7 @@ export class ChannelSynth {
     await this.requestStructuralChange('osc1', () => {
       this.settings.osc1.sourceType = type;
       this.osc1.setType(type);
+      this.osc1.setPartials(resolvePartials(this.settings.osc1));
       this.applyGlobalDetune(this.context.currentTime);
     });
   }
@@ -630,8 +685,32 @@ export class ChannelSynth {
     await this.requestStructuralChange('osc2', () => {
       this.settings.osc2.sourceType = type;
       this.osc2.setType(type);
+      this.osc2.setPartials(resolvePartials(this.settings.osc2));
       this.applyGlobalDetune(this.context.currentTime);
     });
+  }
+
+  /**
+   * Single/Multi and the Multi definition of one OSC. A change of oscillator count fades as a structural change;
+   * ratio and amplitude edits of the same count glide without restarting phase.
+   */
+  async setOscVoices(oscillator: 1 | 2, voiceMode: OscVoiceMode, multi: MultiOscillatorSettings): Promise<void> {
+    const key = oscillator === 1 ? 'osc1' : 'osc2';
+    const voicesKey = oscillator === 1 ? 'osc1-voices' : 'osc2-voices';
+    const unit = oscillator === 1 ? this.osc1 : this.osc2;
+    const next = { voiceMode: voiceMode === 'multi' ? 'multi' as const : 'single' as const, multi: sanitizeMulti(multi) };
+    const commit = () => {
+      this.settings[key].voiceMode = next.voiceMode;
+      this.settings[key].multi = structuredClone(next.multi);
+      unit.setPartials(resolvePartials(this.settings[key]));
+      this.applyGlobalDetune(this.context.currentTime);
+    };
+    const partials = resolvePartials({ sourceType: this.settings[key].sourceType, ...next });
+    if (!this.pendingStructure.has(key) && !this.pendingStructure.has(voicesKey) && partials.length === unit.partialCount) {
+      commit();
+      return;
+    }
+    await this.requestStructuralChange(voicesKey, commit);
   }
 
   setModMode(mode: ModMode): void {
@@ -644,7 +723,18 @@ export class ChannelSynth {
     const now = this.context.currentTime;
     smoothAudioParam(this.modRouteGain.gain, route === 'mod' ? 1 : 0, now, PARAM_SMOOTH_SEC);
     smoothAudioParam(this.cutoffDepthGain.gain, route === 'filter1-cutoff' ? this.settings.filter1CutoffDepthCent : 0, now, PARAM_SMOOTH_SEC);
+    this.applyAudioRoute(now, true);
     this.applyModMode(now, true);
+  }
+
+  setOscBalance(balance: number): void {
+    this.settings.oscBalance = clamp(balance, LIMITS.oscBalance.min, LIMITS.oscBalance.max);
+    this.applyAudioRoute(this.context.currentTime, true);
+  }
+
+  setFilter2FenvDepth(depth: number): void {
+    this.settings.filter2FenvDepth = clamp(depth, LIMITS.filter2FenvDepth.min, LIMITS.filter2FenvDepth.max);
+    smoothAudioParam(this.fenvFilter2Gain.gain, this.settings.filter2FenvDepth, this.context.currentTime, PARAM_SMOOTH_SEC);
   }
 
   setFilter1CutoffDepthCent(depth: number): void {
@@ -880,6 +970,8 @@ export class ChannelSynth {
     this.stopAutoTrigger();
     await this.setOsc1Type(next.osc1.sourceType);
     await this.setOsc2Type(next.osc2.sourceType);
+    await this.setOscVoices(1, next.osc1.voiceMode, next.osc1.multi);
+    await this.setOscVoices(2, next.osc2.voiceMode, next.osc2.multi);
     this.setOsc1Frequency(next.osc1.baseFrequencyHz);
     this.setOsc2Frequency(next.osc2.baseFrequencyHz);
     this.setOsc1DutyRatio(next.osc1.dutyRatio);
@@ -892,6 +984,8 @@ export class ChannelSynth {
     this.setFmDepthCent(next.mod.fmDepthCent);
     this.setFilter2Route(next.filter2Route);
     this.setFilter1CutoffDepthCent(next.filter1CutoffDepthCent);
+    this.setOscBalance(next.oscBalance);
+    this.setFilter2FenvDepth(next.filter2FenvDepth);
     await this.setFilter1Structure(next.filter1.type, next.filter1.order);
     await this.setFilter2Structure(next.filter2.type, next.filter2.order);
     this.setFilter1Frequency(next.filter1.frequencyHz);
@@ -899,6 +993,7 @@ export class ChannelSynth {
     this.setFilter1Q(next.filter1.q);
     this.setFilter2Q(next.filter2.q);
     this.setAmplitudeEnvelope(next.ampEnvelope);
+    this.setAmplitudeEnvelope2(next.ampEnvelope2);
     this.setFilterEnvelope(next.filterEnvelope);
     this.setAutoTrigger(next.autoTrigger);
     this.setBurstSettings(next.burst);
@@ -913,7 +1008,7 @@ export class ChannelSynth {
     this.scheduler.stop(false);
     this.burstScheduler.cancelFrom(this.context.currentTime);
     this.burstScheduler.stop();
-    this.ampEnvelope.silence();
+    this.ampEnvelope.silence(); this.ampEnvelope2.silence();
     this.fEnv.silence(); this.fEnv.dispose();
     this.osc1.dispose();
     this.osc2.dispose();
@@ -925,7 +1020,9 @@ export class ChannelSynth {
     this.cutoffLimiter.disconnect();
     this.cutoffDepthGain.disconnect();
     this.amGain.disconnect();
-    this.ampEnvelope.node.disconnect();
+    this.ampEnvelope.node.disconnect(); this.ampEnvelope2.node.disconnect();
+    this.osc1BalanceGain.disconnect(); this.osc2BalanceGain.disconnect();
+    this.aenvInRouteGain.disconnect(); this.aenvOutRouteGain.disconnect(); this.fenvFilter2Gain.disconnect();
     this.structureFade.disconnect();
     this.fxInputGain.disconnect();
     this.fx1.dispose();
@@ -957,6 +1054,26 @@ export class ChannelSynth {
       this.amGain.gain.value = offset;
       this.amDepthGain.gain.value = am;
       this.fmDepthGain.gain.value = fm;
+    }
+  }
+
+  /**
+   * Audio routes mix the OSC2 path at the AEnv1 input (AEnv IN) or after AEnv1 through AEnv2 (AEnv OUT).
+   * Balance -1..0..+1 attenuates one side linearly and keeps both at unity in the center;
+   * outside the audio routes the OSC1 path stays at unity and the OSC2 path is silent, as before.
+   */
+  private applyAudioRoute(now: number, smooth: boolean): void {
+    const route = this.settings.filter2Route, balance = this.settings.oscBalance;
+    const audio = route === 'aenv-in' || route === 'aenv-out';
+    const targets: [AudioParam, number][] = [
+      [this.osc1BalanceGain.gain, audio && balance > 0 ? 1 - balance : 1],
+      [this.osc2BalanceGain.gain, balance < 0 ? 1 + balance : 1],
+      [this.aenvInRouteGain.gain, route === 'aenv-in' ? 1 : 0],
+      [this.aenvOutRouteGain.gain, route === 'aenv-out' ? 1 : 0]
+    ];
+    for (const [param, value] of targets) {
+      if (smooth) smoothAudioParam(param, value, now, PARAM_SMOOTH_SEC);
+      else param.value = value;
     }
   }
 

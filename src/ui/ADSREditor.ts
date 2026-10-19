@@ -3,8 +3,8 @@ import type { ADSREnvelopeSettings, EnvelopeCurve, ReleaseTiming } from '../audi
 /** Shared structure and behavior; each instance owns distinct DOM controls. */
 export class ADSREditor {
   private id(phase: string): string { return this.prefix === 'aenv' ? phase : `${this.prefix}-${phase}`; }
-  constructor(private readonly root: HTMLElement, private readonly prefix: 'aenv' | 'fenv') {
-    const name = prefix === 'aenv' ? 'AEnv' : 'FEnv';
+  constructor(private readonly root: HTMLElement, private readonly prefix: 'aenv' | 'aenv2' | 'fenv') {
+    const name = prefix === 'aenv' ? 'AEnv' : prefix === 'aenv2' ? 'AEnv2' : 'FEnv';
     root.innerHTML = `<legend>${name} / ADSR</legend>
       <div class="envelope-mode-layout">
       <div class="adsr-mode-row ${prefix}-mode-row">
@@ -21,7 +21,7 @@ export class ADSREditor {
       <div class="inline-grid four">${['attack', 'decay', 'sustain', 'release'].map(phase =>
         `<label>${phase[0]!.toUpperCase() + phase.slice(1)} <span class="unit">${phase === 'sustain' ? '0..1' : 'ms'}</span>
           <input id="${this.id(phase)}" data-audio-control type="number" value="${phase === 'sustain' ? '.8' : phase === 'attack' ? '5' : phase === 'decay' ? '20' : '30'}" disabled></label>`).join('')}</div>
-      <small>${prefix === 'aenv' ? 'Rate uses the gain 1 to floor interval as the Release reference.' : 'Amount shifts Filter1 cutoff / BPF center. Rate uses normalized 1 to 0 as the Release reference.'} Rate requires a Linear Release curve.</small>`;
+      <small>${prefix !== 'fenv' ? 'Rate uses the gain 1 to floor interval as the Release reference.' : 'Amount shifts Filter1 cutoff / BPF center. Rate uses normalized 1 to 0 as the Release reference.'} Rate requires a Linear Release curve.</small>`;
   }
 
   read(existing: ADSREnvelopeSettings, curve?: EnvelopeCurve, mode?: 'gate' | 'one-shot', timing?: ReleaseTiming): ADSREnvelopeSettings {

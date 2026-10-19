@@ -268,6 +268,12 @@ button:focus-visible / outline */
   --color-numeric-slider-axis-accent-2: #b4c89b;
   /* 対象: .burst-timing-warnings / color */
   --color-burst-timing-warnings-text: #d4b078;
+  /* 対象: OSC Multiの警告（ΣA>1・Nyquist超え・貼付エラー） / color */
+  --color-multi-warning-text: #d4b078;
+  /* 対象: OSC Multi Tableの行番号・見出し / color */
+  --color-multi-row-index-text: #89939c;
+  /* 対象: OSC Multi Tableの行領域 / border */
+  --color-multi-rows-border: #333b42;
   /* 対象: .numeric-slider-axis .slider-scale / color */
   --color-numeric-slider-axis-slider-scale-text: #9aa6ae;
   /* 対象: Smallカード .numeric-slider-axis::after（中央値の縦線） / background */

@@ -71,10 +71,11 @@ test('UI FEnv Amount reaches the live Filter1 detune after first audio resume', 
   }
   await page.locator('[data-editor-card="fenv"] [data-block-toggle="fenv"]').click();
   await page.evaluate(() => {
-    const meter = window.__fenvContext.createAnalyser(); meter.fftSize = 256;
-    // The FEnv connection is last; Sequence and controller Filter controls have separate gains.
-    window.__detuneSources.at(-1).connect(meter);
-    window.__fenvRead = () => { const data = new Float32Array(256); meter.getFloatTimeDomainData(data); return data[128]; };
+    // Meter every Filter detune source; Sequence/controller Filter and FEnv→Filter2 (Depth 0) stay at zero.
+    const meters = [...new Set(window.__detuneSources)].map(source => {
+      const meter = window.__fenvContext.createAnalyser(); meter.fftSize = 256; source.connect(meter); return meter;
+    });
+    window.__fenvRead = () => Math.max(...meters.map(meter => { const data = new Float32Array(256); meter.getFloatTimeDomainData(data); return data[128]; }));
   });
   const gate = await page.locator('#gate-1').boundingBox();
   await page.mouse.move(gate.x + gate.width / 2, gate.y + gate.height / 2); await page.mouse.down();
@@ -168,7 +169,7 @@ test('FEnv shares ADSR controls, keeps independent values and round-trips cards/
   await page.locator('[data-editor-card="fenv"] .editor-card-handle').press('ArrowLeft');
   const download = page.waitForEvent('download'); await page.locator('#save-1').click();
   const value = JSON.parse(await readFile(await (await download).path(), 'utf8'));
-  expect(value.formatVersion).toBe('KOROGI-Lab/timbre-v18');
+  expect(value.formatVersion).toBe('KOROGI-Lab/timbre-v20');
   expect(value.editorLayout).toEqual([['fenv'], ['aenv']]); expect(value.settings.blocksEnabled.fenv).toBe(true);
   expect(value.settings.filterEnvelope).toMatchObject({ amountCent: -2400, attackSec: .045,
     mode: 'one-shot', releaseTiming: 'rate', releaseCurve: 'linear', attackCurve: 'exponential' });

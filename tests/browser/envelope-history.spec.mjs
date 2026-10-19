@@ -25,7 +25,7 @@ for (const scenario of [
       const synth = new ChannelSynth(context, new WhiteNoiseFactory(context), settings, 0);
       const merger = context.createChannelMerger(2);
       synth.pEnv.output.connect(merger, 0, 0);
-      synth.filter1.output.disconnect(synth.ampEnvelope.node);
+      synth.osc1BalanceGain.disconnect(synth.ampEnvelope.node);
       const dc = context.createConstantSource(); dc.connect(synth.ampEnvelope.node); dc.start();
       synth.ampEnvelope.node.connect(merger, 0, 1); merger.connect(context.destination);
       synth.gateOn(0);

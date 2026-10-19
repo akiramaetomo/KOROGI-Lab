@@ -17,6 +17,16 @@ describe('author-edited parameter ranges', () => {
     ranges['fenv-amount'].min = -7200; ranges['fenv-release'].max = 5001;
     expect(() => validateParameterRanges(ranges)).toThrow('fenv-release.max');
   });
+  it('maps AEnv2 controls to the shared AEnv ranges and audits the OSC2 audio route controls', () => {
+    for (const phase of ['attack', 'decay', 'sustain', 'release'] as const) expect(parameterForInput(`aenv2-${phase}`)).toBe(PARAMETER_RANGES[phase]);
+    expect(parameterForInput('osc-balance')).toBe(PARAMETER_RANGES['osc-balance']);
+    expect(parameterForInput('fenv-filter2-depth')).toBe(PARAMETER_RANGES['fenv-filter2-depth']);
+    expect(LIMITS.oscBalance).toEqual({ min: -1, max: 1 }); expect(LIMITS.filter2FenvDepth).toEqual({ min: -1, max: 1 });
+    const ranges = copy(); ranges['fenv-filter2-depth'].max = 101;
+    expect(() => validateParameterRanges(ranges)).toThrow('fenv-filter2-depth.max');
+    ranges['fenv-filter2-depth'].max = 100; ranges['osc-balance'].min = -101;
+    expect(() => validateParameterRanges(ranges)).toThrow('osc-balance.min');
+  });
   it('accepts the current values and a safe PoC tuning change', () => {
     expect(() => validateParameterRanges(PARAMETER_RANGES, 44_100)).not.toThrow();
     expect(() => validateParameterRanges(PARAMETER_RANGES, 48_000)).not.toThrow();

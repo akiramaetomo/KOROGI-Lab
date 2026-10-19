@@ -31,7 +31,7 @@ test('Graph opens settings without focusing an input or select, including SEQUEN
   await openFiles(page); await expect(page.locator('[data-panel="triggering"]')).toHaveClass(/active/);
   const value = await save(page);
   await expect(page.locator('#files-dialog')).toBeHidden(); await expect(page.locator('#active-path')).toHaveText('Viewing: SEQUENCE');
-  expect(value.formatVersion).toBe('KOROGI-Lab/session-v21'); expect(value.channels[0].timbre.formatVersion).toBe('KOROGI-Lab/timbre-v18');
+  expect(value.formatVersion).toBe('KOROGI-Lab/session-v23'); expect(value.channels[0].timbre.formatVersion).toBe('KOROGI-Lab/timbre-v20');
   expect(value.channels[0].timbre.settings).not.toHaveProperty('channelGainDb'); expect(value.channels[0].timbre.settings.blocksEnabled).not.toHaveProperty('channelGain');
   expect(errors).toEqual([]);
 });
@@ -115,7 +115,7 @@ for (const [width, height] of [[1024, 768], [1194, 834], [768, 768]]) {
     expect(commonLength).toBeGreaterThanOrEqual(23.5);
 
     await page.locator('#flow-filter2').click();
-    await page.locator('.filter-route-field [role="radio"]').last().click();
+    await page.locator('.filter-route-field [role="radio"]').nth(1).click();
     await expect(page.locator('path[data-from="filter2"][data-to="filter1"]')).toHaveCount(1);
     const route = await page.locator('.signal-canvas').evaluate(root => {
       const path = root.querySelector('path[data-from="filter2"][data-to="filter1"]');
@@ -123,6 +123,10 @@ for (const [width, height] of [[1024, 768], [1194, 834], [768, 768]]) {
       const filter2 = root.querySelector('#flow-filter2').getBoundingClientRect();
       const filter1 = root.querySelector('#flow-filter1').getBoundingClientRect();
       const mod = root.querySelector('#flow-mod').getBoundingClientRect();
+      const fenv = root.querySelector('#flow-fenv').getBoundingClientRect();
+      const fenvWires = ['filter1', 'filter2'].map(to => root.querySelector(`path[data-from="fenv"][data-to="${to}"]`));
+      const along = element => { const result = []; for (let s = 0; s <= element.getTotalLength(); s += 1) { const p = element.getPointAtLength(s); result.push({ x: p.x + origin.left, y: p.y + origin.top }); } return result; };
+      const fenvPoints = fenvWires.flatMap(along);
       const start = path.getPointAtLength(0);
       const end = path.getPointAtLength(path.getTotalLength());
       const points = [];
@@ -134,15 +138,19 @@ for (const [width, height] of [[1024, 768], [1194, 834], [768, 768]]) {
         d: path.getAttribute('d'),
         start: { x: start.x + origin.left, y: start.y + origin.top },
         end: { x: end.x + origin.left, y: end.y + origin.top },
-        expectedStart: { x: filter2.right, y: filter2.top + filter2.height / 2 },
-        expectedEnd: { x: filter1.left, y: filter1.bottom },
-        crossesMod: points.some(point => point.x > mod.left && point.x < mod.right && point.y > mod.top && point.y < mod.bottom)
+        expectedStart: { x: filter2.left + 16, y: filter2.top },
+        expectedEnd: { x: filter1.left + 16, y: filter1.bottom },
+        crossesMod: points.some(point => point.x > mod.left && point.x < mod.right && point.y > mod.top && point.y < mod.bottom),
+        crossesFenv: points.some(point => point.x > fenv.left && point.x < fenv.right && point.y > fenv.top && point.y < fenv.bottom)
+          || points.some(point => fenvPoints.some(q => Math.hypot(q.x - point.x, q.y - point.y) < 1.5))
       };
     });
-    expect(route.d).toMatch(/^M [\d.]+ [\d.]+ L [\d.]+ [\d.]+$/);
+    expect(route.d).toMatch(/^M [\d.]+ [\d.]+ V [\d.]+ H [\d.]+ V [\d.]+ H [\d.]+ V [\d.]+$/);
     expect(Math.hypot(route.start.x - route.expectedStart.x, route.start.y - route.expectedStart.y)).toBeLessThan(1);
     expect(Math.hypot(route.end.x - route.expectedEnd.x, route.end.y - route.expectedEnd.y)).toBeLessThan(1);
     expect(route.crossesMod).toBe(false);
+    expect(route.crossesFenv).toBe(false);
+    expect(route.crossesFenv).toBe(false);
     await page.screenshot({ path: info.outputPath('filter-cutoff-layout.png') });
   });
 }
@@ -257,12 +265,13 @@ for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080], [1024, 90
         const p = path.getPointAtLength(path.getTotalLength());
         const end = path.dataset.end;
         const lane = path.dataset.from.startsWith('input-') ? Number(path.dataset.from.slice(-1)) : null;
-        const x = end === 'left' || end === 'bottom-left' ? rect.left : end === 'right' ? rect.right : rect.left + rect.width / 2;
+        const x = end === 'left' || end === 'left-low' ? rect.left : end === 'right' ? rect.right
+          : end === 'bottom-left' ? rect.left + 16 : end === 'top-right' ? rect.right - 16 : rect.left + rect.width / 2;
         if (lane !== null) {
           const absoluteY = p.y + origin.top;
           return Math.abs(p.x + origin.left - x) + Math.max(rect.top - absoluteY, absoluteY - rect.bottom, 0);
         }
-        const y = end === 'top' ? rect.top : end === 'bottom' || end === 'bottom-left' ? rect.bottom : rect.top + rect.height / 2;
+        const y = end === 'top' || end === 'top-right' ? rect.top : end === 'bottom' || end === 'bottom-left' ? rect.bottom : rect.top + rect.height / 2 + (end === 'left-low' ? 8 : 0);
         return Math.hypot(p.x + origin.left - x, p.y + origin.top - y);
       });
     });
@@ -308,7 +317,9 @@ for (const [width, height] of [[1366, 768], [1440, 900], [1920, 1080], [1024, 90
     expect(oscillatorStack[0].top).toBeLessThan(oscillatorStack[1].top);
     expect(oscillatorStack[1].top).toBeLessThan(oscillatorStack[2].top);
     expect(oscillatorStack.map(box => Math.round(box.left))).toEqual([Math.round(oscillatorStack[0].left), Math.round(oscillatorStack[0].left), Math.round(oscillatorStack[0].left)]);
-    expect(await page.locator('path[data-from="penv"]').evaluateAll(paths => paths.map(path => path.getTotalLength()).every(length => length < 20))).toBe(true);
+    // PEnv sits in the middle row, so each dashed wire spans exactly one row gap.
+    const rowGap = await page.locator('.voice-grid').evaluate(grid => parseFloat(getComputedStyle(grid).rowGap));
+    expect(await page.locator('path[data-from="penv"]').evaluateAll((paths, gap) => paths.map(path => path.getTotalLength()).every(length => Math.abs(length - gap) < 1), rowGap)).toBe(true);
     await expect(page.locator('path[data-from^="input-"]')).toHaveCount(8);
     const backgrounds = await page.locator('.source-group, .common-space').evaluateAll(nodes => nodes.map(node => getComputedStyle(node).backgroundColor));
     expect(backgrounds[0]).not.toBe(backgrounds[1]); expect(backgrounds.every(color => color.startsWith('rgba('))).toBe(true);

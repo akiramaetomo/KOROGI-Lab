@@ -1,5 +1,6 @@
 import { LIMITS, PARAM_SMOOTH_SEC } from '../constants';
-import type { OscSourceType } from '../types';
+import type { OscPartial, OscSourceType } from '../types';
+import { SINGLE_PARTIALS } from './multiOscillator';
 import { clamp, smoothAudioParam } from './params';
 import { WhiteNoiseFactory } from './WhiteNoiseFactory';
 
@@ -9,8 +10,10 @@ interface PeriodicSourceNodes {
   latest: PeriodicGeneration;
 }
 
+/** One phase epoch: every partial's oscillator starts together, each through its amplitude gain. */
 interface PeriodicGeneration {
-  oscillator: OscillatorNode;
+  oscillators: OscillatorNode[];
+  amplitudes: GainNode[];
   gain: GainNode;
 }
 
@@ -30,9 +33,11 @@ type SourceNodes = PeriodicSourceNodes | NoiseSourceNodes;
 
 /**
  * Stable source slot with a stable output node.
- * For periodic sources:
- *   Oscillator.frequency = base frequency * max(0.1/base, 1 + scaled PEnv)
- *   Oscillator.detune = global detune + external cent signals
+ * For periodic sources, each partial n (Single is one partial with ratio 1, amplitude 1):
+ *   Oscillator_n.frequency = ratio_n * base frequency * max(0.1/base, 1 + scaled PEnv)
+ *   Oscillator_n.detune = global detune + external cent signals
+ *   output = sum of amplitude_n * Oscillator_n
+ * Cent signals and PEnv therefore move every partial while keeping their ratios.
  *
  * PEnv's frequency-ratio trajectory is linear. The shaper only bounds the
  * nonpositive endpoint; it is an identity map elsewhere.
@@ -43,11 +48,18 @@ export class SourceUnit {
   private readonly pEnvFloor: WaveShaperNode;
 
   private baseFrequencyControl: ConstantSourceNode;
+  /** Base * (1 + PEnv), shared by all partials and generations. */
+  private readonly frequencyBus: GainNode;
+  /** Per-partial frequency ratio, shared by all generations. */
+  private ratioGains: GainNode[] = [];
+  private partials: OscPartial[] = SINGLE_PARTIALS.map(item => ({ ...item }));
   private current: SourceNodes | null = null;
   private sourceType: OscSourceType;
   private baseFrequencyHz: number;
   private detuneCent = 0;
   private dutyRatio = 0.5;
+  /** Pulse wave for the current duty, shared by every partial and generation. */
+  private pulseWave: PeriodicWave | null = null;
   private readonly pendingPhaseResets: PendingPhaseReset[] = [];
 
   constructor(
@@ -57,11 +69,14 @@ export class SourceUnit {
     initialType: OscSourceType,
     initialBaseFrequencyHz: number,
     private readonly externalDetuneSignals: readonly AudioNode[] = [],
-    initialDutyRatio = 0.5
+    initialDutyRatio = 0.5,
+    initialPartials: readonly OscPartial[] = SINGLE_PARTIALS
   ) {
     this.output = context.createGain();
     this.output.gain.value = 1;
 
+    this.frequencyBus = context.createGain();
+    this.frequencyBus.gain.value = 1;
     this.baseFrequencyHz = this.limitFrequency(initialBaseFrequencyHz);
     this.baseFrequencyControl = this.createBaseFrequencyControl();
 
@@ -70,6 +85,8 @@ export class SourceUnit {
     this.pEnvFloor = context.createWaveShaper();
     this.updatePitchFloor();
     pEnvShape.connect(this.pEnvFloor).connect(this.pEnvScale);
+    this.pEnvScale.connect(this.frequencyBus);
+    this.setRatioGains(initialPartials);
 
     this.sourceType = initialType;
     this.dutyRatio = clamp(initialDutyRatio, LIMITS.dutyRatio.min, LIMITS.dutyRatio.max);
@@ -84,6 +101,10 @@ export class SourceUnit {
     return this.baseFrequencyHz;
   }
 
+  get partialCount(): number {
+    return this.partials.length;
+  }
+
   isPeriodic(): boolean {
     return this.current?.kind === 'periodic';
   }
@@ -95,6 +116,26 @@ export class SourceUnit {
     this.buildSource(type);
   }
 
+  /**
+   * Replace the partial set. A different count rebuilds the oscillators (callers fade it as a structural change);
+   * the same count glides ratios and amplitudes without restarting phase.
+   */
+  setPartials(partials: readonly OscPartial[], now = this.context.currentTime): void {
+    if (partials.length === 0) throw new Error('A source needs at least one partial.');
+    if (partials.length !== this.partials.length) {
+      this.destroyCurrentSource();
+      this.setRatioGains(partials);
+      this.buildSource(this.sourceType);
+      return;
+    }
+    this.partials = partials.map(item => ({ ...item }));
+    this.partials.forEach((partial, index) => smoothAudioParam(this.ratioGains[index]!.gain, partial.ratio, now, PARAM_SMOOTH_SEC));
+    if (this.current?.kind !== 'periodic') return;
+    for (const generation of this.current.generations) {
+      generation.amplitudes.forEach((gain, index) => smoothAudioParam(gain.gain, this.partials[index]!.amplitude, now, PARAM_SMOOTH_SEC));
+    }
+  }
+
   setEnabled(enabled: boolean): void {
     smoothAudioParam(this.output.gain, enabled ? 1 : 0, this.context.currentTime, PARAM_SMOOTH_SEC);
   }
@@ -103,8 +144,9 @@ export class SourceUnit {
     const next = clamp(ratio, LIMITS.dutyRatio.min, LIMITS.dutyRatio.max);
     if (next === this.dutyRatio) return;
     this.dutyRatio = next;
+    this.pulseWave = null;
     if (this.sourceType === 'square' && this.current?.kind === 'periodic') {
-      for (const generation of this.current.generations) this.applyPulseWave(generation.oscillator);
+      for (const generation of this.current.generations) generation.oscillators.forEach(oscillator => this.applyPulseWave(oscillator));
     }
   }
 
@@ -128,7 +170,9 @@ export class SourceUnit {
   setDetune(cents: number, now = this.context.currentTime): void {
     this.detuneCent = cents;
     if (this.current?.kind === 'periodic') {
-      for (const generation of this.current.generations) smoothAudioParam(generation.oscillator.detune, cents, now, PARAM_SMOOTH_SEC);
+      for (const generation of this.current.generations) {
+        for (const oscillator of generation.oscillators) smoothAudioParam(oscillator.detune, cents, now, PARAM_SMOOTH_SEC);
+      }
     }
   }
 
@@ -175,6 +219,8 @@ export class SourceUnit {
     this.baseFrequencyControl.disconnect();
     this.pEnvScale.disconnect();
     this.pEnvFloor.disconnect();
+    this.frequencyBus.disconnect();
+    this.ratioGains.forEach(gain => gain.disconnect());
     this.output.disconnect();
   }
 
@@ -194,31 +240,51 @@ export class SourceUnit {
   private createBaseFrequencyControl(): ConstantSourceNode {
     const source = this.context.createConstantSource();
     source.offset.value = this.baseFrequencyHz;
+    source.connect(this.frequencyBus);
     source.start();
     return source;
   }
 
   private createPeriodicGeneration(startTime: number): PeriodicGeneration {
-    const oscillator = this.context.createOscillator();
     const type = this.sourceType;
     if (type === 'white-noise') throw new Error('White noise has no periodic phase.');
-    oscillator.type = type;
-    if (type === 'square') this.applyPulseWave(oscillator);
-    oscillator.frequency.value = 0;
-    oscillator.detune.value = this.detuneCent;
     const gain = this.context.createGain(); gain.gain.value = 1;
-    this.baseFrequencyControl.connect(oscillator.frequency);
-    this.pEnvScale.connect(oscillator.frequency);
-    this.externalDetuneSignals.forEach(signal => signal.connect(oscillator.detune));
-    oscillator.connect(gain); gain.connect(this.output);
-    oscillator.start(startTime);
-    return { oscillator, gain };
+    const oscillators: OscillatorNode[] = [];
+    const amplitudes: GainNode[] = [];
+    this.partials.forEach((partial, index) => {
+      const oscillator = this.context.createOscillator();
+      oscillator.type = type;
+      if (type === 'square') this.applyPulseWave(oscillator);
+      oscillator.frequency.value = 0;
+      oscillator.detune.value = this.detuneCent;
+      const amplitude = this.context.createGain(); amplitude.gain.value = partial.amplitude;
+      this.ratioGains[index]!.connect(oscillator.frequency);
+      this.externalDetuneSignals.forEach(signal => signal.connect(oscillator.detune));
+      oscillator.connect(amplitude); amplitude.connect(gain);
+      oscillators.push(oscillator); amplitudes.push(amplitude);
+    });
+    gain.connect(this.output);
+    // All partials share one start time, so SYNC restarts every one at phase zero together.
+    oscillators.forEach(oscillator => oscillator.start(startTime));
+    return { oscillators, amplitudes, gain };
+  }
+
+  private setRatioGains(partials: readonly OscPartial[]): void {
+    this.ratioGains.forEach(gain => gain.disconnect());
+    this.partials = partials.map(item => ({ ...item }));
+    this.ratioGains = this.partials.map(partial => {
+      const gain = this.context.createGain();
+      gain.gain.value = partial.ratio;
+      this.frequencyBus.connect(gain);
+      return gain;
+    });
   }
 
   private applyPulseWave(oscillator: OscillatorNode): void {
     // Fourier series of +1 for fraction D of a cycle, -1 otherwise.
     // Remove DC (2D-1), retaining AC amplitude without peak normalization.
     // PeriodicWave provides browser band-limiting and keeps oscillator phase.
+    if (this.pulseWave) { oscillator.setPeriodicWave(this.pulseWave); return; }
     const real = new Float32Array(2049);
     const imag = new Float32Array(2049);
     for (let harmonic = 1; harmonic < real.length; harmonic += 1) {
@@ -226,7 +292,8 @@ export class SourceUnit {
       real[harmonic] = 2 * Math.sin(angle) / (Math.PI * harmonic);
       imag[harmonic] = 2 * (1 - Math.cos(angle)) / (Math.PI * harmonic);
     }
-    oscillator.setPeriodicWave(this.context.createPeriodicWave(real, imag, { disableNormalization: true }));
+    this.pulseWave = this.context.createPeriodicWave(real, imag, { disableNormalization: true });
+    oscillator.setPeriodicWave(this.pulseWave);
   }
 
   private destroyCurrentSource(): void {
@@ -254,13 +321,16 @@ export class SourceUnit {
 
   private destroyGeneration(generation: PeriodicGeneration): void {
     if (this.current?.kind === 'periodic') this.current.generations.delete(generation);
-    try { this.baseFrequencyControl.disconnect(generation.oscillator.frequency); } catch { /* absent */ }
-    try { this.pEnvScale.disconnect(generation.oscillator.frequency); } catch { /* absent */ }
-    for (const signal of this.externalDetuneSignals) {
-      try { signal.disconnect(generation.oscillator.detune); } catch { /* absent */ }
-    }
-    generation.oscillator.disconnect(); generation.gain.disconnect();
-    try { generation.oscillator.stop(); } catch { /* already stopped */ }
+    generation.oscillators.forEach((oscillator, index) => {
+      try { this.ratioGains[index]?.disconnect(oscillator.frequency); } catch { /* absent */ }
+      for (const signal of this.externalDetuneSignals) {
+        try { signal.disconnect(oscillator.detune); } catch { /* absent */ }
+      }
+      oscillator.disconnect();
+      try { oscillator.stop(); } catch { /* already stopped */ }
+    });
+    generation.amplitudes.forEach(gain => gain.disconnect());
+    generation.gain.disconnect();
   }
 
   private limitFrequency(hz: number): number {

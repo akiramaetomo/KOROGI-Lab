@@ -95,7 +95,7 @@ class ChannelStrip {
     equalPower(this.mix.balance).forEach((gain, i) => smoothAudioParam(this.sends[i]!.gain, gain, now, PARAM_SMOOTH_SEC));
   }
   timbre(): TimbreDocument {
-    return { formatVersion: 'KOROGI-Lab/timbre-v18', editorLayout: structuredClone(this.editorLayout), name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(),
+    return { formatVersion: 'KOROGI-Lab/timbre-v20', editorLayout: structuredClone(this.editorLayout), name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(),
       gatePatterns: structuredClone(this.gatePatterns), pitchPatterns: structuredClone(this.pitchPatterns), patternBars: [...this.patternBars], sequence: structuredClone(this.sequence) };
   }
   fadeOut(): void {
@@ -148,7 +148,7 @@ export class AudioEngine {
     this.output.threshold.value = -3; this.output.knee.value = 0; this.output.ratio.value = 20;
     this.output.attack.value = .003; this.output.release.value = .1;
     const session = normalizeSession(initial ?? {
-      formatVersion: 'KOROGI-Lab/session-v21', name: 'Untitled', savedAt: '', channels: [{ id: '1', ...DEFAULT_CHANNEL_MIX, timbre: defaultTimbre() }],
+      formatVersion: 'KOROGI-Lab/session-v23', name: 'Untitled', savedAt: '', channels: [{ id: '1', ...DEFAULT_CHANNEL_MIX, timbre: defaultTimbre() }],
       near: defaultBus(), far: defaultBus(), crossfade: P.crossfade.defaultValue / 100, masterGainDb: P['master-gain'].defaultValue, masterMuted: false, song: defaultSongSettings()
     });
     this.graph = this.prepareGraph(session);
@@ -312,7 +312,7 @@ export class AudioEngine {
   setMasterMuted(muted: boolean): void { this.assertReady(); this.masterMuted = muted; smoothAudioParam(this.preLimiterOutput.gain, muted ? 0 : 1, this.context.currentTime, PARAM_SMOOTH_SEC); }
   isMasterMuted(): boolean { return this.masterMuted; }
   createSession(name: string): SessionDocument {
-    return { formatVersion: 'KOROGI-Lab/session-v21', name: name.trim() || 'Untitled', savedAt: new Date().toISOString(),
+    return { formatVersion: 'KOROGI-Lab/session-v23', name: name.trim() || 'Untitled', savedAt: new Date().toISOString(),
       channels: this.graph.slots.map(slot => ({ id: slot.id, ...this.getChannelMix(slot.id), timbre: this.withStripTimbre(slot.id) })),
       near: this.getBusSettings('near'), far: this.getBusSettings('far'), crossfade: this.crossfade, masterGainDb: this.masterGainDb, masterMuted: this.masterMuted, song: this.getSongSettings() };
   }

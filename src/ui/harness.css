@@ -578,7 +578,8 @@ button:focus-visible {
 .voice-heading { display: flex; justify-content: space-between; gap: .5rem; align-items: baseline; }
 .voice-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .voice-heading span { color: var(--color-voice-heading-text); font-size: .75rem; white-space: nowrap; }
-.voice-grid { --timbre-node-width: 96px; position: relative; display: grid; grid-template-columns: repeat(5, var(--timbre-node-width)); gap: 26px 24px; padding: 68px 0 4px; align-items: start; }
+/* Three rows: 1系 / controls (PEnv, FEnv, BURST) / 2系; FILTER2 and AEnv2 sit under FILTER1 and AEnv. */
+.voice-grid { --timbre-node-width: 96px; --timbre-row-gap: 39px; position: relative; display: grid; grid-template-columns: repeat(6, var(--timbre-node-width)); gap: var(--timbre-row-gap) 24px; padding: 14px 0 4px; align-items: start; }
 .signal-block { width: 100%; }
 .signal-block .flow-node { width: 100%; }
 .voice-grid .signal-block, .bus-group .signal-block { position: relative; }
@@ -596,16 +597,20 @@ button:focus-visible {
 .signal-canvas .diagram-gain.active, .signal-canvas .output-node.active { background: var(--color-signal-canvas-flow-node-active-enabled-bypassed-background); }
 .signal-canvas .flow-node.enabled.active { border-color: var(--color-signal-canvas-flow-node-enabled-active-border); background: var(--color-signal-canvas-flow-node-enabled-active-background); color: var(--color-signal-canvas-flow-node-enabled-active-text); }
 .signal-canvas .flow-node.active.bypassed { opacity: 1; color: var(--color-signal-canvas-flow-node-active-bypassed-text); background: var(--color-signal-canvas-flow-node-active-bypassed-background); }
-.osc-control-stack { grid-column: 1; grid-row: 1 / 3; display: grid; gap: 19px; align-content: start; width: var(--timbre-node-width); }
+.osc-control-stack, .aenv-control-stack { display: contents; }
+.voice-grid [data-flow-block-wrapper="osc1"] { grid-column: 1; grid-row: 1; }
+.voice-grid [data-flow-block-wrapper="penv"] { grid-column: 1; grid-row: 2; }
+.voice-grid [data-flow-block-wrapper="osc2"] { grid-column: 1; grid-row: 3; }
+.voice-grid [data-flow-block-wrapper="aenv"] { grid-column: 4; grid-row: 1; }
+.voice-grid .burst-signal-block { grid-column: 4; grid-row: 2; }
 .voice-grid [data-flow-block-wrapper="mod"] { grid-column: 2; grid-row: 1; }
 .voice-grid [data-flow-block-wrapper="filter1"] { grid-column: 3; grid-row: 1; }
 .voice-grid [data-flow-block-wrapper="fx1"] { grid-column: 5; grid-row: 1; }
-.voice-grid [data-flow-block-wrapper="filter2"] { grid-column: 2; grid-row: 2; }
-.aenv-control-stack { display: grid; gap: 12px; width: var(--timbre-node-width); }
+.voice-grid [data-flow-block-wrapper="filter2"] { grid-column: 3; grid-row: 3; }
 .fx1-common-output { grid-column: 6; grid-row: 1; align-self: start; position: relative; z-index: 1; width: max-content; margin-top: 9px; margin-left: 6px; color: var(--color-fx1-common-output-text); white-space: nowrap; font-size: max(.8rem, 10.4px); }
 .fx1-common-output[hidden] { display: none; }
-.voice-grid #flow-detune { grid-column: 4; grid-row: 2; width: var(--timbre-node-width); min-height: 30px; }
-.voice-grid #trigger-menu { grid-column: 5; grid-row: 2; width: var(--timbre-node-width); min-height: 30px; align-self: start; font-weight: 700; border-color: var(--color-voice-grid-trigger-menu-border); background: var(--color-voice-grid-trigger-menu-background); color: var(--color-voice-grid-trigger-menu-text); }
+.voice-grid #flow-detune { grid-column: 5; grid-row: 3; width: var(--timbre-node-width); min-height: 30px; }
+.voice-grid #trigger-menu { grid-column: 6; grid-row: 3; width: var(--timbre-node-width); min-height: 30px; align-self: start; font-weight: 700; border-color: var(--color-voice-grid-trigger-menu-border); background: var(--color-voice-grid-trigger-menu-background); color: var(--color-voice-grid-trigger-menu-text); }
 .voice-grid #trigger-menu:hover:not(:disabled) { border-color: var(--color-voice-grid-trigger-menu-hover-disabled-border); background: var(--color-voice-grid-trigger-menu-hover-disabled-background); color: var(--color-voice-grid-trigger-menu-hover-disabled-text); }
 .voice-grid #trigger-menu.active { border-color: var(--color-voice-grid-trigger-menu-active-border); background: var(--color-voice-grid-trigger-menu-active-background); color: var(--color-voice-grid-trigger-menu-active-text); }
 .burst-editor { display: grid; gap: .7rem; }
@@ -646,7 +651,7 @@ button:focus-visible {
 fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border); }
 @media (max-width: 1100px) {
   .voice-heading span { display: none; }
-  .voice-grid { grid-template-columns: repeat(5, var(--timbre-node-width)); gap: 26px 18px; }
+  .voice-grid { grid-template-columns: repeat(6, var(--timbre-node-width)); column-gap: 18px; }
   .common-grid { grid-template-columns: 28px minmax(0, 1fr) 144px; gap: 28px; }
   .bus-group { grid-template-columns: 100px minmax(60px, 1fr) minmax(60px, 1fr) 110px; gap: 14px; }
   .output-chain { grid-template-columns: 144px 84px; gap: 24px; }
@@ -1124,6 +1129,23 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .sequence-perform .pitch-performance { grid-template-columns: 80px minmax(220px, 1fr) auto auto auto; column-gap: .25rem; border-top: 2px solid var(--color-sequence-perform-pitch-performance-border); padding-top: .5rem; }
 [data-panel="modulation"] .control-columns.three { grid-template-columns: minmax(0, 1.25fr) minmax(0, .8fr) minmax(0, 1.7fr); }
 .source-phase-row { display: flex; align-items: center; gap: 1rem; margin: 0 0 .5rem; }
+/* OSC Single/Multi: one OSC card holds the Multi definition; only the Table rows scroll. */
+.osc-voice-mode, .multi-editor .choice-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: .55rem; margin-top: .5rem; }
+.multi-editor[hidden], .multi-spread[hidden], .multi-table[hidden] { display: none !important; }
+.multi-editor { display: grid; gap: .5rem; }
+.multi-spread { display: grid; gap: .55rem; }
+.multi-spread .multi-to-table { justify-self: start; }
+.multi-table { display: grid; gap: .4rem; }
+.multi-row { display: grid; grid-template-columns: 1.6rem minmax(0, 1.3fr) minmax(0, 1fr) 2rem; gap: .35rem; align-items: center; }
+.multi-row > span { color: var(--color-multi-row-index-text); font-size: .8rem; text-align: right; }
+.multi-row-head > span { text-align: left; }
+.multi-row input { min-width: 0; width: 100%; font-variant-numeric: tabular-nums; }
+.multi-row button { min-width: 0; padding-inline: 0; }
+.multi-rows { display: grid; gap: .3rem; max-height: 15.5rem; overflow-y: auto; overscroll-behavior: contain; border-block: 1px solid var(--color-multi-rows-border); padding-block: .3rem; }
+.multi-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+.multi-sum { margin-left: auto; font-size: .87rem; font-variant-numeric: tabular-nums; }
+.multi-sum.warning, .multi-status.warning { color: var(--color-multi-warning-text); }
+.multi-paste { width: 100%; min-height: 4.2rem; resize: vertical; font: inherit; font-size: .85rem; border: 1px solid var(--color-input-border); border-radius: 3px; padding: .3rem .4rem; background: var(--color-input-background); color: inherit; }
 .source-phase-row .choice-field { min-width: 220px; }
 .source-phase-row > span { color: var(--color-source-phase-row-text); font-size: .8rem; }
 [data-panel="sources"].function-panel.active { grid-template-rows: auto auto minmax(min-content, 1fr); align-content: start; }
@@ -1157,8 +1179,7 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
   .editor-column .control-columns.three.trigger-layout { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-height: 800px) {
-  .voice-grid { gap: 14px 18px; padding: 8px 0 2px; }
-  .osc-control-stack { gap: 13px; }
+  .voice-grid { --timbre-row-gap: 21px; column-gap: 18px; padding: 8px 0 2px; }
   .common-heading { margin-bottom: 4px; }
   .common-space { padding-block: .3rem; }
   .function-panel.active { gap: .25rem; padding: .3rem .45rem; }
@@ -1569,3 +1590,4 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .penv-shape-guide .rate-marker { fill: var(--color-penv-rate-marker-fill); }
 
 .voice-grid [data-flow-block-wrapper="fenv"] { grid-column: 3; grid-row: 2; }
+.voice-grid [data-flow-block-wrapper="aenv2"] { grid-column: 4; grid-row: 3; }

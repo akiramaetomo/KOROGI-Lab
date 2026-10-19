@@ -1,4 +1,5 @@
-import type { ChannelSettings, EffectSlotSettings } from './types';
+import type { ChannelSettings, EffectSlotSettings, MultiOscillatorSettings } from './types';
+import { spreadPartials } from './dsp/multiOscillator';
 import { PARAMETER_RANGES as P, parameterValueBounds } from '../config/parameterRanges';
 
 export const PARAM_SMOOTH_SEC = 0.010;
@@ -9,6 +10,10 @@ export const LIMITS = {
   osc1Hz: parameterValueBounds(P['osc1-frequency']),
   osc2Hz: parameterValueBounds(P['osc2-frequency']),
   dutyRatio: { min: P['osc1-duty'].min / 100, max: P['osc1-duty'].max / 100 },
+  multiCount: { min: P['osc-multi-count'].min, max: P['osc-multi-count'].max },
+  multiSpreadCent: { min: P['osc-multi-spread'].min, max: P['osc-multi-spread'].max },
+  multiRatio: { min: P['osc-multi-ratio'].min, max: P['osc-multi-ratio'].max },
+  multiAmplitude: { min: P['osc-multi-amplitude'].min, max: P['osc-multi-amplitude'].max },
   pitchLevel: { min: P['penv-start'].min / 100, max: P['penv-start'].max / 100 },
   pitchTimeSec: { min: P['penv-attack-time'].min / 1000, max: P['penv-attack-time'].max / 1000 },
   pitchScale: { min: P['penv-scale'].min, max: P['penv-scale'].max },
@@ -18,6 +23,8 @@ export const LIMITS = {
   filterHz: { min: P['filter-frequency'].min, max: P['filter-frequency'].max },
   filterQ: { min: P['filter-q'].min, max: P['filter-q'].max },
   filter1CutoffDepthCent: { min: P['filter1-cutoff-depth'].min, max: P['filter1-cutoff-depth'].max },
+  oscBalance: { min: P['osc-balance'].min / 100, max: P['osc-balance'].max / 100 },
+  filter2FenvDepth: { min: P['fenv-filter2-depth'].min / 100, max: P['fenv-filter2-depth'].max / 100 },
   envelopeSec: { min: P.attack.min / 1000, max: P.attack.max / 1000 },
   filterEnvelopeAmount: { min: P['fenv-amount'].min, max: P['fenv-amount'].max },
   filterEnvelopeAttack: { min: P['fenv-attack'].min / 1000, max: P['fenv-attack'].max / 1000 },
@@ -59,11 +66,19 @@ export const DEFAULT_EFFECT_SLOT_SETTINGS: EffectSlotSettings = {
   reverbWet: P['fx-reverb-wet'].defaultValue / 100
 };
 
+/** New Multi settings: a Spread of the default count, and a Table holding the same partials for editing. */
+export function defaultMultiSettings(): MultiOscillatorSettings {
+  const spread = { count: P['osc-multi-count'].defaultValue, spreadCent: P['osc-multi-spread'].defaultValue };
+  return { definition: 'spread', spread, partials: spreadPartials(spread.count, spread.spreadCent) };
+}
+
 export const DEFAULT_CHANNEL_SETTINGS: ChannelSettings = {
-  blocksEnabled: { osc1: true, osc2: true, penv: true, mod: false, filter1: false, filter2: false, aenv: true, fenv: false },
+  blocksEnabled: { osc1: true, osc2: true, penv: true, mod: false, filter1: false, filter2: false, aenv: true, aenv2: true, fenv: false },
   phaseMode: 'sync',
-  osc1: { sourceType: 'sine', baseFrequencyHz: P['osc1-frequency'].defaultValue, dutyRatio: P['osc1-duty'].defaultValue / 100 },
-  osc2: { sourceType: 'sine', baseFrequencyHz: P['osc2-frequency'].defaultValue, dutyRatio: P['osc2-duty'].defaultValue / 100 },
+  osc1: { sourceType: 'sine', baseFrequencyHz: P['osc1-frequency'].defaultValue, dutyRatio: P['osc1-duty'].defaultValue / 100,
+    voiceMode: 'single', multi: defaultMultiSettings() },
+  osc2: { sourceType: 'sine', baseFrequencyHz: P['osc2-frequency'].defaultValue, dutyRatio: P['osc2-duty'].defaultValue / 100,
+    voiceMode: 'single', multi: defaultMultiSettings() },
   pitchEnvelope: { mode: 'gate', curve: 'linear', start: 0, attack: 0, sustain: 0, release: 0,
     attackSec: 0, decaySec: .03, releaseSec: .03, scale: 1, releaseTiming: 'time' },
   mod: { mode: 'am', amDepth: P['am-depth'].defaultValue / 100, amOffset: P['am-offset'].defaultValue, fmDepthCent: P['fm-depth'].defaultValue },
@@ -71,7 +86,11 @@ export const DEFAULT_CHANNEL_SETTINGS: ChannelSettings = {
   filter2: { type: 'lowpass', order: 2, frequencyHz: P['filter-frequency'].defaultValue, q: P['filter-q'].defaultValue },
   filter2Route: 'mod',
   filter1CutoffDepthCent: P['filter1-cutoff-depth'].defaultValue,
+  oscBalance: P['osc-balance'].defaultValue / 100,
+  filter2FenvDepth: P['fenv-filter2-depth'].defaultValue / 100,
   ampEnvelope: { attackSec: P.attack.defaultValue / 1000, decaySec: P.decay.defaultValue / 1000, sustain: P.sustain.defaultValue, releaseSec: P.release.defaultValue / 1000,
+    attackCurve: 'exponential', decayCurve: 'exponential', releaseCurve: 'exponential', releaseTiming: 'time', mode: 'gate' },
+  ampEnvelope2: { attackSec: P.attack.defaultValue / 1000, decaySec: P.decay.defaultValue / 1000, sustain: P.sustain.defaultValue, releaseSec: P.release.defaultValue / 1000,
     attackCurve: 'exponential', decayCurve: 'exponential', releaseCurve: 'exponential', releaseTiming: 'time', mode: 'gate' },
   filterEnvelope: { attackSec: P['fenv-attack'].defaultValue / 1000, decaySec: P['fenv-decay'].defaultValue / 1000,
     sustain: P['fenv-sustain'].defaultValue, releaseSec: P['fenv-release'].defaultValue / 1000, amountCent: P['fenv-amount'].defaultValue, amountWide: false,

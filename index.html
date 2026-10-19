@@ -80,6 +80,7 @@
               <button id="flow-fx1" class="flow-node" data-flow-block="fx1" data-panel-target="voice-effects" data-focus-target="#fx1-type">FX1</button>
               <span id="flow-fx1-common" class="fx1-common-output">COMMON SPACE</span>
               <button id="flow-filter2" class="flow-node" data-flow-block="filter2" data-panel-target="filters" data-focus-target="#filter2-type">FILTER2</button>
+              <button id="flow-aenv2" class="flow-node" data-flow-block="aenv2" data-panel-target="amp2" data-focus-target="#aenv2-attack">AEnv2</button>
               <button id="flow-detune" class="flow-node" data-panel-target="output" data-focus-target="#detune-range">DETUNE</button>
               <button id="trigger-menu" class="flow-node trigger-node" data-panel-target="triggering" data-focus-target="#ton">SEQUENCE</button>
             </div>
@@ -153,6 +154,34 @@
                 </label>
                 </div>
                 <div class="readout-line" id="osc1-detune-readout">Global detune: -- cent → -- Hz</div>
+                <div class="choice-field osc-voice-mode"><span>Voices</span><select id="osc1-voice-mode" data-audio-control hidden disabled><option value="single">Single</option><option value="multi">Multi</option></select></div>
+                <div class="multi-editor" id="osc1-multi" data-osc="osc1" hidden>
+                  <div class="choice-field"><span>Define</span><select id="osc1-multi-definition" data-audio-control hidden disabled><option value="spread">Spread</option><option value="table">Table</option></select></div>
+                  <div class="multi-spread" id="osc1-multi-spread-controls">
+                    <label>Count
+                      <input id="osc1-multi-count" data-audio-control type="number" min="1" max="16" step="1" value="7" disabled />
+                    </label>
+                    <label>Spread ± <span class="unit">cent</span>
+                      <input id="osc1-multi-spread" data-audio-control type="number" min="0" max="1200" step="0.1" value="25" disabled />
+                    </label>
+                    <button type="button" class="multi-to-table" id="osc1-multi-to-table" data-audio-control disabled>Edit as Table</button>
+                  </div>
+                  <div class="multi-table" id="osc1-multi-table-controls">
+                    <div class="multi-row multi-row-head" aria-hidden="true"><span>#</span><span>Hz</span><span>Amplitude</span><span></span></div>
+                    <div class="multi-rows" id="osc1-multi-rows" role="group" aria-label="OSC1 Multi oscillators"></div>
+                    <div class="multi-actions">
+                      <button type="button" id="osc1-multi-add" data-audio-control disabled>+ Row</button>
+                      <button type="button" id="osc1-multi-normalize" data-audio-control disabled>Normalize</button>
+                      <span class="multi-sum" id="osc1-multi-sum">ΣA --</span>
+                    </div>
+                    <textarea class="multi-paste" id="osc1-multi-paste" data-audio-control rows="3" spellcheck="false" placeholder="Paste rows: Hz [Amplitude] (tab, comma, space or Markdown table)" disabled></textarea>
+                    <div class="multi-actions">
+                      <button type="button" id="osc1-multi-apply-paste" data-audio-control disabled>Apply Paste</button>
+                      <button type="button" id="osc1-multi-copy" data-audio-control disabled>Copy Table</button>
+                    </div>
+                  </div>
+                  <div class="readout-line multi-status" id="osc1-multi-status" aria-live="polite"></div>
+                </div>
               </fieldset>
 
               <fieldset>
@@ -175,6 +204,34 @@
                 </label>
                 </div>
                 <div class="readout-line" id="osc2-detune-readout">Global detune: -- cent → -- Hz</div>
+                <div class="choice-field osc-voice-mode"><span>Voices</span><select id="osc2-voice-mode" data-audio-control hidden disabled><option value="single">Single</option><option value="multi">Multi</option></select></div>
+                <div class="multi-editor" id="osc2-multi" data-osc="osc2" hidden>
+                  <div class="choice-field"><span>Define</span><select id="osc2-multi-definition" data-audio-control hidden disabled><option value="spread">Spread</option><option value="table">Table</option></select></div>
+                  <div class="multi-spread" id="osc2-multi-spread-controls">
+                    <label>Count
+                      <input id="osc2-multi-count" data-audio-control type="number" min="1" max="16" step="1" value="7" disabled />
+                    </label>
+                    <label>Spread ± <span class="unit">cent</span>
+                      <input id="osc2-multi-spread" data-audio-control type="number" min="0" max="1200" step="0.1" value="25" disabled />
+                    </label>
+                    <button type="button" class="multi-to-table" id="osc2-multi-to-table" data-audio-control disabled>Edit as Table</button>
+                  </div>
+                  <div class="multi-table" id="osc2-multi-table-controls">
+                    <div class="multi-row multi-row-head" aria-hidden="true"><span>#</span><span>Hz</span><span>Amplitude</span><span></span></div>
+                    <div class="multi-rows" id="osc2-multi-rows" role="group" aria-label="OSC2 Multi oscillators"></div>
+                    <div class="multi-actions">
+                      <button type="button" id="osc2-multi-add" data-audio-control disabled>+ Row</button>
+                      <button type="button" id="osc2-multi-normalize" data-audio-control disabled>Normalize</button>
+                      <span class="multi-sum" id="osc2-multi-sum">ΣA --</span>
+                    </div>
+                    <textarea class="multi-paste" id="osc2-multi-paste" data-audio-control rows="3" spellcheck="false" placeholder="Paste rows: Hz [Amplitude] (tab, comma, space or Markdown table)" disabled></textarea>
+                    <div class="multi-actions">
+                      <button type="button" id="osc2-multi-apply-paste" data-audio-control disabled>Apply Paste</button>
+                      <button type="button" id="osc2-multi-copy" data-audio-control disabled>Copy Table</button>
+                    </div>
+                  </div>
+                  <div class="readout-line multi-status" id="osc2-multi-status" aria-live="polite"></div>
+                </div>
               </fieldset>
             </div>
           </section>
@@ -293,10 +350,18 @@
                   <select id="filter2-route" data-audio-control hidden disabled>
                     <option value="mod">MOD</option>
                     <option value="filter1-cutoff">F1 CUTOFF</option>
+                    <option value="aenv-in">AEnv IN</option>
+                    <option value="aenv-out">AEnv OUT</option>
                   </select>
                 </div>
                 <label class="cutoff-depth-control" hidden>Cutoff Depth <span class="unit">cent</span>
                   <input id="filter1-cutoff-depth" data-audio-control type="number" min="0" max="4800" step="1" value="1200" disabled />
+                </label>
+                <label class="osc-balance-control" hidden>Balance <span class="unit">OSC1 ↔ OSC2</span>
+                  <input id="osc-balance" data-audio-control type="number" value="0" disabled />
+                </label>
+                <label class="fenv-filter2-depth-control">FEnv Depth <span class="unit">% of Amount</span>
+                  <input id="fenv-filter2-depth" data-audio-control type="number" value="0" disabled />
                 </label>
               </fieldset>
             </div>
@@ -308,6 +373,14 @@
               <span class="path-label">FILTER1 → AEnv → Channel Gain</span>
             </div>
             <fieldset class="wide-fieldset" data-adsr="aenv"></fieldset>
+          </section>
+
+          <section class="function-panel" data-panel="amp2">
+            <div class="panel-heading">
+              <div><strong>AMPLITUDE ENVELOPE 2</strong><span>OSC2 path envelope. Sounds when FILTER2 Destination is AEnv OUT; BURST pulses also trigger it.</span></div>
+              <span class="path-label">FILTER2 → AEnv2 → FX1</span>
+            </div>
+            <fieldset class="wide-fieldset" data-adsr="aenv2"></fieldset>
           </section>
 
           <section class="function-panel" data-panel="fenv">
@@ -575,7 +648,7 @@
           <legend>Status</legend>
           <div id="files-status" class="files-status">No patch operation yet.</div>
         </fieldset>
-        <div class="readout-line">Use Load and Save in TIMBRES for individual timbres. Session files include all eight slots, independent Gate and Pitch Patterns, Song settings, and COMMON SPACE. New files use timbre-v18 / session-v21; supported older files can be loaded. Legacy PEnv Amount/Time is ignored on import. The header shows the latest result; tap it to open this dialog.</div>
+        <div class="readout-line">Use Load and Save in TIMBRES for individual timbres. Session files include all eight slots, independent Gate and Pitch Patterns, Song settings, and COMMON SPACE. New files use timbre-v20 / session-v23; supported older files can be loaded. Legacy PEnv Amount/Time is ignored on import. The header shows the latest result; tap it to open this dialog.</div>
       </dialog>
     </main>
     <script type="module" src="/src/bootstrap.ts"></script>

@@ -1,8 +1,8 @@
-# KOROGI-Lab 0.4.0-rc.1
+# KOROGI-Lab 0.5.0-rc.1
 
 KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するWeb Audio研究用アプリです。8つの独立したTimbreを、共通のNear／Far空間処理へ送って重ねられます。
 
-現在の公開候補は **0.4.0-rc.1** です。実機操作・聴感の受入前のため、安定版とは区別します。[GitHub PagesでKOROGI-Labを開く](https://akiramaetomo.github.io/KOROGI-Lab/)。
+現在の公開候補は **0.5.0-rc.1** です。実機操作・聴感の受入前のため、安定版とは区別します。[GitHub PagesでKOROGI-Labを開く](https://akiramaetomo.github.io/KOROGI-Lab/)。
 
 ## 特徴
 - 秋の虫の鳴き声に寄せた目的指向のシンセサイザ
@@ -22,6 +22,8 @@ KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するW
 ## 主な機能
 
 - 8 Timbres、各2 OSC、PEnv、MOD、2 Filter、AEnv、BURST、FX1
+- OSC1／2のSingle／Multi（同じ波形を1～16基加算。Spread（Count・±cent）またはHz・振幅の表で定義し、表の貼付・コピーが可能）
+- OSC2系（OSC2→FILTER2）の行き先をMOD／F1 CUTOFF／AEnv IN／AEnv OUTから選択。AEnv IN／OUTでは2系統の音色を1つのTimbre内で重ね、AEnv OUTでは独立したAEnv2を使う。1系／2系のBalanceと、FEnvのFilter2への掛かり具合（FEnv Depth）
 - TimbreごとのL/R Pan、Level、Mute、Near／Far送信
 - 共通Near／Farバス、各FX2／FX3、Bus Gain、Output Balance、Master、Limiter
 - Manual／Auto／Pattern 1～8のGate・Pitch再生と記録
@@ -33,7 +35,7 @@ KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するW
 - SEQUENCEのSeparate（独立GateボタンとPitch専用スライダ）。録音中もPitch設定とSeparateを変更可能
 - FILESダイアログとヘッダーのステータス行
 - エディットカードを1列に最大3枚まで縦積み、OFFのカードはグレー表示
-- Timbre保存 `timbre-v18`、Session保存 `session-v21`。対応する旧形式は読込時に正規化。新形式は0.3.0-rc.2以前では読込めません
+- Timbre保存 `timbre-v20`、Session保存 `session-v23`。対応する旧形式は読込時に正規化（音は変わりません）。新形式は0.4.0-rc.1以前では読込めません
 - PC、タブレット、スマートフォン向けの固定viewportと領域別スクロール。iPad Air縦向き（820×1180）を下限とし、上部の`TIMBRES`／`Map`で各領域を開閉
 
 ## ローカル実行

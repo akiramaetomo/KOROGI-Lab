@@ -2,8 +2,12 @@ import { equalPower, type AudioEngine } from '../audio/core/AudioEngine';
 import type { MixerPanel } from './MixerPanel';
 import { LAB_SLOT_IDS } from '../model/documents';
 
-type Port = 'left' | 'right' | 'top' | 'bottom' | 'bottom-left';
-interface Connection { from: string; to: string; start: Port; end: Port; control?: boolean; weight?: number; lane?: number; activeSend?: boolean; route?: 'right-down' | 'filter-cutoff' }
+/**
+ * Side centers and edge centers, plus offset ports for second inputs: `left-low` sits 8 px below the left center,
+ * `bottom-left` / `top-left` sit 16 px inside the left corner, so they never share a point with the centered FEnv wires.
+ */
+type Port = 'left' | 'right' | 'top' | 'bottom' | 'bottom-left' | 'top-left' | 'left-low';
+interface Connection { from: string; to: string; start: Port; end: Port; control?: boolean; weight?: number; lane?: number; activeSend?: boolean; route?: 'right-down' | 'up-left' | 'detour-up' | 'right-up' | 'join-fx1' }
 
 /** HTML owns interaction; SVG only renders the current topology in content coordinates. */
 export class SignalMap {
@@ -55,15 +59,24 @@ export class SignalMap {
     const c = (from: string, to: string, start: Port = 'right', end: Port = 'left', control = false): Connection => ({ from, to, start, end, control });
     const direct = engine?.getMasterInputMode() === 'fx1-direct';
     this.root.querySelector<HTMLElement>('#flow-fx1-common')!.hidden = direct;
+    const settings = current?.getSettings();
+    const route = settings?.filter2Route ?? 'mod';
+    // FILTER2 and AEnv2 sit under FILTER1 and AEnv, with FEnv and BURST between them. OSC2 path destinations are exclusive;
+    // control wires leave FILTER2's upper left and go around FEnv, audio routes enter AEnv1 or join after it at FX1, below the main inputs.
+    const filter2Wires: Connection[] = route === 'filter1-cutoff' ? [{ ...c('filter2', 'filter1', 'top-left', 'bottom-left', true), route: 'detour-up' }]
+      : route === 'aenv-in' ? [{ ...c('filter2', 'aenv', 'right', 'left-low'), route: 'right-up' }]
+      : route === 'aenv-out' ? [c('filter2', 'aenv2'), { ...c('aenv2', 'fx1', 'right', 'left-low'), route: 'join-fx1' },
+        // BURST pulses retrigger AEnv2 as well.
+        { ...c('burst', 'aenv2', 'bottom', 'top', true), weight: settings?.burst.enabled ? 1 : 0 }]
+      : [{ ...c('filter2', 'mod', 'top-left', 'bottom', true), route: 'up-left' }];
     this.connections = [
       c('osc1', 'mod'), c('mod', 'filter1'), c('filter1', 'aenv'), c('aenv', 'fx1'),
       c('osc2', 'filter2'), c('fenv', 'filter1', 'top', 'bottom', true),
-      current?.getSettings().filter2Route === 'filter1-cutoff'
-        ? { ...c('filter2', 'filter1', 'right', 'bottom-left', true), route: 'filter-cutoff' }
-        : c('filter2', 'mod', 'top', 'bottom', true),
+      { ...c('fenv', 'filter2', 'bottom', 'top', true), weight: settings?.filter2FenvDepth ? 1 : 0 },
+      ...filter2Wires,
       c('penv', 'osc1', 'top', 'bottom', true),
       c('penv', 'osc2', 'bottom', 'top', true),
-      { ...c('burst', 'aenv', 'top', 'bottom', true), weight: current?.getSettings().burst.enabled ? 1 : 0 },
+      { ...c('burst', 'aenv', 'top', 'bottom', true), weight: settings?.burst.enabled ? 1 : 0 },
       ...(direct
         ? [{ ...c('fx1', 'master', 'right', 'top'), route: 'right-down' as const }]
         : [c('fx1', 'fx1-common'), c('balance', 'master')]),
@@ -99,8 +112,11 @@ export class SignalMap {
     this.svg.setAttribute('viewBox', `0 0 ${this.root.clientWidth} ${this.root.clientHeight}`);
     const point = (id: string, port: Port) => {
       const rect = this.root.querySelector<HTMLElement>(`#flow-${id}`)!.getBoundingClientRect();
-      return { x: (port === 'left' || port === 'bottom-left' ? rect.left : port === 'right' ? rect.right : rect.left + rect.width / 2) - origin.left,
-        y: (port === 'top' ? rect.top : port === 'bottom' || port === 'bottom-left' ? rect.bottom : rect.top + rect.height / 2) - origin.top };
+      const x = port === 'left' || port === 'left-low' ? rect.left : port === 'right' ? rect.right
+        : port === 'bottom-left' || port === 'top-left' ? rect.left + 16 : rect.left + rect.width / 2;
+      const y = port === 'top' || port === 'top-left' ? rect.top : port === 'bottom' || port === 'bottom-left' ? rect.bottom
+        : rect.top + rect.height / 2 + (port === 'left-low' ? 8 : 0);
+      return { x: x - origin.left, y: y - origin.top };
     };
     const branchGap = 7.5;
     const entryStart = (bus: 'near' | 'far'): number => point(`${bus}-input`, 'left').y - 1.5 * branchGap;
@@ -109,10 +125,22 @@ export class SignalMap {
     for (const wire of this.connections) {
       const a = point(wire.from, wire.start), b = point(wire.to, wire.end);
       let d: string;
-      if (wire.route === 'filter-cutoff') {
-        d = `M ${a.x} ${a.y} L ${b.x} ${b.y}`;
+      if (wire.route === 'up-left') {
+        // FILTER2 → MOD: up into the lower row gap, left to MOD's column, then up past PEnv's row.
+        const y = (a.y + point('fenv', 'bottom').y) / 2;
+        d = `M ${a.x} ${a.y} V ${y} H ${b.x} V ${b.y}`;
+      } else if (wire.route === 'detour-up') {
+        // FILTER2 → F1 CUTOFF: around FEnv through the column gap on its left, into FILTER1 left of the FEnv wire.
+        const low = (a.y + point('fenv', 'bottom').y) / 2, high = (b.y + point('fenv', 'top').y) / 2;
+        const x = point('filter2', 'left').x - 12;
+        d = `M ${a.x} ${a.y} V ${low} H ${x} V ${high} H ${b.x} V ${b.y}`;
+      } else if (wire.route === 'right-up' || wire.route === 'join-fx1') {
+        // Up the column gap left of the target, entering below its main input.
+        d = `M ${a.x} ${a.y} H ${b.x - 12} V ${b.y} H ${b.x}`;
       } else if (wire.route === 'right-down') {
-        d = `M ${a.x} ${a.y} H ${b.x} V ${b.y}`;
+        // FX1 MON descends outside SEQUENCE; when Master lies left of that, it turns back just above Master.
+        const clear = this.root.querySelector<HTMLElement>('#trigger-menu')!.getBoundingClientRect().right - origin.left + 12;
+        d = b.x >= clear ? `M ${a.x} ${a.y} H ${b.x} V ${b.y}` : `M ${a.x} ${a.y} H ${clear} V ${b.y - 14} H ${b.x} V ${b.y}`;
       } else if (wire.start === 'right' && wire.end === 'left') {
         // Four arrow tips are centered on Σ; the outer sends run horizontally from their inputs.
         const x = wire.lane === undefined ? (a.x + b.x) / 2 : b.x - 26 - wire.lane * 8;

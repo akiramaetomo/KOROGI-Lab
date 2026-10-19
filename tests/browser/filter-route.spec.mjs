@@ -5,8 +5,8 @@ test('FILTER2 destination, depth, segmented choices, and v4 save stay synchroniz
   await expect(page.locator('#filter2-route')).toBeEnabled();
   await page.locator('#flow-filter2').click();
   const route = page.locator('#filter2-route');
-  await expect(page.locator('.filter-route-field [role="radio"]')).toHaveCount(2);
-  await page.locator('.filter-route-field [role="radio"]').last().click();
+  await expect(page.locator('.filter-route-field [role="radio"]')).toHaveCount(4);
+  await page.locator('.filter-route-field [role="radio"]').nth(1).click();
   await expect(route).toHaveValue('filter1-cutoff');
   await expect(page.locator('.source-group [data-block-toggle="mod"]')).toBeDisabled();
   await expect(page.locator('.source-group [data-block-toggle="mod"]')).toHaveText('N/A');
@@ -50,9 +50,9 @@ test('FILTER2 destination, depth, segmented choices, and v4 save stay synchroniz
     await engine.close();
     return { saved: saved.channels[0].timbre, migrated: migrated.channels[0].timbre, migratedVersion: migrated.formatVersion, rejected, retained };
   });
-  expect(result.saved.formatVersion).toBe('KOROGI-Lab/timbre-v18');
+  expect(result.saved.formatVersion).toBe('KOROGI-Lab/timbre-v20');
   expect(result.saved.settings.filter1CutoffDepthCent).toBe(4800);
-  expect(result.migratedVersion).toBe('KOROGI-Lab/session-v21');
+  expect(result.migratedVersion).toBe('KOROGI-Lab/session-v23');
   expect(result.migrated.settings.filter2Route).toBe('mod');
   expect(result.migrated.settings.filter1CutoffDepthCent).toBe(1200);
   expect(result.rejected && result.retained).toBe(true);

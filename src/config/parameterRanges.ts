@@ -33,6 +33,12 @@ export const PARAMETER_RANGES = {
   // Pulse duty is percent (DSP uses /100); OSC1/2 bounds must currently match.
   'osc1-duty': { min: .5, max: 99.5, defaultValue: 50, step: .5, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
   'osc2-duty': { min: .5, max: 99.5, defaultValue: 50, step: .5, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
+  // Multi OSC: number of summed oscillators, Spread = outermost offset (+/- cent) of the symmetric spread.
+  'osc-multi-count': { min: 1, max: 16, defaultValue: 7, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: '', integer: true },
+  'osc-multi-spread': { min: 0, max: 1_200, defaultValue: 25, step: .1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'cent' },
+  // Table rows: frequency ratio to Base (shown and entered as Hz) and linear amplitude per oscillator.
+  'osc-multi-ratio': { min: 1 / 64, max: 64, defaultValue: 1, step: .000001, scale: log, fine: 'none', axis: horizontal, unit: '×' },
+  'osc-multi-amplitude': { min: 0, max: 1, defaultValue: 1, step: .001, scale: linear, fine: 'none', axis: horizontal, unit: '' },
   'penv-start': { min: -100, max: 100, defaultValue: 0, step: .1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
   'penv-attack-level': { min: -100, max: 100, defaultValue: 0, step: .1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
   'penv-sustain-level': { min: -100, max: 100, defaultValue: 0, step: .1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
@@ -53,6 +59,10 @@ export const PARAMETER_RANGES = {
   'filter-q': { min: .1, max: 30, defaultValue: .707, step: .01, scale: linear, fine: 'none', axis: horizontal, unit: '' },
   // Filter2 signal shifts Filter1 cutoff by this many cents at a unit signal.
   'filter1-cutoff-depth': { min: 0, max: 4_800, defaultValue: 1_200, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'cent' },
+  // AEnv IN/OUT routes: -100 keeps only the OSC1 path, 0 keeps both at unity, +100 keeps only the OSC2 path (linear gain per side).
+  'osc-balance': { min: -100, max: 100, defaultValue: 0, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: '' },
+  // Shared FEnv on Filter2, as a signed percentage of the FEnv Amount; 0 leaves Filter2 untouched.
+  'fenv-filter2-depth': { min: -100, max: 100, defaultValue: 0, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
   // AEnv times are ms, converted to seconds in DSP. Attack/decay/release bounds currently match.
   attack: { min: 0, max: 5_000, defaultValue: 5, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
   decay: { min: 0, max: 5_000, defaultValue: 20, step: 1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'ms' },
@@ -130,7 +140,7 @@ export function parameterValueBounds(range: ParameterRange): { min: number; max:
 }
 
 export function parameterKeyForInput(id: string): ParameterKey | null {
-  id = id.replace(/^far-(?=fx[23]-)/, '');
+  id = id.replace(/^far-(?=fx[23]-)/, '').replace(/^osc[12]-multi-/, 'osc-multi-').replace(/^aenv2-(?=attack$|decay$|sustain$|release$)/, '');
   if (id === 'filter1-cutoff-depth') return id;
   const key = id.replace(/^fx[123]-/, 'fx-').replace(/^filter[12]-/, 'filter-')
     .replace(/^(near|far)-gain$/, 'bus-gain').replace(/^(level|balance|pan)-[1-4]$/, '$1');

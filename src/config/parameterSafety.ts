@@ -5,6 +5,10 @@ const SAFETY: Record<ParameterKey, { min: number; max: number }> = {
   'osc1-frequency': { min: 1, max: 20_000 }, 'osc2-frequency': { min: .1, max: 20_000 },
   // PeriodicWave coefficients stay finite at these narrow pulse widths.
   'osc1-duty': { min: .5, max: 99.5 }, 'osc2-duty': { min: .5, max: 99.5 },
+  // Each Multi oscillator is a full OscillatorNode; 16 per OSC keeps 8 timbres x 2 OSC x 2 SYNC generations at 512 nodes.
+  'osc-multi-count': { min: 1, max: 16 }, 'osc-multi-spread': { min: 0, max: 2_400 },
+  // Positive ratios keep every partial frequency positive under the shared 0.1 Hz PEnv floor.
+  'osc-multi-ratio': { min: 1 / 1_024, max: 1_024 }, 'osc-multi-amplitude': { min: 0, max: 1 },
   'penv-start': { min: -100, max: 100 }, 'penv-attack-level': { min: -100, max: 100 },
   'penv-sustain-level': { min: -100, max: 100 }, 'penv-release-level': { min: -100, max: 100 },
   'penv-attack-time': { min: 0, max: 5_000 }, 'penv-decay-time': { min: 0, max: 5_000 },
@@ -12,6 +16,8 @@ const SAFETY: Record<ParameterKey, { min: number; max: number }> = {
   'am-depth': { min: 0, max: 200 }, 'am-offset': { min: 0, max: 2 }, 'fm-depth': { min: 0, max: 4_800 },
   'filter-frequency': { min: .1, max: 20_000 }, 'filter-q': { min: .1, max: 30 },
   'filter1-cutoff-depth': { min: 0, max: 4_800 },
+  // Balance gains stay within 0..1 per side; Filter2 FEnv depth never exceeds the FEnv Amount itself.
+  'osc-balance': { min: -100, max: 100 }, 'fenv-filter2-depth': { min: -100, max: 100 },
   attack: { min: 0, max: 5_000 }, decay: { min: 0, max: 5_000 }, sustain: { min: 0, max: 1 }, release: { min: 0, max: 5_000 },
   'fenv-amount': { min: -7_200, max: 7_200 },
   'fenv-attack': { min: 0, max: 5_000 }, 'fenv-decay': { min: 0, max: 5_000 },
