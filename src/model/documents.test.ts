@@ -94,7 +94,7 @@ describe('Timbre and session boundaries', () => {
     oldSettings.autoTrigger = { tonSec: .25, toffSec: .25, oneShotRepeatSec: .5 };
     delete (oldSettings.ampEnvelope as Record<string, unknown>).releaseTiming;
     const migrated = normalizeTimbre(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v20');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v21');
     expect(migrated.settings.pitchEnvelope).toEqual(defaultTimbre().settings.pitchEnvelope);
     expect(migrated.settings.ampEnvelope.releaseTiming).toBe('time');
     const newTimbre = defaultTimbre();
@@ -267,7 +267,7 @@ describe('Timbre and session boundaries', () => {
     const migrated = parseLabSession(JSON.stringify(old));
     expect(migrated.formatVersion).toBe('KOROGI-Lab/session-v23');
     expect(migrated.channels.every(channel => channel.pan === 0)).toBe(true);
-    expect(migrated.channels[0]!.timbre?.formatVersion).toBe('KOROGI-Lab/timbre-v20');
+    expect(migrated.channels[0]!.timbre?.formatVersion).toBe('KOROGI-Lab/timbre-v21');
     expect(migrated.channels[0]!.timbre?.settings.phaseMode).toBe('free');
     expect(migrated.channels[0]!.timbre?.settings.filter2Route).toBe('mod');
     expect(migrated.channels[0]!.timbre?.settings.filter1CutoffDepthCent).toBe(1200);
@@ -289,7 +289,7 @@ describe('Timbre and session boundaries', () => {
     old.settings.filter2Route = 'filter1-cutoff'; old.settings.ampEnvelope.mode = 'one-shot';
     delete old.settings.ampEnvelope2; delete old.settings.oscBalance; delete old.settings.filter2FenvDepth; delete old.settings.blocksEnabled.aenv2;
     const migrated = normalizeTimbre(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v20');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v21');
     expect(migrated.settings.filter2Route).toBe('filter1-cutoff');
     expect(migrated.settings.oscBalance).toBe(0); expect(migrated.settings.filter2FenvDepth).toBe(0);
     expect(migrated.settings.ampEnvelope2).toEqual(DEFAULT_CHANNEL_SETTINGS.ampEnvelope2);
@@ -361,7 +361,7 @@ describe('Timbre and session boundaries', () => {
     old.patterns = [{ id: 'user-1', recording: { durationSec: 1, selectionStartSec: 0, selectionEndSec: 1,
       gates: [{ onSec: .1, offSec: .4 }] } }, { id: 'user-2', recording: null }];
     const migrated = normalizeTimbre(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v20');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v21');
     expect(migrated.pitchPatterns[2]!.recording).toBeNull();
     expect(migrated.gatePatterns[0]!.recording).toEqual((old.patterns as Array<Record<string, unknown>>)[0]!.recording);
     expect(migrated.pitchPatterns.map(pattern => pattern.recording)).toEqual(Array(8).fill(null));
@@ -493,7 +493,7 @@ describe('Timbre and session boundaries', () => {
     old.formatVersion = 'KOROGI-Lab/timbre-v18';
     for (const key of ['osc1', 'osc2']) { delete old.settings[key].voiceMode; delete old.settings[key].multi; }
     const migrated = normalizeTimbre(old);
-    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v20');
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v21');
     expect(migrated.settings.osc1.voiceMode).toBe('single');
     expect(migrated.settings.osc2.multi).toEqual(defaultTimbre().settings.osc2.multi);
     const current = defaultTimbre();
@@ -515,6 +515,92 @@ describe('Timbre and session boundaries', () => {
     expect(() => normalizeTimbre(badMode)).toThrow('Single/Multi');
     const badCount = structuredClone(current) as unknown as Record<string, any>; badCount.settings.osc1.multi.spread.count = 2.5;
     expect(() => normalizeTimbre(badCount)).toThrow('Spread count');
+  });
+  it('reads files saved before LFSR Noise with default Clock/Bits, keeps their source, and round-trips LFSR', () => {
+    for (const format of ['KOROGI-Lab/timbre-v18', 'KOROGI-Lab/timbre-v20']) {
+      const old = structuredClone(defaultTimbre()) as unknown as Record<string, any>;
+      old.formatVersion = format; old.settings.osc1.sourceType = 'white-noise'; old.settings.osc2.sourceType = 'square';
+      for (const key of ['osc1', 'osc2']) delete old.settings[key].lfsr;
+      const migrated = normalizeTimbre(old);
+      expect(migrated.settings.osc1.sourceType).toBe('white-noise');
+      expect(migrated.settings.osc2.sourceType).toBe('square');
+      expect(migrated.settings.osc1.lfsr).toEqual({ clockHz: P['osc-lfsr-clock'].defaultValue, bits: P['osc-lfsr-bits'].defaultValue });
+    }
+    const inOldSession = legacySession([1, 1, 1, 1, 1, 1, 1, 1], current => { current.channels[0]!.timbre!.settings.osc1.sourceType = 'sawtooth'; });
+    delete inOldSession.channels[0].timbre.settings.osc1.lfsr;
+    expect(parseLabSession(JSON.stringify(inOldSession)).channels[0]!.timbre?.settings.osc1).toMatchObject({ sourceType: 'sawtooth', lfsr: DEFAULT_CHANNEL_SETTINGS.osc1.lfsr });
+    const current = defaultTimbre();
+    current.settings.osc2.sourceType = 'lfsr-noise';
+    current.settings.osc2.lfsr = { clockHz: 4_800, bits: 4 };
+    const saved = parseTimbre(JSON.stringify(current));
+    expect(saved.settings.osc2).toMatchObject({ sourceType: 'lfsr-noise', lfsr: { clockHz: 4_800, bits: 4 } });
+    const inSession = session(); inSession.channels[0]!.timbre = current;
+    expect(parseLabSession(JSON.stringify(inSession)).channels[0]!.timbre?.settings.osc2.lfsr).toEqual({ clockHz: 4_800, bits: 4 });
+    current.settings.osc2.lfsr = { clockHz: 1e9, bits: 7.6 };
+    expect(parseTimbre(JSON.stringify(current)).settings.osc2.lfsr).toEqual({ clockHz: LIMITS.lfsrClockHz.max, bits: 8 });
+    current.settings.osc2.lfsr = { clockHz: 1, bits: 0 };
+    expect(parseTimbre(JSON.stringify(current)).settings.osc2.lfsr).toEqual({ clockHz: LIMITS.lfsrClockHz.min, bits: 1 });
+    const bad = structuredClone(current) as unknown as Record<string, any>; bad.settings.osc2.lfsr.bits = 'eight';
+    expect(() => normalizeTimbre(bad)).toThrow('lfsr.bits');
+  });
+  it('reads LPF/HPF Q of timbre-v20 and older as Web Audio dB and converts it to linear Q; other types keep their Q', () => {
+    const old = structuredClone(defaultTimbre()) as unknown as Record<string, any>;
+    old.formatVersion = 'KOROGI-Lab/timbre-v20';
+    old.settings.filter1 = { type: 'highpass', order: 4, frequencyHz: 500, q: 20 * Math.log10(2), gainDb: 0 };
+    old.settings.filter2 = { type: 'bandpass', order: 2, frequencyHz: 500, q: 3, gainDb: 0 };
+    old.settings.filter2Stage2 = { type: 'lowpass', order: 2, frequencyHz: 500, q: 30, gainDb: 0 };
+    const migrated = normalizeTimbre(old);
+    expect(migrated.formatVersion).toBe('KOROGI-Lab/timbre-v21');
+    expect(migrated.settings.filter1.q).toBeCloseTo(2, 9);
+    expect(migrated.settings.filter2.q).toBe(3);
+    // 30 dB is linear 31.6, above the linear range: it reads as the maximum.
+    expect(migrated.settings.filter2Stage2.q).toBe(LIMITS.filterQ.max);
+    // A v2 'off' FILTER2 reads as LPF, so its Q is converted too; a Stage2 Off keeps its value.
+    old.settings.filter2.type = 'off'; old.settings.filter2.q = 0; old.settings.filter2Stage2 = { type: 'off', order: 2, frequencyHz: 500, q: 2, gainDb: 0 };
+    const off = normalizeTimbre(old);
+    expect(off.settings.filter2).toMatchObject({ type: 'lowpass', q: 1 });
+    expect(off.settings.filter2Stage2.q).toBe(2);
+    // A current file keeps its linear Q.
+    const current = defaultTimbre(); current.settings.filter1.q = 2;
+    expect(parseTimbre(JSON.stringify(current)).settings.filter1.q).toBe(2);
+  });
+  it('reads files saved before the FILTER2 stages unchanged, round-trips Stage2, Shelf/Peak gain and FEnv Target, and rejects impossible combinations', () => {
+    for (const format of ['KOROGI-Lab/timbre-v18', 'KOROGI-Lab/timbre-v20']) {
+      const old = structuredClone(defaultTimbre()) as unknown as Record<string, any>;
+      old.formatVersion = format;
+      delete old.settings.filter2Stage2; delete old.settings.filter2FenvTarget;
+      delete old.settings.filter1.gainDb; delete old.settings.filter2.gainDb;
+      // A file from the Path B experiment: the block is ignored.
+      old.settings.filter2PathB = { type: 'highpass', frequencyHz: 4050, q: 1.31, level: 1, polarity: -1 };
+      const migrated = normalizeTimbre(old);
+      expect(migrated.settings.filter2Stage2).toEqual(DEFAULT_CHANNEL_SETTINGS.filter2Stage2);
+      expect(migrated.settings.filter2Stage2.type).toBe('off');
+      expect(migrated.settings.filter2FenvTarget).toBe('stage1');
+      expect(migrated.settings.filter2.gainDb).toBe(0);
+      expect('filter2PathB' in migrated.settings).toBe(false);
+    }
+    const current = defaultTimbre();
+    current.settings.filter2 = { type: 'highpass', order: 1, frequencyHz: 1_500, q: .707, gainDb: 0 };
+    current.settings.filter2Stage2 = { type: 'lowshelf', order: 4, frequencyHz: 8_490, q: 1.94, gainDb: -6 };
+    current.settings.filter2FenvTarget = 'both';
+    const saved = parseTimbre(JSON.stringify(current));
+    expect(saved.settings.filter2).toEqual(current.settings.filter2);
+    expect(saved.settings.filter2Stage2).toEqual(current.settings.filter2Stage2);
+    expect(saved.settings.filter2FenvTarget).toBe('both');
+    const inSession = session(); inSession.channels[0]!.timbre = current;
+    expect(parseLabSession(JSON.stringify(inSession)).channels[0]!.timbre?.settings.filter2Stage2).toEqual(current.settings.filter2Stage2);
+    current.settings.filter2Stage2 = { type: 'peaking', order: 2, frequencyHz: 1e9, q: 0, gainDb: 99 };
+    expect(parseTimbre(JSON.stringify(current)).settings.filter2Stage2).toEqual({ type: 'peaking', order: 2, frequencyHz: LIMITS.filterHz.max,
+      q: LIMITS.filterQ.min, gainDb: LIMITS.filterGainDb.max });
+    const bad = (edit: (s: Record<string, any>) => void) => { const doc = structuredClone(current) as unknown as Record<string, any>; edit(doc.settings); return doc; };
+    expect(() => normalizeTimbre(bad(s => { s.filter2FenvTarget = 'stage3'; }))).toThrow('FEnv Target');
+    expect(() => normalizeTimbre(bad(s => { s.filter2Stage2.type = 'notch'; }))).toThrow('Stage2 type');
+    expect(() => normalizeTimbre(bad(s => { s.filter2.type = 'bandpass'; s.filter2.order = 1; }))).toThrow('LPF, HPF or Shelf');
+    expect(() => normalizeTimbre(bad(s => { s.filter2Stage2.order = 1; }))).toThrow('LPF, HPF or Shelf');
+    expect(() => normalizeTimbre(bad(s => { s.filter1.order = 1; }))).toThrow('FILTER1 order');
+    expect(() => normalizeTimbre(bad(s => { s.filter1.type = 'lowshelf'; }))).toThrow('FILTER1 type');
+    // FILTER1 has no Shelf/Peak; a stray gain is not kept.
+    expect(parseTimbre(JSON.stringify(bad(s => { s.filter1.gainDb = 6; }))).settings.filter1.gainDb).toBe(0);
   });
   it('round-trips the Pattern bars of a timbre-v18 file and reads older timbre files from their selections at the given BPM', () => {
     const current = defaultTimbre(); current.patternBars = [.25, 2, 1, 1, 1, 1, 1, 32];

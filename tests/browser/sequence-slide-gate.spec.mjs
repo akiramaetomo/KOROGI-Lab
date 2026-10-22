@@ -82,9 +82,16 @@ test('Pitch controls retain one row with a wider track and responsive press stat
   const layout = await page.locator('.pitch-performance').evaluate(row => {
     const box = selector => row.querySelector(selector).getBoundingClientRect();
     return { track: box('#sequence-pitch-track'), gate: box('#sequence-separate-gate'), separate: box('#sequence-separate'),
-      center: box('#sequence-pitch-center'), motion: box('#sequence-motion'), options: box('.sequence-motion-options > summary') };
+      center: box('#sequence-pitch-center'), motion: box('#sequence-motion'), options: box('.sequence-motion-options > summary'),
+      gateHold: box('#sequence-gate-hold'), pitchHold: box('#sequence-pitch-hold') };
   });
   expect(layout.track.width).toBeGreaterThanOrEqual(540);
+  expect(layout.gateHold.right).toBeLessThanOrEqual(layout.pitchHold.left);
+  expect(layout.pitchHold.right).toBeLessThan(layout.motion.left);
+  for (const hold of [layout.gateHold, layout.pitchHold]) {
+    expect(hold.height).toBeGreaterThanOrEqual(44);
+    expect(hold.top + hold.height / 2).toBe(layout.motion.top + layout.motion.height / 2);
+  }
   expect(layout.gate.right).toBeLessThan(layout.track.left);
   expect(layout.track.right).toBeLessThan(layout.center.left);
   expect(layout.center.top + layout.center.height / 2).toBe(layout.track.top + layout.track.height / 2);

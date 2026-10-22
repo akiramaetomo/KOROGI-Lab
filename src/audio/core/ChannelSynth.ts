@@ -29,20 +29,34 @@ import type {
   EffectSlotSettings,
   EffectType,
   FilterOrder,
+  Filter2FenvTarget,
+  FilterSettings,
   Filter2Route,
   FilterType,
   GateScheduleEvent,
+  LfsrNoiseSettings,
   ModMode,
   PitchEnvelopeSettings,
   MultiOscillatorSettings,
   OscSourceType,
   OscVoiceMode
 } from '../types';
+import { isNoiseSource } from '../types';
 
 type BaseGateEvent = { kind: 'on'; time: number; amp: AmplitudeEnvelopeSettings; amp2: AmplitudeEnvelopeSettings;
   pitch: PitchEnvelopeSettings; filter: FilterEnvelopeSettings }
   | { kind: 'off'; time: number };
-type StructureItem = 'osc1' | 'osc2' | 'osc1-voices' | 'osc2-voices' | 'filter1' | 'filter2';
+type StructureItem = 'osc1' | 'osc2' | 'osc1-voices' | 'osc2-voices' | 'filter1' | 'filter2' | 'filter2s2';
+
+function sanitizeLfsr(settings: LfsrNoiseSettings): LfsrNoiseSettings {
+  return { clockHz: clamp(settings.clockHz, LIMITS.lfsrClockHz.min, LIMITS.lfsrClockHz.max),
+    bits: Math.round(clamp(settings.bits, LIMITS.lfsrBits.min, LIMITS.lfsrBits.max)) };
+}
+
+/** Older settings objects may lack gainDb; FilterChain bounds the values themselves. */
+function withGain(settings: FilterSettings): FilterSettings {
+  return { ...settings, gainDb: settings.gainDb ?? 0 };
+}
 
 function cloneDefaults(): ChannelSettings {
   return structuredClone(DEFAULT_CHANNEL_SETTINGS);
@@ -69,6 +83,11 @@ export class ChannelSynth {
   private readonly amGain: GainNode;
   private readonly filter1: FilterChain;
   private readonly filter2: FilterChain;
+  /** FILTER2 Stage2 in series after FILTER2 (Stage1); its output is the FILTER2 output. */
+  private readonly filter2Stage2: FilterChain;
+  /** FEnv Depth → one or both stages, by filter2FenvTarget. */
+  private readonly fenvStage1Gain: GainNode;
+  private readonly fenvStage2Gain: GainNode;
   private readonly ampEnvelope: AmplitudeEnvelope;
   /** OSC2 audio path: balance → AEnv1 input (AEnv IN) or → AEnv2 → after AEnv1 (AEnv OUT). */
   private readonly osc1BalanceGain: GainNode;
@@ -113,11 +132,16 @@ export class ChannelSynth {
     for (const osc of [this.settings.osc1, this.settings.osc2]) {
       osc.voiceMode = osc.voiceMode === 'multi' ? 'multi' : 'single';
       osc.multi = sanitizeMulti(osc.multi ?? DEFAULT_CHANNEL_SETTINGS.osc1.multi);
+      osc.lfsr = sanitizeLfsr(osc.lfsr ?? DEFAULT_CHANNEL_SETTINGS.osc1.lfsr);
     }
     this.settings.blocksEnabled = { ...DEFAULT_CHANNEL_SETTINGS.blocksEnabled, ...initial.blocksEnabled };
     this.settings.ampEnvelope2 = { ...(initial.ampEnvelope2 ?? DEFAULT_CHANNEL_SETTINGS.ampEnvelope2) };
     this.settings.oscBalance = clamp(initial.oscBalance ?? 0, LIMITS.oscBalance.min, LIMITS.oscBalance.max);
     this.settings.filter2FenvDepth = clamp(initial.filter2FenvDepth ?? 0, LIMITS.filter2FenvDepth.min, LIMITS.filter2FenvDepth.max);
+    this.settings.filter1 = withGain(this.settings.filter1);
+    this.settings.filter2 = withGain(this.settings.filter2);
+    this.settings.filter2Stage2 = withGain(initial.filter2Stage2 ?? DEFAULT_CHANNEL_SETTINGS.filter2Stage2);
+    this.settings.filter2FenvTarget = initial.filter2FenvTarget ?? 'stage1';
     this.detuneNormalized = clamp(detuneNormalized, -1, 1);
 
     this.pEnv = new PitchEnvelopeControl(context, this.settings.pitchEnvelope);
@@ -148,7 +172,8 @@ export class ChannelSynth {
       this.settings.osc1.baseFrequencyHz,
       [this.fmDepthGain, this.sequencePitchGain, this.controllerPitchGain],
       this.settings.osc1.dutyRatio,
-      resolvePartials(this.settings.osc1)
+      resolvePartials(this.settings.osc1),
+      this.settings.osc1.lfsr
     );
     this.osc2 = new SourceUnit(
       context,
@@ -158,14 +183,17 @@ export class ChannelSynth {
       this.settings.osc2.baseFrequencyHz,
       [this.sequencePitchGain, this.controllerPitchGain],
       this.settings.osc2.dutyRatio,
-      resolvePartials(this.settings.osc2)
+      resolvePartials(this.settings.osc2),
+      this.settings.osc2.lfsr
     );
 
     this.filter2 = new FilterChain(context, this.settings.filter2);
     this.osc2.output.connect(this.filter2.input);
+    this.filter2Stage2 = new FilterChain(context, this.settings.filter2Stage2);
+    this.filter2.output.connect(this.filter2Stage2.input);
     this.modRouteGain = context.createGain();
     this.modRouteGain.gain.value = this.settings.filter2Route === 'mod' ? 1 : 0;
-    this.filter2.output.connect(this.modRouteGain);
+    this.filter2Stage2.output.connect(this.modRouteGain);
     this.modRouteGain.connect(this.amDepthGain);
     this.modRouteGain.connect(this.fmDepthGain);
     // Resonant Filter2 can exceed unity; bound the control signal before cent scaling.
@@ -173,7 +201,7 @@ export class ChannelSynth {
     const curve = new Float32Array(4096);
     for (let i = 0; i < curve.length; i += 1) curve[i] = Math.tanh(3 * (2 * i / (curve.length - 1) - 1));
     this.cutoffLimiter.curve = curve;
-    this.filter2.output.connect(this.cutoffLimiter);
+    this.filter2Stage2.output.connect(this.cutoffLimiter);
     this.cutoffDepthGain = context.createGain();
     this.cutoffDepthGain.gain.value = this.settings.filter2Route === 'filter1-cutoff' ? this.settings.filter1CutoffDepthCent : 0;
     this.cutoffLimiter.connect(this.cutoffDepthGain);
@@ -188,14 +216,22 @@ export class ChannelSynth {
     this.filter1.connectDetune(this.cutoffDepthGain);
     this.filter1.connectDetune(this.sequenceFilterGain);
     this.filter2.connectDetune(this.sequenceFilterGain);
+    this.filter2Stage2.connectDetune(this.sequenceFilterGain);
     this.filter1.connectDetune(this.controllerFilterGain);
     this.filter2.connectDetune(this.controllerFilterGain);
+    this.filter2Stage2.connectDetune(this.controllerFilterGain);
     this.fEnv = new FilterEnvelopeControl(context, this.settings.filterEnvelope);
     this.filter1.connectDetune(this.fEnv.output);
     this.fenvFilter2Gain = context.createGain();
     this.fenvFilter2Gain.gain.value = this.settings.filter2FenvDepth;
     this.fEnv.output.connect(this.fenvFilter2Gain);
-    this.filter2.connectDetune(this.fenvFilter2Gain);
+    this.fenvStage1Gain = context.createGain();
+    this.fenvStage2Gain = context.createGain();
+    this.fenvFilter2Gain.connect(this.fenvStage1Gain);
+    this.fenvFilter2Gain.connect(this.fenvStage2Gain);
+    this.filter2.connectDetune(this.fenvStage1Gain);
+    this.filter2Stage2.connectDetune(this.fenvStage2Gain);
+    this.applyFenvTarget(context.currentTime, false);
 
     this.ampEnvelope = new AmplitudeEnvelope(context, this.settings.ampEnvelope);
     this.osc1BalanceGain = context.createGain();
@@ -203,7 +239,7 @@ export class ChannelSynth {
     this.osc1BalanceGain.connect(this.ampEnvelope.node);
 
     this.osc2BalanceGain = context.createGain();
-    this.filter2.output.connect(this.osc2BalanceGain);
+    this.filter2Stage2.output.connect(this.osc2BalanceGain);
     this.aenvInRouteGain = context.createGain();
     this.osc2BalanceGain.connect(this.aenvInRouteGain);
     this.aenvInRouteGain.connect(this.ampEnvelope.node);
@@ -498,6 +534,8 @@ export class ChannelSynth {
 
   private performGateOn(time: number, amp = this.settings.ampEnvelope, pitch = this.settings.pitchEnvelope,
     filter = this.settings.filterEnvelope, ownedPitchOffTime?: number, amp2 = this.settings.ampEnvelope2): void {
+    // LFSR Noise starts every Gate at a new random table position, independent of Phase SYNC/FREE.
+    this.osc1.reseekNoiseAt(time); this.osc2.reseekNoiseAt(time);
     this.pEnv.gateOn(time, pitch, ownedPitchOffTime);
     this.fEnv.gateOn(time, filter, ownedPitchOffTime);
     this.ampEnvelope.gateOn(time, amp);
@@ -640,7 +678,10 @@ export class ChannelSynth {
       case 'penv': this.pEnv.setEnabled(enabled); break;
       case 'mod': this.applyModMode(this.context.currentTime, true); break;
       case 'filter1': this.filter1.setEnabled(enabled); break;
-      case 'filter2': this.filter2.setEnabled(enabled); break;
+      case 'filter2':
+        this.filter2.setEnabled(enabled);
+        this.filter2Stage2.setEnabled(enabled);
+        break;
       case 'fenv': this.fEnv.setEnabled(enabled); break;
       case 'aenv': this.ampEnvelope.setEnabled(enabled); break;
       case 'aenv2': this.ampEnvelope2.setEnabled(enabled); break;
@@ -688,6 +729,13 @@ export class ChannelSynth {
       this.osc2.setPartials(resolvePartials(this.settings.osc2));
       this.applyGlobalDetune(this.context.currentTime);
     });
+  }
+
+  /** LFSR Noise Clock/Bits of one OSC; the shared table follows from the next Gate On, without a structural fade. */
+  setOscLfsr(oscillator: 1 | 2, settings: LfsrNoiseSettings): void {
+    const key = oscillator === 1 ? 'osc1' : 'osc2';
+    this.settings[key].lfsr = sanitizeLfsr(settings);
+    (oscillator === 1 ? this.osc1 : this.osc2).setLfsr(this.settings[key].lfsr);
   }
 
   /**
@@ -795,6 +843,41 @@ export class ChannelSynth {
       this.filter2.setType(type);
       this.filter2.setOrder(order);
     });
+  }
+
+  /** Stage2 Type/Order, like FILTER2's own, share the structural fade; type 'off' passes through. */
+  async setFilter2Stage2Structure(type: FilterType, order: FilterOrder): Promise<void> {
+    await this.requestStructuralChange('filter2s2', () => {
+      this.settings.filter2Stage2.type = type;
+      this.settings.filter2Stage2.order = order;
+      this.filter2Stage2.setType(type);
+      this.filter2Stage2.setOrder(order);
+    });
+  }
+
+  setFilter2Stage2Frequency(hz: number): void {
+    this.settings.filter2Stage2.frequencyHz = hz;
+    this.filter2Stage2.setFrequency(hz);
+  }
+
+  setFilter2Stage2Q(q: number): void {
+    this.settings.filter2Stage2.q = q;
+    this.filter2Stage2.setQ(q);
+  }
+
+  setFilter2Stage2Gain(db: number): void {
+    this.settings.filter2Stage2.gainDb = clamp(db, LIMITS.filterGainDb.min, LIMITS.filterGainDb.max);
+    this.filter2Stage2.setGain(this.settings.filter2Stage2.gainDb);
+  }
+
+  setFilter2Gain(db: number): void {
+    this.settings.filter2.gainDb = clamp(db, LIMITS.filterGainDb.min, LIMITS.filterGainDb.max);
+    this.filter2.setGain(this.settings.filter2.gainDb);
+  }
+
+  setFilter2FenvTarget(target: Filter2FenvTarget): void {
+    this.settings.filter2FenvTarget = target === 'stage2' || target === 'both' ? target : 'stage1';
+    this.applyFenvTarget(this.context.currentTime, true);
   }
 
   setFilter1Frequency(hz: number): void {
@@ -936,7 +1019,7 @@ export class ChannelSynth {
 
   getDetunedFrequencyHz(oscillator: 1 | 2): number | null {
     const oscSettings = oscillator === 1 ? this.settings.osc1 : this.settings.osc2;
-    if (oscSettings.sourceType === 'white-noise') return null;
+    if (isNoiseSource(oscSettings.sourceType)) return null;
     return oscSettings.baseFrequencyHz * 2 ** (this.getCurrentDetuneCent() / 1200);
   }
 
@@ -972,6 +1055,8 @@ export class ChannelSynth {
     await this.setOsc2Type(next.osc2.sourceType);
     await this.setOscVoices(1, next.osc1.voiceMode, next.osc1.multi);
     await this.setOscVoices(2, next.osc2.voiceMode, next.osc2.multi);
+    this.setOscLfsr(1, next.osc1.lfsr ?? DEFAULT_CHANNEL_SETTINGS.osc1.lfsr);
+    this.setOscLfsr(2, next.osc2.lfsr ?? DEFAULT_CHANNEL_SETTINGS.osc2.lfsr);
     this.setOsc1Frequency(next.osc1.baseFrequencyHz);
     this.setOsc2Frequency(next.osc2.baseFrequencyHz);
     this.setOsc1DutyRatio(next.osc1.dutyRatio);
@@ -992,6 +1077,13 @@ export class ChannelSynth {
     this.setFilter2Frequency(next.filter2.frequencyHz);
     this.setFilter1Q(next.filter1.q);
     this.setFilter2Q(next.filter2.q);
+    this.setFilter2Gain(next.filter2.gainDb ?? 0);
+    const stage2 = withGain(next.filter2Stage2 ?? DEFAULT_CHANNEL_SETTINGS.filter2Stage2);
+    await this.setFilter2Stage2Structure(stage2.type, stage2.order);
+    this.setFilter2Stage2Frequency(stage2.frequencyHz);
+    this.setFilter2Stage2Q(stage2.q);
+    this.setFilter2Stage2Gain(stage2.gainDb);
+    this.setFilter2FenvTarget(next.filter2FenvTarget ?? 'stage1');
     this.setAmplitudeEnvelope(next.ampEnvelope);
     this.setAmplitudeEnvelope2(next.ampEnvelope2);
     this.setFilterEnvelope(next.filterEnvelope);
@@ -1014,6 +1106,8 @@ export class ChannelSynth {
     this.osc2.dispose();
     this.filter1.dispose();
     this.filter2.dispose();
+    this.filter2Stage2.dispose();
+    this.fenvStage1Gain.disconnect(); this.fenvStage2Gain.disconnect();
     this.amDepthGain.disconnect();
     this.fmDepthGain.disconnect();
     this.modRouteGain.disconnect();
@@ -1062,6 +1156,14 @@ export class ChannelSynth {
    * Balance -1..0..+1 attenuates one side linearly and keeps both at unity in the center;
    * outside the audio routes the OSC1 path stays at unity and the OSC2 path is silent, as before.
    */
+  private applyFenvTarget(now: number, smooth: boolean): void {
+    const target = this.settings.filter2FenvTarget;
+    for (const [gain, on] of [[this.fenvStage1Gain, target !== 'stage2'], [this.fenvStage2Gain, target !== 'stage1']] as const) {
+      if (smooth) smoothAudioParam(gain.gain, on ? 1 : 0, now, PARAM_SMOOTH_SEC);
+      else gain.gain.value = on ? 1 : 0;
+    }
+  }
+
   private applyAudioRoute(now: number, smooth: boolean): void {
     const route = this.settings.filter2Route, balance = this.settings.oscBalance;
     const audio = route === 'aenv-in' || route === 'aenv-out';

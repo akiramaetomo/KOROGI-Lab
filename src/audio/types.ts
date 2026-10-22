@@ -1,11 +1,18 @@
 import type { EditorLayout } from '../model/editorLayout';
-export type OscSourceType = 'sine' | 'sawtooth' | 'triangle' | 'square' | 'white-noise';
+export type OscSourceType = 'sine' | 'sawtooth' | 'triangle' | 'square' | 'white-noise' | 'lfsr-noise';
+export type NoiseSourceType = Extract<OscSourceType, 'white-noise' | 'lfsr-noise'>;
+/** Noise sources have no pitch: they play Single and ignore Base, detune, PEnv and FM. */
+export function isNoiseSource(type: OscSourceType): type is NoiseSourceType { return type === 'white-noise' || type === 'lfsr-noise'; }
 export type PhaseMode = 'sync' | 'free';
 export type ModMode = 'off' | 'am' | 'fm';
 /** OSC2/FILTER2 destination: control (MOD, F1 CUTOFF) or audio mixed at the AEnv1 input / output. */
 export type Filter2Route = 'mod' | 'filter1-cutoff' | 'aenv-in' | 'aenv-out';
-export type FilterType = 'off' | 'lowpass' | 'bandpass' | 'highpass';
-export type FilterOrder = 2 | 4;
+/** Shelf and Peak are FILTER2 only; FILTER1 keeps LPF/BPF/HPF. */
+export type FilterType = 'off' | 'lowpass' | 'bandpass' | 'highpass' | 'lowshelf' | 'highshelf' | 'peaking';
+/** FILTER2 FEnv destination: one or both series stages (a 1st-order stage ignores cutoff modulation). */
+export type Filter2FenvTarget = 'stage1' | 'stage2' | 'both';
+/** 1st order is LPF/HPF/Shelf only and offered on FILTER2 alone; it ignores cutoff modulation (fixed IIR coefficients). */
+export type FilterOrder = 1 | 2 | 4;
 export type BusAssignment = 'near' | 'far';
 export type EffectType = 'off' | 'distortion' | 'delay' | 'chorus' | 'reverb';
 export type EffectSlotIndex = 1 | 2 | 3;
@@ -28,7 +35,11 @@ export interface OscillatorSettings {
   dutyRatio: number; // 0.01 .. 0.99; used by square only
   voiceMode: OscVoiceMode; // Multi sums partials of the same waveform; white noise stays single
   multi: MultiOscillatorSettings;
+  lfsr: LfsrNoiseSettings; // used by lfsr-noise only
 }
+
+/** LFSR Noise: amplitude update rate (Hz, ZOH) and output resolution; the LFSR shifts clockHz * bits times per second. */
+export interface LfsrNoiseSettings { clockHz: number; bits: number }
 
 export interface PitchEnvelopeSettings {
   mode: 'gate' | 'one-shot';
@@ -58,6 +69,7 @@ export interface FilterSettings {
   order: FilterOrder;
   frequencyHz: number;
   q: number;
+  gainDb: number; // Shelf/Peak only; a 4th-order stage splits it over its two Biquads
 }
 
 export interface ADSREnvelopeSettings {
@@ -103,6 +115,9 @@ export interface ChannelSettings {
   mod: ModSettings;
   filter1: FilterSettings;
   filter2: FilterSettings;
+  /** FILTER2 Stage2, in series after FILTER2 (Stage1); type 'off' passes through. */
+  filter2Stage2: FilterSettings;
+  filter2FenvTarget: Filter2FenvTarget;
   filter2Route: Filter2Route;
   filter1CutoffDepthCent: number;
   /** OSC1/OSC2 path balance for the audio routes, -1 (OSC1 only) .. 0 (both unity) .. +1 (OSC2 only). */
@@ -143,7 +158,7 @@ export interface BusSettings {
 
 export interface TimbreDocument {
   editorLayout: EditorLayout;
-  formatVersion: 'KOROGI-Lab/timbre-v20';
+  formatVersion: 'KOROGI-Lab/timbre-v21';
   name: string;
   settings: ChannelSettings;
   detuneRangeCent: number;

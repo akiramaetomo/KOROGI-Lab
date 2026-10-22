@@ -169,7 +169,7 @@ test('FEnv shares ADSR controls, keeps independent values and round-trips cards/
   await page.locator('[data-editor-card="fenv"] .editor-card-handle').press('ArrowLeft');
   const download = page.waitForEvent('download'); await page.locator('#save-1').click();
   const value = JSON.parse(await readFile(await (await download).path(), 'utf8'));
-  expect(value.formatVersion).toBe('KOROGI-Lab/timbre-v20');
+  expect(value.formatVersion).toBe('KOROGI-Lab/timbre-v21');
   expect(value.editorLayout).toEqual([['fenv'], ['aenv']]); expect(value.settings.blocksEnabled.fenv).toBe(true);
   expect(value.settings.filterEnvelope).toMatchObject({ amountCent: -2400, attackSec: .045,
     mode: 'one-shot', releaseTiming: 'rate', releaseCurve: 'linear', attackCurve: 'exponential' });

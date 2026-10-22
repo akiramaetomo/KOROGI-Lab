@@ -132,7 +132,7 @@ test('Timbre and session round-trip independently; old formats are rejected with
   const timbre = await save(page, 'save-2');
   await expect(page.locator('#select-2')).toHaveAttribute('aria-pressed', 'true');
   await panel(page, 'patch'); await expect(page.locator('#timbre-name, #export-timbre')).toHaveCount(0); await closeFiles(page);
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v20'); expect(timbre).not.toHaveProperty('near'); expect(timbre).not.toHaveProperty('pan');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v21'); expect(timbre).not.toHaveProperty('near'); expect(timbre).not.toHaveProperty('pan');
   await page.locator('#level-2').evaluate(input => { input.value = '-9'; input.dispatchEvent(new Event('input')); });
   await page.locator('#balance-2').evaluate(input => { input.value = '.8'; input.dispatchEvent(new Event('input')); });
   await page.locator('#pan-2').evaluate(input => { input.value = '-.65'; input.dispatchEvent(new Event('input')); });

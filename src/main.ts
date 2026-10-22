@@ -29,6 +29,7 @@ import type {
   EnvelopeCurve,
   ReleaseTiming,
   FilterOrder,
+  Filter2FenvTarget,
   Filter2Route,
   FilterType,
   TimbreDocument,
@@ -52,6 +53,58 @@ const FILTER2_ROUTE_LABELS: Record<Filter2Route, string> = { mod: 'MOD', 'filter
 
 function filter2Route(): Filter2Route {
   return requireElement<HTMLSelectElement>('#filter2-route').value as Filter2Route;
+}
+
+const FIRST_ORDER_FILTER_TYPES = ['lowpass', 'highpass', 'lowshelf', 'highshelf'];
+/**
+ * FILTER2 stages: the 1st order is LPF/HPF/Shelf only, Q applies to LPF/BPF/HPF/Peak at 2nd/4th, Gain to Shelf/Peak.
+ * Impossible choices and unused values are shown disabled; a Stage2 set to Off disables its other controls.
+ */
+function syncFilter2OrderAvailability(): void {
+  const choice = (select: HTMLSelectElement, value: string) =>
+    select.parentElement?.querySelector<HTMLButtonElement>(`[role="radiogroup"] [data-value="${value}"]`);
+  for (const prefix of ['filter2', 'filter2s2']) {
+    const type = requireElement<HTMLSelectElement>(`#${prefix}-type`), order = requireElement<HTMLSelectElement>(`#${prefix}-order`);
+    const available = !type.disabled, off = type.value === 'off', firstOrder = order.value === '1';
+    for (const value of ['bandpass', 'peaking']) { const button = choice(type, value); if (button) button.disabled = !available || firstOrder; }
+    for (const value of ['1', '2', '4']) {
+      const button = choice(order, value);
+      if (button) button.disabled = !available || off || (value === '1' && !FIRST_ORDER_FILTER_TYPES.includes(type.value));
+    }
+    const enable = (id: string, enabled: boolean, reason: string) => {
+      const input = requireElement<HTMLInputElement>(`#${prefix}-${id}`);
+      input.disabled = !available || !enabled;
+      input.title = available && !enabled ? reason : '';
+      numericSliders.get(input)?.sync();
+    };
+    const shelf = type.value === 'lowshelf' || type.value === 'highshelf';
+    enable('frequency', !off, 'Stage2 is Off');
+    enable('q', !off && !shelf && !firstOrder, off ? 'Stage2 is Off' : firstOrder ? '1st order has no Q' : 'Shelf has no Q');
+    enable('gain', !off && (shelf || type.value === 'peaking'), off ? 'Stage2 is Off' : 'Gain applies to Shelf and Peak');
+  }
+  syncFilterQPeaks();
+}
+
+/** Resonance peak of a linear-Q LPF/HPF in dB (analog 2nd order, doubled at 4th); null when the response has no peak. */
+function resonancePeakDb(q: number, order: number): number | null {
+  if (q <= Math.SQRT1_2) return null;
+  const db = 20 * Math.log10(q / Math.sqrt(1 - 1 / (4 * q * q)));
+  return order === 4 ? 2 * db : db;
+}
+
+/** Next to Q, LPF/HPF at 2nd/4th show their resonance peak; Q of BPF/Peak is a width, so they show nothing. */
+function syncFilterQPeaks(): void {
+  for (const prefix of ['filter1', 'filter2', 'filter2s2']) {
+    const heading = document.querySelector<HTMLElement>(`[data-numeric-control="${prefix}-q"] .numeric-heading`);
+    if (!heading) continue;
+    let peak = heading.querySelector<HTMLElement>('.filter-q-peak');
+    if (!peak) { peak = document.createElement('span'); peak.className = 'unit filter-q-peak'; heading.querySelector('.numeric-caption')?.after(peak); }
+    const type = requireElement<HTMLSelectElement>(`#${prefix}-type`).value, order = Number(requireElement<HTMLSelectElement>(`#${prefix}-order`).value);
+    const shown = (type === 'lowpass' || type === 'highpass') && order !== 1;
+    const db = shown ? resonancePeakDb(numberValue(`#${prefix}-q`), order) : null;
+    peak.hidden = !shown;
+    peak.textContent = db === null ? 'no peak' : `peak +${db.toFixed(1)} dB`;
+  }
 }
 
 function syncFilter2RouteControls(route: Filter2Route): void {
@@ -522,6 +575,7 @@ function setAudioControlsEnabled(enabled: boolean): void {
   syncSongSettings();
   if (!enabled) { recordBpmInput.disabled = headerBpmInput.disabled = true; songFrameGroup.disabled = true; timeModeSecondsButton.disabled = timeModeBarsButton.disabled = true; }
   refreshMultiEditors();
+  syncFilter2OrderAvailability();
 }
 
 function applyRecordingLock(): void {
@@ -880,12 +934,30 @@ function refreshDetuneReadouts(): void {
   const osc1Hz = selectedChannel()!.getDetunedFrequencyHz(1);
   const osc2Hz = selectedChannel()!.getDetunedFrequencyHz(2);
   osc1DetuneReadout.textContent = osc1Hz === null
-    ? `Source detune: N/A (White Noise)`
+    ? `Source detune: N/A (Noise)`
     : `Source detune: ${formatSigned(cent)} cent → ${formatFrequency(osc1Hz)} Hz`;
   osc2DetuneReadout.textContent = osc2Hz === null
-    ? `Source detune: N/A (White Noise)`
+    ? `Source detune: N/A (Noise)`
     : `Source detune: ${formatSigned(cent)} cent → ${formatFrequency(osc2Hz)} Hz`;
   detuneCentReadout.textContent = `ri: ${formatSigned(ri, 5)} / detune: ${formatSigned(cent)} cent`;
+}
+
+/** LFSR Noise controls appear with their source; the readout separates the update clock from the shift rate. */
+function refreshLfsrControls(): void {
+  const channel = selectedChannel();
+  const settings = channel?.getSettings();
+  for (const oscillator of ['osc1', 'osc2'] as const) {
+    const osc = settings?.[oscillator];
+    const active = osc?.sourceType === 'lfsr-noise';
+    requireElement<HTMLElement>(`#${oscillator}-lfsr`).hidden = !active;
+    const readout = requireElement<HTMLElement>(`#${oscillator}-lfsr-readout`);
+    readout.hidden = !active;
+    if (!osc || !active || !engine) continue;
+    const sampleRate = engine.context.sampleRate;
+    const clock = Math.min(osc.lfsr.clockHz, sampleRate);
+    readout.textContent = `Noise Clock ${formatFrequency(clock)} Hz × ${osc.lfsr.bits} bit = LFSR shift ${formatFrequency(clock * osc.lfsr.bits)} Hz`
+      + (osc.lfsr.clockHz > sampleRate ? ` (limited to sampleRate ${sampleRate} Hz)` : '');
+  }
 }
 
 mixer.manual.bind(triggerButton, () => mixer.selectedId);
@@ -1129,6 +1201,7 @@ requireElement<HTMLSelectElement>('#osc1-type').addEventListener('change', async
   await selectedChannel()?.setOsc1Type((event.currentTarget as HTMLSelectElement).value as OscSourceType);
   refreshDetuneReadouts();
   refreshMultiEditors();
+  refreshLfsrControls();
 });
 requireElement<HTMLInputElement>('#osc1-frequency').addEventListener('change', () => {
   selectedChannel()?.setOsc1Frequency(numberValue('#osc1-frequency'));
@@ -1139,6 +1212,7 @@ requireElement<HTMLSelectElement>('#osc2-type').addEventListener('change', async
   await selectedChannel()?.setOsc2Type((event.currentTarget as HTMLSelectElement).value as OscSourceType);
   refreshDetuneReadouts();
   refreshMultiEditors();
+  refreshLfsrControls();
 });
 requireElement<HTMLInputElement>('#osc2-frequency').addEventListener('change', () => {
   selectedChannel()?.setOsc2Frequency(numberValue('#osc2-frequency'));
@@ -1151,6 +1225,14 @@ requireElement<HTMLInputElement>('#osc1-duty').addEventListener('change', () => 
 requireElement<HTMLInputElement>('#osc2-duty').addEventListener('change', () => {
   selectedChannel()?.setOsc2DutyRatio(numberValue('#osc2-duty') / 100);
 });
+for (const oscillator of [1, 2] as const) {
+  for (const field of ['clock', 'bits']) {
+    requireElement<HTMLInputElement>(`#osc${oscillator}-lfsr-${field}`).addEventListener('change', () => {
+      selectedChannel()?.setOscLfsr(oscillator, { clockHz: numberValue(`#osc${oscillator}-lfsr-clock`), bits: numberValue(`#osc${oscillator}-lfsr-bits`) });
+      refreshLfsrControls();
+    });
+  }
+}
 
 for (const id of ['penv-start', 'penv-attack-level', 'penv-sustain-level', 'penv-release-level',
   'penv-attack-time', 'penv-decay-time', 'penv-release-time', 'penv-scale']) {
@@ -1200,7 +1282,7 @@ function wireFilter(index: 1 | 2): void {
     const type = typeElement.value as FilterType;
     const order = Number(orderElement.value) as FilterOrder;
     if (index === 1) await selectedChannel()?.setFilter1Structure(type, order);
-    else await selectedChannel()?.setFilter2Structure(type, order);
+    else { syncFilter2OrderAvailability(); await selectedChannel()?.setFilter2Structure(type, order); }
     refreshBlockSwitches();
   };
   typeElement.addEventListener('change', applyStructure);
@@ -1219,6 +1301,32 @@ function wireFilter(index: 1 | 2): void {
 }
 wireFilter(1);
 wireFilter(2);
+for (const id of ['filter1-type', 'filter1-order', 'filter1-q', 'filter2-q', 'filter2s2-q'])
+  for (const event of ['input', 'change']) requireElement(`#${id}`).addEventListener(event, syncFilterQPeaks);
+
+requireElement<HTMLInputElement>('#filter2-gain').addEventListener('change', () => {
+  selectedChannel()?.setFilter2Gain(numberValue('#filter2-gain'));
+});
+const applyFilter2Stage2Structure = async (): Promise<void> => {
+  syncFilter2OrderAvailability();
+  await selectedChannel()?.setFilter2Stage2Structure(requireElement<HTMLSelectElement>('#filter2s2-type').value as FilterType,
+    Number(requireElement<HTMLSelectElement>('#filter2s2-order').value) as FilterOrder);
+};
+requireElement<HTMLSelectElement>('#filter2s2-type').addEventListener('change', applyFilter2Stage2Structure);
+requireElement<HTMLSelectElement>('#filter2s2-order').addEventListener('change', applyFilter2Stage2Structure);
+requireElement<HTMLInputElement>('#filter2s2-frequency').addEventListener('change', () => {
+  selectedChannel()?.setFilter2Stage2Frequency(numberValue('#filter2s2-frequency'));
+});
+requireElement<HTMLInputElement>('#filter2s2-q').addEventListener('change', () => {
+  selectedChannel()?.setFilter2Stage2Q(numberValue('#filter2s2-q'));
+});
+requireElement<HTMLInputElement>('#filter2s2-gain').addEventListener('change', () => {
+  selectedChannel()?.setFilter2Stage2Gain(numberValue('#filter2s2-gain'));
+});
+requireElement<HTMLSelectElement>('#filter2-fenv-target').addEventListener('change', event => {
+  selectedChannel()?.setFilter2FenvTarget((event.currentTarget as HTMLSelectElement).value as Filter2FenvTarget);
+});
+
 
 amplitudeEditor.wire(applyAmplitudeEnvelope);
 amplitudeEditor2.wire((curve, mode, timing) => {
@@ -1396,6 +1504,11 @@ function syncUiFromTimbre(timbre: TimbreDocument): void {
   setValue('#osc2-type', ch.osc2.sourceType);
   setValue('#osc2-frequency', ch.osc2.baseFrequencyHz);
   setValue('#osc2-duty', Number((ch.osc2.dutyRatio * 100).toFixed(1)));
+  for (const oscillator of ['osc1', 'osc2'] as const) {
+    setValue(`#${oscillator}-lfsr-clock`, ch[oscillator].lfsr.clockHz);
+    setValue(`#${oscillator}-lfsr-bits`, ch[oscillator].lfsr.bits);
+  }
+  refreshLfsrControls();
   setValue('#phase-mode-osc1', ch.phaseMode);
   setValue('#phase-mode-osc2', ch.phaseMode);
   refreshMultiEditors(true);
@@ -1423,6 +1536,14 @@ function syncUiFromTimbre(timbre: TimbreDocument): void {
   setValue('#filter2-order', ch.filter2.order);
   setValue('#filter2-frequency', ch.filter2.frequencyHz);
   setValue('#filter2-q', ch.filter2.q);
+  setValue('#filter2-gain', ch.filter2.gainDb);
+  setValue('#filter2s2-type', ch.filter2Stage2.type);
+  setValue('#filter2s2-order', ch.filter2Stage2.order);
+  setValue('#filter2s2-frequency', ch.filter2Stage2.frequencyHz);
+  setValue('#filter2s2-q', ch.filter2Stage2.q);
+  setValue('#filter2s2-gain', ch.filter2Stage2.gainDb);
+  setValue('#filter2-fenv-target', ch.filter2FenvTarget);
+  syncFilter2OrderAvailability();
   setValue('#filter2-route', ch.filter2Route);
   setValue('#filter1-cutoff-depth', ch.filter1CutoffDepthCent);
   setValue('#osc-balance', ch.oscBalance * 100);
@@ -1487,6 +1608,7 @@ function syncSelectedSource(): void {
   if (engine && selectedChannel()) syncUiFromTimbre(engine.createTimbre(mixer.selectedId));
   else { refreshEffectControls(); refreshBlockSwitches(); refreshDetuneReadouts(); }
   setAudioControlsEnabled(engine !== null && !loadingSession);
+  recorder.releaseHoldsExcept(mixer.selectedId);
   recorder.refresh();
   syncTransportControls();
   functionEditor?.restore(engine?.getChannel(mixer.selectedId) ? engine.getEditorLayout(mixer.selectedId) : DEFAULT_EDITOR_LAYOUT);
@@ -1719,6 +1841,12 @@ try {
   const context = new AudioContext();
   try { validateParameterRanges(P, context.sampleRate); }
   catch (error) { void context.close(); throw error; }
+  // LFSR Noise Clock runs up to this context's sample rate (the table holds at most one value per frame).
+  for (const oscillator of ['osc1', 'osc2']) {
+    const input = requireElement<HTMLInputElement>(`#${oscillator}-lfsr-clock`);
+    input.max = input.dataset.numericMax = input.dataset.sliderMax = String(context.sampleRate);
+    numericSliders.get(input)?.sync();
+  }
   engine = new AudioEngine(context, {
     formatVersion: 'KOROGI-Lab/session-v23', name: 'KOROGI Session', savedAt: '',
     channels: LAB_SLOT_IDS.map(id => ({ id, ...DEFAULT_CHANNEL_MIX, timbre: id === '1' ? defaultTimbre() : null })),

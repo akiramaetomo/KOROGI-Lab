@@ -165,7 +165,7 @@ test('Destination UI exposes four routes, Balance, FEnv Depth, AEnv2 and matchin
   await page.locator('#aenv2-mode + .segmented-choice [role="radio"]').last().click();
   const download = page.waitForEvent('download'); await page.locator('#save-1').click();
   const saved = JSON.parse(await readFile(await (await download).path(), 'utf8'));
-  expect(saved.formatVersion).toBe('KOROGI-Lab/timbre-v20');
+  expect(saved.formatVersion).toBe('KOROGI-Lab/timbre-v21');
   expect(saved.settings).toMatchObject({ filter2Route: 'aenv-out', oscBalance: .4, filter2FenvDepth: -.6 });
   expect(saved.settings.ampEnvelope2).toMatchObject({ attackSec: .12, mode: 'one-shot' });
   const fenvWire = page.locator('path[data-from="fenv"][data-to="filter2"]');

@@ -112,6 +112,11 @@ export class TriggerRecorder {
   private pitchGesture: PitchGesture | null = null;
   private pitchRequest = 0;
   private separate = false;
+  /** Hold keeps a released input sounding; like Separate it is a performance switch and is not saved. */
+  private gateHold = false;
+  private pitchHold = false;
+  private gateLatched = false;
+  private pitchLatched = false;
   private pitchHeldId: string | null = null;
   private pitchHeldSynth: ChannelSynth | null = null;
   private motionEnabled = true;
@@ -132,6 +137,8 @@ export class TriggerRecorder {
   private readonly gate = this.element<HTMLButtonElement>('#record-gate');
   private readonly separateGate = this.element<HTMLButtonElement>('#sequence-separate-gate');
   private readonly separateButton = this.element<HTMLButtonElement>('#sequence-separate');
+  private readonly gateHoldButton = this.element<HTMLButtonElement>('#sequence-gate-hold');
+  private readonly pitchHoldButton = this.element<HTMLButtonElement>('#sequence-pitch-hold');
   private readonly counter = this.element<HTMLOutputElement>('#record-counter');
   private readonly recordMode = this.element<HTMLSelectElement>('#record-mode');
   private readonly writeModeInput = this.element<HTMLSelectElement>('#record-write-mode');
@@ -285,15 +292,16 @@ export class TriggerRecorder {
       this.updateGatePosition();
       this.changePitch(Number(this.pitchInput.value));
     });
-    const finishPitchInput = () => { if (!this.pitchGesture) { this.advanceLaps(); this.closePitchPunch(); this.endPitchControl(); } };
+    const finishPitchInput = () => { if (!this.pitchGesture) this.releasePitchInput(); };
     this.pitchInput.addEventListener('change', finishPitchInput);
     this.pitchInput.addEventListener('keyup', finishPitchInput);
     this.pitchInput.addEventListener('blur', finishPitchInput);
     const centerDown = () => { this.centerHandled = true; this.beginPitchControl(); this.pitchInput.value = '0'; this.updateGatePosition(); this.changePitch(0); };
-    const centerUp = () => { this.advanceLaps(); this.closePitchPunch(); this.endPitchControl(); };
+    const centerUp = () => this.releasePitchInput();
     this.pitchCenter.addEventListener('pointerdown', centerDown);
     this.pitchCenter.addEventListener('pointerup', centerUp);
-    this.pitchCenter.addEventListener('pointercancel', centerUp);
+    // A canceled Center press is released even under Pitch Hold.
+    this.pitchCenter.addEventListener('pointercancel', () => this.finishPitchControl());
     this.pitchCenter.addEventListener('click', () => {
       if (this.centerHandled) { this.centerHandled = false; return; }
       centerDown(); centerUp(); this.centerHandled = false;
@@ -311,6 +319,24 @@ export class TriggerRecorder {
       this.refresh();
       // A pointer-selected mode must leave Space available for Gate performance.
       if (event.detail > 0) this.separateButton.blur();
+    });
+    this.gateHoldButton.addEventListener('click', event => {
+      if (this.gateHoldButton.disabled) return;
+      this.gateHold = !this.gateHold;
+      if (!this.gateHold && this.gateLatched) this.finishGate();
+      this.status.textContent = this.gateHold
+        ? 'Gate Hold ON: a released Gate sounds until Gate Hold OFF; presses while held move only Pitch.' : 'Gate Hold OFF';
+      this.refresh();
+      if (event.detail > 0) this.gateHoldButton.blur();
+    });
+    this.pitchHoldButton.addEventListener('click', event => {
+      if (this.pitchHoldButton.disabled) return;
+      this.pitchHold = !this.pitchHold;
+      if (!this.pitchHold && this.pitchLatched) this.finishPitchControl();
+      this.status.textContent = this.pitchHold
+        ? 'Pitch Hold ON: a released Pitch stays until the next touch or Pitch Hold OFF.' : 'Pitch Hold OFF';
+      this.refresh();
+      if (event.detail > 0) this.pitchHoldButton.blur();
     });
     this.filterWide.addEventListener('click', () => {
       if (this.filterWide.disabled) return;
@@ -403,12 +429,23 @@ export class TriggerRecorder {
   private syncSeparateButton(available = !!this.engine()?.getChannel(this.selectedId())): void {
     const switchable = this.separateSwitchable();
     this.separateButton.disabled = !available || !switchable;
-    this.separateButton.title = available && !switchable && this.mode !== 'starting' ? 'Release Gate and Pitch to switch Separate' : '';
+    this.separateButton.title = available && !switchable && this.mode !== 'starting'
+      ? this.gateLatched || this.pitchLatched ? 'Release Gate and Pitch, or turn off Hold, to switch Separate' : 'Release Gate and Pitch to switch Separate' : '';
     this.separateButton.setAttribute('aria-pressed', String(this.separate));
   }
 
+  private syncHoldButtons(available: boolean): void {
+    for (const [button, on] of [[this.gateHoldButton, this.gateHold], [this.pitchHoldButton, this.pitchHold]] as const) {
+      button.disabled = !available || this.mode === 'starting';
+      button.setAttribute('aria-pressed', String(on));
+    }
+    this.pitchTrack.classList.toggle('pitch-latched', this.pitchLatched);
+  }
+
   private beginPitchControl(): void {
-    if (!this.controllerPitchAllowed() || this.pitchHeldId || this.mode === 'starting') return;
+    // A held Pitch is already the controller output; the new touch continues it.
+    if (this.pitchHeldId) { this.pitchLatched = false; this.pitchTrack.classList.remove('pitch-latched'); this.syncSeparateButton(); return; }
+    if (!this.controllerPitchAllowed() || this.mode === 'starting') return;
     const engine = this.engine(); const id = this.targetId ?? this.selectedId(); const synth = engine?.getChannel(id);
     if (!engine || !synth) return;
     const settings = engine.getSequenceSettings(id, this.currentSource().pitchUserId);
@@ -425,10 +462,29 @@ export class TriggerRecorder {
   private endPitchControl(): void {
     const id = this.pitchHeldId, synth = this.pitchHeldSynth;
     ++this.pitchRequest;
-    this.pitchHeldId = null; this.pitchHeldSynth = null;
-    this.pitchTrack.classList.remove('pitch-held');
+    this.pitchHeldId = null; this.pitchHeldSynth = null; this.pitchLatched = false;
+    this.pitchTrack.classList.remove('pitch-held', 'pitch-latched');
     if (id && synth && this.engine()?.getChannel(id) === synth) this.engine()!.controllerPitchOff(id);
     this.syncSeparateButton();
+  }
+
+  /** A normal Pitch release; Pitch Hold keeps the controller Pitch, and while recording its punch, running. */
+  private releasePitchInput(): void {
+    if (this.pitchHold && this.pitchHeldId) {
+      this.advanceLaps(); this.pitchLatched = true;
+      this.pitchTrack.classList.add('pitch-latched'); this.syncSeparateButton();
+      return;
+    }
+    this.finishPitchControl();
+  }
+
+  private finishPitchControl(): void { this.advanceLaps(); this.closePitchPunch(); this.endPitchControl(); }
+
+  /** A Hold belongs to the Timbre it was played on; selecting another Timbre releases it. */
+  releaseHoldsExcept(id: string): void {
+    const keep = this.targetId ?? id;
+    if (this.gateLatched && this.heldId !== keep) this.finishGate();
+    if (this.pitchLatched && this.pitchHeldId !== keep) this.finishPitchControl();
   }
   isBusy(): boolean { return this.mode !== 'idle'; }
   lockedId(): string | null { return this.targetId; }
@@ -504,7 +560,9 @@ export class TriggerRecorder {
       this.status.textContent = barsMode ? `Record length: ${P['song-bars'].min}–${maxSongBars(engine?.getSongSettings().bpm ?? P['song-bpm'].defaultValue)} whole bars` : `Record length: ${range.min}–${range.max} whole seconds`; return;
     }
     if (!engine || !synth) { this.status.textContent = `Timbre ${id} is unavailable. Select a loaded Timbre.`; return; }
+    // A Hold made before the recording ends here, like a held Gate.
     this.recordingLane = this.userRecordingLane; this.endGate(0);
+    if (this.pitchLatched) this.endPitchControl();
     this.loopRecording = true;
     this.gateWasEmpty = !oldGate; this.pitchWasEmpty = !oldPitch;
     this.writeMode = this.writeModeInput.value as WriteMode;
@@ -601,15 +659,16 @@ export class TriggerRecorder {
   }
 
   releaseScreenTrigger(): void {
+    // A lost pointer is released; a Hold is not tied to a pointer and stays.
     this.endPitchGesture(true);
-    this.endPitchControl();
-    if (this.heldOwner && this.heldOwner !== 'document-space') this.release(this.heldOwner);
+    if (!this.pitchLatched) this.endPitchControl();
+    if (this.heldOwner && this.heldOwner !== 'document-space' && !this.gateLatched) this.release(this.heldOwner, false);
   }
 
   releaseSource(id: string): void {
     if (this.pitchGesture?.id === id) this.endPitchGesture(true);
     if (this.pitchHeldId === id) this.endPitchControl();
-    if (this.heldId === id && this.heldOwner) this.release(this.heldOwner);
+    if (this.heldId === id && this.heldOwner) this.finishGate();
   }
 
   private loadMotionOptions(): void {
@@ -718,10 +777,12 @@ export class TriggerRecorder {
       this.updateGatePosition();
       this.changePitch(gesture.startValue, false);
     }
-    this.closePitchPunch();
+    // A canceled gesture is released even under Hold.
+    const latch = !canceled && this.pitchHold && this.pitchHeldId !== null;
+    if (!latch) this.closePitchPunch();
     this.pitchGesture = null;
-    if (gesture.ownsGate) this.release(gesture.owner);
-    this.endPitchControl();
+    if (gesture.ownsGate) this.release(gesture.owner, !canceled);
+    if (latch) this.releasePitchInput(); else this.endPitchControl();
     if (this.pitchTrack.hasPointerCapture(gesture.pointerId)) this.pitchTrack.releasePointerCapture(gesture.pointerId);
   }
 
@@ -733,7 +794,8 @@ export class TriggerRecorder {
       this.press(`separate:${event.pointerId}`);
     });
     const releaseSeparate = (event: PointerEvent) => {
-      this.release(`separate:${event.pointerId}`);
+      // Only a completed press is held; a canceled pointer is released.
+      this.release(`separate:${event.pointerId}`, event.type === 'pointerup');
       if (this.separateGate.hasPointerCapture(event.pointerId)) this.separateGate.releasePointerCapture(event.pointerId);
     };
     this.separateGate.addEventListener('pointerup', releaseSeparate);
@@ -745,7 +807,7 @@ export class TriggerRecorder {
     this.separateGate.addEventListener('keyup', event => {
       if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); this.release('separate-keyboard'); }
     });
-    this.separateGate.addEventListener('blur', () => this.release('separate-keyboard'));
+    this.separateGate.addEventListener('blur', () => this.release('separate-keyboard', false));
     this.pitchTrack.addEventListener('pointerdown', event => {
       if (event.button !== 0 || this.pitchInput.disabled || this.pitchGesture) return;
       const id = this.targetId ?? this.selectedId();
@@ -787,10 +849,11 @@ export class TriggerRecorder {
     this.pitchTrack.addEventListener('lostpointercapture', event => { if (this.pitchGesture?.pointerId === event.pointerId) this.endPitchGesture(true); });
     this.gate.addEventListener('keydown', event => { if (this.sliderGateAllowed() && (event.key === ' ' || event.key === 'Enter') && !event.repeat) { event.preventDefault(); this.press('button-keyboard'); } });
     this.gate.addEventListener('keyup', event => { if (event.key === ' ' || event.key === 'Enter') { event.preventDefault(); this.release('button-keyboard'); } });
-    this.gate.addEventListener('blur', () => this.release('button-keyboard'));
+    this.gate.addEventListener('blur', () => this.release('button-keyboard', false));
     document.addEventListener('keydown', event => {
       if (event.code !== 'Space' || event.repeat || event.isComposing || event.ctrlKey || event.altKey || event.metaKey || this.spaceBlocked(event.target)) return;
-      if (this.press('document-space')) event.preventDefault();
+      // A held Gate takes Space as a legato press, so the page does not scroll.
+      if (this.press('document-space') || this.gateLatched) event.preventDefault();
     });
     document.addEventListener('keyup', event => {
       if (event.code === 'Space' && !event.isComposing && this.heldOwner === 'document-space') { event.preventDefault(); this.release('document-space'); }
@@ -821,12 +884,18 @@ export class TriggerRecorder {
       this.separateGate.setAttribute('aria-pressed', String(this.separate));
       if (recording && this.includes('gate')) this.renderGateTimeline(this.draftGateRecording());
     };
-    if (engine.context.state === 'running') start(); else void this.ensureRunning().then(start).catch(() => this.release(owner));
+    if (engine.context.state === 'running') start(); else void this.ensureRunning().then(start).catch(() => { if (this.heldOwner === owner) this.finishGate(); });
     return true;
   }
 
-  private release(owner: string): void {
-    if (this.heldOwner !== owner) return;
+  /** Gate Hold keeps a released press sounding; `latch` is false for a canceled press. A held Gate ends only by finishGate. */
+  private release(owner: string, latch = true): void {
+    if (this.heldOwner !== owner || this.gateLatched) return;
+    if (latch && this.gateHold) { this.gateLatched = true; this.syncSeparateButton(); return; }
+    this.finishGate();
+  }
+
+  private finishGate(): void {
     if (this.mode === 'recording') this.advanceLaps();
     this.endGate(this.recordPosition());
     if (this.mode === 'recording' && this.includes('gate')) this.renderGateTimeline(this.draftGateRecording());
@@ -835,7 +904,7 @@ export class TriggerRecorder {
   private endGate(offSec: number): void {
     if (this.heldActive && this.heldId && this.engine()?.getChannel(this.heldId) === this.heldSynth) this.engine()!.controllerGateOff(this.heldId);
     if (this.includes('gate') && this.heldOnSec !== null && offSec > this.heldOnSec) this.gateDraft.push({ onSec: this.heldOnSec, offSec });
-    this.heldOwner = null; this.heldId = null; this.heldSynth = null; this.heldActive = false; this.heldOnSec = null;
+    this.heldOwner = null; this.heldId = null; this.heldSynth = null; this.heldActive = false; this.heldOnSec = null; this.gateLatched = false;
     this.gate.setAttribute('aria-pressed', 'false');
     this.separateGate.setAttribute('aria-pressed', 'false');
     this.syncSeparateButton();
@@ -1307,6 +1376,7 @@ export class TriggerRecorder {
     this.separateGate.disabled = !available || this.mode === 'starting' || !this.separate || !this.controllerGateAllowed();
     this.separateGate.setAttribute('aria-pressed', String(this.separate && this.heldOwner !== null));
     this.syncSeparateButton(available);
+    this.syncHoldButtons(available);
     this.recordMode.disabled = this.mode !== 'idle';
     this.writeModeInput.disabled = this.mode !== 'idle';
     this.lengthMode.disabled = this.mode !== 'idle';

@@ -23,7 +23,7 @@ async function edit(page, selector, value) {
 test('FILES reports the current timbre and session formats', async ({ page }) => {
   await page.goto('/');
   await openFiles(page);
-  await expect(page.locator('#files-dialog')).toContainText('New files use timbre-v20 / session-v23');
+  await expect(page.locator('#files-dialog')).toContainText('New files use timbre-v21 / session-v23');
 });
 
 test('Earlier formats and malformed session are rejected without changing settings or Auto', async ({ page }) => {

@@ -95,7 +95,7 @@ class ChannelStrip {
     equalPower(this.mix.balance).forEach((gain, i) => smoothAudioParam(this.sends[i]!.gain, gain, now, PARAM_SMOOTH_SEC));
   }
   timbre(): TimbreDocument {
-    return { formatVersion: 'KOROGI-Lab/timbre-v20', editorLayout: structuredClone(this.editorLayout), name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(),
+    return { formatVersion: 'KOROGI-Lab/timbre-v21', editorLayout: structuredClone(this.editorLayout), name: this.name, settings: this.synth.getSettings(), detuneRangeCent: this.synth.getDetuneRangeCent(), detuneNormalized: this.synth.getDetuneNormalized(),
       gatePatterns: structuredClone(this.gatePatterns), pitchPatterns: structuredClone(this.pitchPatterns), patternBars: [...this.patternBars], sequence: structuredClone(this.sequence) };
   }
   fadeOut(): void {

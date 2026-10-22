@@ -1,4 +1,4 @@
-import type { ChannelSettings, EffectSlotSettings, MultiOscillatorSettings } from './types';
+import type { ChannelSettings, EffectSlotSettings, LfsrNoiseSettings, MultiOscillatorSettings } from './types';
 import { spreadPartials } from './dsp/multiOscillator';
 import { PARAMETER_RANGES as P, parameterValueBounds } from '../config/parameterRanges';
 
@@ -14,6 +14,8 @@ export const LIMITS = {
   multiSpreadCent: { min: P['osc-multi-spread'].min, max: P['osc-multi-spread'].max },
   multiRatio: { min: P['osc-multi-ratio'].min, max: P['osc-multi-ratio'].max },
   multiAmplitude: { min: P['osc-multi-amplitude'].min, max: P['osc-multi-amplitude'].max },
+  lfsrClockHz: parameterValueBounds(P['osc-lfsr-clock']),
+  lfsrBits: { min: P['osc-lfsr-bits'].min, max: P['osc-lfsr-bits'].max },
   pitchLevel: { min: P['penv-start'].min / 100, max: P['penv-start'].max / 100 },
   pitchTimeSec: { min: P['penv-attack-time'].min / 1000, max: P['penv-attack-time'].max / 1000 },
   pitchScale: { min: P['penv-scale'].min, max: P['penv-scale'].max },
@@ -22,6 +24,7 @@ export const LIMITS = {
   fmDepthCent: { min: P['fm-depth'].min, max: P['fm-depth'].max },
   filterHz: { min: P['filter-frequency'].min, max: P['filter-frequency'].max },
   filterQ: { min: P['filter-q'].min, max: P['filter-q'].max },
+  filterGainDb: { min: P['filter-gain'].min, max: P['filter-gain'].max },
   filter1CutoffDepthCent: { min: P['filter1-cutoff-depth'].min, max: P['filter1-cutoff-depth'].max },
   oscBalance: { min: P['osc-balance'].min / 100, max: P['osc-balance'].max / 100 },
   filter2FenvDepth: { min: P['fenv-filter2-depth'].min / 100, max: P['fenv-filter2-depth'].max / 100 },
@@ -72,18 +75,24 @@ export function defaultMultiSettings(): MultiOscillatorSettings {
   return { definition: 'spread', spread, partials: spreadPartials(spread.count, spread.spreadCent) };
 }
 
+export function defaultLfsrSettings(): LfsrNoiseSettings {
+  return { clockHz: P['osc-lfsr-clock'].defaultValue, bits: P['osc-lfsr-bits'].defaultValue };
+}
+
 export const DEFAULT_CHANNEL_SETTINGS: ChannelSettings = {
   blocksEnabled: { osc1: true, osc2: true, penv: true, mod: false, filter1: false, filter2: false, aenv: true, aenv2: true, fenv: false },
   phaseMode: 'sync',
   osc1: { sourceType: 'sine', baseFrequencyHz: P['osc1-frequency'].defaultValue, dutyRatio: P['osc1-duty'].defaultValue / 100,
-    voiceMode: 'single', multi: defaultMultiSettings() },
+    voiceMode: 'single', multi: defaultMultiSettings(), lfsr: defaultLfsrSettings() },
   osc2: { sourceType: 'sine', baseFrequencyHz: P['osc2-frequency'].defaultValue, dutyRatio: P['osc2-duty'].defaultValue / 100,
-    voiceMode: 'single', multi: defaultMultiSettings() },
+    voiceMode: 'single', multi: defaultMultiSettings(), lfsr: defaultLfsrSettings() },
   pitchEnvelope: { mode: 'gate', curve: 'linear', start: 0, attack: 0, sustain: 0, release: 0,
     attackSec: 0, decaySec: .03, releaseSec: .03, scale: 1, releaseTiming: 'time' },
   mod: { mode: 'am', amDepth: P['am-depth'].defaultValue / 100, amOffset: P['am-offset'].defaultValue, fmDepthCent: P['fm-depth'].defaultValue },
-  filter1: { type: 'lowpass', order: 2, frequencyHz: P['filter-frequency'].defaultValue, q: P['filter-q'].defaultValue },
-  filter2: { type: 'lowpass', order: 2, frequencyHz: P['filter-frequency'].defaultValue, q: P['filter-q'].defaultValue },
+  filter1: { type: 'lowpass', order: 2, frequencyHz: P['filter-frequency'].defaultValue, q: P['filter-q'].defaultValue, gainDb: 0 },
+  filter2: { type: 'lowpass', order: 2, frequencyHz: P['filter-frequency'].defaultValue, q: P['filter-q'].defaultValue, gainDb: P['filter-gain'].defaultValue },
+  filter2Stage2: { type: 'off', order: 2, frequencyHz: P['filter-frequency'].defaultValue, q: P['filter-q'].defaultValue, gainDb: P['filter-gain'].defaultValue },
+  filter2FenvTarget: 'stage1',
   filter2Route: 'mod',
   filter1CutoffDepthCent: P['filter1-cutoff-depth'].defaultValue,
   oscBalance: P['osc-balance'].defaultValue / 100,

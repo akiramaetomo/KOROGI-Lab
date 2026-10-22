@@ -38,6 +38,10 @@ export const PARAMETER_RANGES = {
   'osc-multi-spread': { min: 0, max: 1_200, defaultValue: 25, step: .1, scale: 'log1p', fine: 'none', axis: horizontal, unit: 'cent' },
   // Table rows: frequency ratio to Base (shown and entered as Hz) and linear amplitude per oscillator.
   'osc-multi-ratio': { min: 1 / 64, max: 64, defaultValue: 1, step: .000001, scale: log, fine: 'none', axis: horizontal, unit: '×' },
+  // LFSR Noise: amplitude update clock (ZOH). Runtime Coarse max and DSP bound are the AudioContext sample rate.
+  'osc-lfsr-clock': { min: 100, max: 48_000, fineMax: 192_000, defaultValue: 48_000, step: 1, scale: log, fine: 'ratio-10-percent', axis: horizontal, unit: 'Hz' },
+  // Output resolution; each value consumes this many 31-bit LFSR clocks. Peak stays +/-1, RMS is not normalized.
+  'osc-lfsr-bits': { min: 1, max: 16, defaultValue: 1, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'bit', integer: true },
   'osc-multi-amplitude': { min: 0, max: 1, defaultValue: 1, step: .001, scale: linear, fine: 'none', axis: horizontal, unit: '' },
   'penv-start': { min: -100, max: 100, defaultValue: 0, step: .1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
   'penv-attack-level': { min: -100, max: 100, defaultValue: 0, step: .1, scale: linear, fine: 'none', axis: horizontal, unit: '%' },
@@ -55,8 +59,10 @@ export const PARAMETER_RANGES = {
   'fm-depth': { min: 0, max: 4_800, defaultValue: 100, step: 1, scale: linear, fine: 'span-1-percent', axis: horizontal, unit: 'cent' },
   // Both filter frequencies use the same 1 Hz to 20 kHz band; max also depends on device Nyquist.
   'filter-frequency': { min: 1, max: 20_000, defaultValue: 1_000, step: .1, scale: log, fine: 'cent-100', axis: horizontal, unit: 'Hz' },
-  // Filter Q controls resonance; high values can create pronounced peaks.
+  // Linear Q for every type (ADR 0017): 0.707 is Butterworth for LPF/HPF, 0.5 critically damped; for BPF/Peak it sets the width.
   'filter-q': { min: .1, max: 30, defaultValue: .707, step: .01, scale: linear, fine: 'none', axis: horizontal, unit: '' },
+  // FILTER2 Shelf/Peak gain (both stages); a 4th-order stage applies half to each Biquad.
+  'filter-gain': { min: -24, max: 24, defaultValue: 0, step: .1, scale: linear, fine: 'none', axis: horizontal, unit: 'dB' },
   // Filter2 signal shifts Filter1 cutoff by this many cents at a unit signal.
   'filter1-cutoff-depth': { min: 0, max: 4_800, defaultValue: 1_200, step: 1, scale: linear, fine: 'none', axis: horizontal, unit: 'cent' },
   // AEnv IN/OUT routes: -100 keeps only the OSC1 path, 0 keeps both at unity, +100 keeps only the OSC2 path (linear gain per side).
@@ -140,7 +146,7 @@ export function parameterValueBounds(range: ParameterRange): { min: number; max:
 }
 
 export function parameterKeyForInput(id: string): ParameterKey | null {
-  id = id.replace(/^far-(?=fx[23]-)/, '').replace(/^osc[12]-multi-/, 'osc-multi-').replace(/^aenv2-(?=attack$|decay$|sustain$|release$)/, '');
+  id = id.replace(/^far-(?=fx[23]-)/, '').replace(/^filter2s2-/, 'filter-').replace(/^osc[12]-(multi|lfsr)-/, 'osc-$1-').replace(/^aenv2-(?=attack$|decay$|sustain$|release$)/, '');
   if (id === 'filter1-cutoff-depth') return id;
   const key = id.replace(/^fx[123]-/, 'fx-').replace(/^filter[12]-/, 'filter-')
     .replace(/^(near|far)-gain$/, 'bus-gain').replace(/^(level|balance|pan)-[1-4]$/, '$1');

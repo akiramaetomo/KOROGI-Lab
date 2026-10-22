@@ -31,7 +31,7 @@ test('Graph opens settings without focusing an input or select, including SEQUEN
   await openFiles(page); await expect(page.locator('[data-panel="triggering"]')).toHaveClass(/active/);
   const value = await save(page);
   await expect(page.locator('#files-dialog')).toBeHidden(); await expect(page.locator('#active-path')).toHaveText('Viewing: SEQUENCE');
-  expect(value.formatVersion).toBe('KOROGI-Lab/session-v23'); expect(value.channels[0].timbre.formatVersion).toBe('KOROGI-Lab/timbre-v20');
+  expect(value.formatVersion).toBe('KOROGI-Lab/session-v23'); expect(value.channels[0].timbre.formatVersion).toBe('KOROGI-Lab/timbre-v21');
   expect(value.channels[0].timbre.settings).not.toHaveProperty('channelGainDb'); expect(value.channels[0].timbre.settings.blocksEnabled).not.toHaveProperty('channelGain');
   expect(errors).toEqual([]);
 });

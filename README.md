@@ -1,8 +1,8 @@
-# KOROGI-Lab 0.5.0-rc.1
+# KOROGI-Lab 0.6.0-rc.1
 
 KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するWeb Audio研究用アプリです。8つの独立したTimbreを、共通のNear／Far空間処理へ送って重ねられます。
 
-現在の公開候補は **0.5.0-rc.1** です。実機操作・聴感の受入前のため、安定版とは区別します。[GitHub PagesでKOROGI-Labを開く](https://akiramaetomo.github.io/KOROGI-Lab/)。
+現在の公開候補は **0.6.0-rc.1** です。実機操作・聴感の受入前のため、安定版とは区別します。[GitHub PagesでKOROGI-Labを開く](https://akiramaetomo.github.io/KOROGI-Lab/)。
 
 ## 特徴
 - 秋の虫の鳴き声に寄せた目的指向のシンセサイザ
@@ -23,6 +23,9 @@ KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するW
 
 - 8 Timbres、各2 OSC、PEnv、MOD、2 Filter、AEnv、BURST、FX1
 - OSC1／2のSingle／Multi（同じ波形を1～16基加算。Spread（Count・±cent）またはHz・振幅の表で定義し、表の貼付・コピーが可能）
+- OSCのSource TypeにLFSR Noise（31 bit LFSR、Noise Clock 100 Hz～sampleRate、Bits 1～16。Gate Onごとに乱数位置から読み出す）
+- FILTER2を直列2段（Stage1→Stage2、Stage2は既定Off）に。TypeはLPF／BPF／HPF／LShelf／HShelf／Peak、Orderは1st／2nd／4th、Shelf・PeakのGain、FEnvの掛け先（Stage1／Stage2／Both）
+- FILTER1／2のQを全Typeで線形に統一（LPF／HPFは0.707で山なし、共振の山をdBで表示）
 - OSC2系（OSC2→FILTER2）の行き先をMOD／F1 CUTOFF／AEnv IN／AEnv OUTから選択。AEnv IN／OUTでは2系統の音色を1つのTimbre内で重ね、AEnv OUTでは独立したAEnv2を使う。1系／2系のBalanceと、FEnvのFilter2への掛かり具合（FEnv Depth）
 - TimbreごとのL/R Pan、Level、Mute、Near／Far送信
 - 共通Near／Farバス、各FX2／FX3、Bus Gain、Output Balance、Master、Limiter
@@ -32,10 +35,10 @@ KOROGI-Labは、虫音・環境音の音響モデルを設計して検証するW
 - SONG欄のTimbre×Pattern格子（Chainで鳴らすPatternの選択、SEQUENCEへの移動、鳴っているPatternの表示）
 - Gate／PitchレーンのMute（出力だけを止め、Loopの時計と位置は進め続ける）、Patternのコピー
 - Bars方式のGateクオンタイズ（1/4～1/32、ONのみ／ON-OFF、Gap、Undo／Redo）
-- SEQUENCEのSeparate（独立GateボタンとPitch専用スライダ）。録音中もPitch設定とSeparateを変更可能
+- SEQUENCEのSeparate（独立GateボタンとPitch専用スライダ）。録音中もPitch設定とSeparateを変更可能。離した後もGate／Pitchを保持するGate Hold／Pitch Hold
 - FILESダイアログとヘッダーのステータス行
 - エディットカードを1列に最大3枚まで縦積み、OFFのカードはグレー表示
-- Timbre保存 `timbre-v20`、Session保存 `session-v23`。対応する旧形式は読込時に正規化（音は変わりません）。新形式は0.4.0-rc.1以前では読込めません
+- Timbre保存 `timbre-v21`、Session保存 `session-v23`。対応する旧形式は読込時に正規化（LPF／HPFのQも換算し、音は変わりません）。新形式は0.5.0-rc.1以前では読込めません
 - PC、タブレット、スマートフォン向けの固定viewportと領域別スクロール。iPad Air縦向き（820×1180）を下限とし、上部の`TIMBRES`／`Map`で各領域を開閉
 
 ## ローカル実行

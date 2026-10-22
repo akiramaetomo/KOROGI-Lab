@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.6.0-rc.1 — 2026-10-23 — LFSR Noise, FILTER2 series stages and linear Q Pages candidate
+
+- OSC1 / OSC2 add an LFSR Noise source: a 31-bit LFSR with Noise Clock (100 Hz to the sample rate, held between updates) and Bits (1–16). One shared table per setting; each Gate On starts reading at a new random position.
+- FILTER2 is two series stages (Stage1 → Stage2, Stage2 Off by default). Types add Low Shelf, High Shelf and Peak with Gain (−24…+24 dB); Orders are 1st / 2nd / 4th; FEnv Target sends FEnv Depth to Stage1, Stage2 or Both.
+- Filter Q is linear for every type in FILTER1 and FILTER2 (0.707 is Butterworth for LPF / HPF), and LPF / HPF 2nd / 4th show their resonance peak in dB.
+- SEQUENCE controller adds Gate Hold and Pitch Hold, keeping Gate and Pitch after release (not saved).
+- Timbre save format moves to timbre-v21 (session-v23 unchanged); older LPF / HPF Q values are converted so files keep their sound. 0.5.0-rc.1 and earlier cannot read the new files.
+- Publish as a release candidate; known: Shelf / Peak 4th is within 0.2 dB of 2nd, and SYNC restarts still keep the previous oscillator set running for about 50 ms.
+
 ## 0.5.0-rc.1 — 2026-10-20 — OSC Multi and OSC2 audio routes Pages candidate
 
 - OSC1 / OSC2 can be Single or Multi: Multi sums 1–16 oscillators of the same waveform, defined by Spread (count, ± cent) or by a Table of Hz and amplitude with paste/copy. Partials keep their ratio to Base Frequency, so PEnv, Detune, Sequence Pitch and FM move them together.

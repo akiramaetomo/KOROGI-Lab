@@ -1,5 +1,5 @@
 import { PARAMETER_RANGES as P } from '../../config/parameterRanges';
-import type { MultiOscillatorSettings, OscillatorSettings, OscPartial } from '../types';
+import { isNoiseSource, type MultiOscillatorSettings, type OscillatorSettings, type OscPartial } from '../types';
 import { clamp } from './params';
 
 const COUNT = { min: P['osc-multi-count'].min, max: P['osc-multi-count'].max };
@@ -21,9 +21,9 @@ export function spreadPartials(count: number, spreadCent: number): OscPartial[] 
   }));
 }
 
-/** Partials that sound: Single (and white noise) is one oscillator at Base with unity gain. */
+/** Partials that sound: Single (and every noise source) is one oscillator at Base with unity gain. */
 export function resolvePartials(osc: Pick<OscillatorSettings, 'sourceType' | 'voiceMode' | 'multi'>): OscPartial[] {
-  if (osc.voiceMode !== 'multi' || osc.sourceType === 'white-noise') return SINGLE_PARTIALS.map(item => ({ ...item }));
+  if (osc.voiceMode !== 'multi' || isNoiseSource(osc.sourceType)) return SINGLE_PARTIALS.map(item => ({ ...item }));
   if (osc.multi.definition === 'spread') return spreadPartials(osc.multi.spread.count, osc.multi.spread.spreadCent);
   return osc.multi.partials.map(item => ({ ...item }));
 }

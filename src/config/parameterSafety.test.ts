@@ -64,6 +64,15 @@ describe('author-edited parameter ranges', () => {
     expect(() => validateParameterRanges(ranges, 32_000)).toThrow('osc1-frequency.fineMax: exceeds Nyquist-safe');
   });
 
+  it('maps both OSC LFSR inputs to one Clock and one Bits range', () => {
+    for (const oscillator of ['osc1', 'osc2']) {
+      expect(parameterForInput(`${oscillator}-lfsr-clock`)).toBe(PARAMETER_RANGES['osc-lfsr-clock']);
+      expect(parameterForInput(`${oscillator}-lfsr-bits`)).toBe(PARAMETER_RANGES['osc-lfsr-bits']);
+    }
+    expect(LIMITS.lfsrClockHz).toEqual({ min: 100, max: 192_000 });
+    expect(LIMITS.lfsrBits).toEqual({ min: 1, max: 16 });
+  });
+
   it('shares the independent OSC1 value bounds between UI, DSP and imported timbres', () => {
     expect(parameterForInput('osc1-frequency')).toBe(PARAMETER_RANGES['osc1-frequency']);
     expect(LIMITS.osc1Hz).toEqual({ min: 1, max: 20_000 });

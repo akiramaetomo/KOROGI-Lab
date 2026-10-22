@@ -1,5 +1,14 @@
+import { LfsrNoiseBank } from './LfsrNoiseBank';
+
 export class WhiteNoiseFactory {
+  private lfsr: LfsrNoiseBank | null = null;
+
   constructor(private readonly context: AudioContext, private readonly durationSec = 4) {}
+
+  /** LFSR tables shared by every source made from this factory (one factory per AudioEngine). */
+  get lfsrBank(): LfsrNoiseBank {
+    return this.lfsr ??= new LfsrNoiseBank(this.context);
+  }
 
   createLoopingSource(): AudioBufferSourceNode {
     // A fresh buffer per source prevents OSC1/OSC2 and future channels from

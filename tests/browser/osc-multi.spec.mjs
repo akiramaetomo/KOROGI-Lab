@@ -134,7 +134,7 @@ test('OSC card switches Single/Multi, pastes and edits a Table, and saves and re
   await expect(page.locator('#osc1-multi-rows .multi-row')).toHaveCount(5);
 
   const timbre = await saveTimbre(page);
-  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v20');
+  expect(timbre.formatVersion).toBe('KOROGI-Lab/timbre-v21');
   expect(timbre.settings.osc1.voiceMode).toBe('multi');
   expect(timbre.settings.osc1.multi.definition).toBe('table');
   expect(timbre.settings.osc1.multi.partials.map(item => item.ratio * 440)).toEqual([220, 308, 367, 418, 440].map(hz => expect.closeTo(hz, 6)));

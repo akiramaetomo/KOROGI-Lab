@@ -871,7 +871,7 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .sequence-pitch-controls .numeric-slider-name { display: none; }
 .sequence-pitch-controls .segmented-choice button { min-width: 0; padding-inline: .3rem; }
 .pitch-performance { display: grid; grid-template-columns: 80px minmax(220px, 1fr) auto auto auto; gap: .15rem .4rem; align-items: center; }
-.pitch-performance > label { grid-column: 2 / 4; grid-row: 1; display: flex; justify-content: space-between; font-size: .8rem; }
+.pitch-performance > label { grid-column: 2 / 3; grid-row: 1; display: flex; justify-content: space-between; font-size: .8rem; }
 .pitch-performance .separate-gate { grid-column: 1; grid-row: 2; justify-self: center; width: 56px; height: 56px; border-radius: 50%; padding: 0; touch-action: none; font-size: .8rem; font-weight: 700; }
 .pitch-performance .separate-gate:disabled { opacity: .35; }
 .pitch-performance #sequence-pitch-track { grid-column: 2 / 5; grid-row: 2; }
@@ -879,6 +879,9 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .pitch-performance #sequence-separate[aria-pressed="true"] { border: 2px solid var(--color-sequence-link-pressed-border); background: var(--color-sequence-link-pressed-background); color: var(--color-sequence-link-pressed-text); }
 .pitch-performance #sequence-pitch-center { grid-column: 5; grid-row: 2; }
 .pitch-performance #sequence-motion { grid-column: 4; grid-row: 1; }
+.pitch-performance .sequence-hold { grid-column: 3; grid-row: 1; display: flex; gap: .25rem; }
+.sequence-hold button { min-height: 44px; padding-inline: .3rem; font-size: .8rem; white-space: nowrap; }
+.sequence-hold button[aria-pressed="true"] { border: 2px solid var(--color-sequence-link-pressed-border); background: var(--color-sequence-link-pressed-background); color: var(--color-sequence-link-pressed-text); }
 .pitch-performance .sequence-motion-options { grid-column: 5; grid-row: 1; }
 .pitch-performance output { color: var(--color-pitch-performance-text); font-variant-numeric: tabular-nums; }
 .pitch-slider-wrap { position: relative; min-width: 220px; height: 56px; touch-action: none; cursor: pointer; }
@@ -898,6 +901,8 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .pitch-slider-wrap.pitch-only #record-gate { pointer-events: none; }
 .pitch-slider-wrap.pitch-only #record-gate::before { content: 'Pitch'; width: 34px; height: 34px; margin: 9px; border-color: var(--color-pitch-thumb-idle-border); background: var(--color-pitch-thumb-idle-background); color: var(--color-pitch-thumb-idle-text); box-shadow: none; }
 .pitch-slider-wrap.pitch-only.pitch-held #record-gate::before { border-color: var(--color-pitch-thumb-held-border); background: var(--color-pitch-thumb-held-background); color: var(--color-pitch-thumb-held-text); box-shadow: inset 0 2px 4px var(--color-pitch-thumb-held-shadow); }
+/* Pitch Hold on the combined thumb: the amber Pitch colour rings a thumb whose Gate may be released. */
+.pitch-slider-wrap.pitch-latched:not(.pitch-only) #record-gate::before { outline: 3px solid var(--color-pitch-thumb-held-border); outline-offset: 1px; }
 .pitch-slider-wrap.pitch-only.disabled #record-gate::before { border-color: var(--color-pitch-thumb-disabled-border); background: var(--color-pitch-thumb-disabled-background); color: var(--color-pitch-thumb-disabled-text); box-shadow: none; }
 .pitch-performance .separate-gate:not(:disabled) { border-color: var(--color-transport-header-trigger-border); background: var(--color-transport-header-trigger-background); color: var(--color-transport-header-trigger-text); }
 .pitch-performance .separate-gate:is(:active, [aria-pressed="true"]):not(:disabled) { border-color: var(--color-transport-header-trigger-active-disabled-border); background: var(--color-transport-header-trigger-active-disabled-background); color: var(--color-transport-header-trigger-active-disabled-text); }
@@ -1132,6 +1137,7 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 /* OSC Single/Multi: one OSC card holds the Multi definition; only the Table rows scroll. */
 .osc-voice-mode, .multi-editor .choice-field { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: center; gap: .55rem; margin-top: .5rem; }
 .multi-editor[hidden], .multi-spread[hidden], .multi-table[hidden] { display: none !important; }
+.lfsr-controls[hidden], .lfsr-readout[hidden] { display: none !important; }
 .multi-editor { display: grid; gap: .5rem; }
 .multi-spread { display: grid; gap: .55rem; }
 .multi-spread .multi-to-table { justify-self: start; }
@@ -1422,6 +1428,21 @@ fieldset:focus-within { border-color: var(--color-fieldset-focus-within-border);
 .segmented-choice button:focus-visible { outline: 2px solid var(--color-segmented-choice-focus-visible-focus); outline-offset: 1px; }
 .filter-route-field, .cutoff-depth-control { width: min(100%, 270px); }
 .filter-control-grid > .choice-field { min-width: 0; }
+/* FILTER2 is one block of two series stages; Type spans the row and wraps its six or seven choices. */
+.filter2-stage { display: grid; gap: .3rem; }
+.filter2-stage + .filter2-stage { margin-top: .45rem; padding-top: .4rem; border-top: 1px solid var(--color-panel-heading-border); }
+.filter-path-heading { font-size: max(.8rem, 10.4px); font-weight: 600; }
+.filter2-stage-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .3rem .5rem; align-items: start; }
+.filter2-stage-grid > label { grid-template-columns: minmax(0, 1fr); align-content: start; }
+.filter2-stage-grid > .choice-field { min-width: 0; }
+.filter2-stage-grid > .filter2-stage-type { grid-column: 1 / -1; grid-row: 1; }
+/* Order and Gain sit above Freq and Q, as in FILTER1 (markup order: Type, Order, Freq, Q, Gain). */
+.filter2-stage-grid > :nth-child(2) { grid-column: 1; grid-row: 2; }
+.filter2-stage-grid > :nth-child(5) { grid-column: 2; grid-row: 2; }
+.filter2-stage-grid > :nth-child(3) { grid-column: 1; grid-row: 3; }
+.filter2-stage-grid > :nth-child(4) { grid-column: 2; grid-row: 3; }
+.filter2-stage-type .segmented-choice { grid-template-columns: repeat(auto-fit, minmax(3.6rem, 1fr)); }
+.fenv-filter2-target-field { width: min(100%, 270px); }
 
 /* Only the numeric controls scroll horizontally; the card stays half width. */
 [data-panel="modulation"] .mod-layout > fieldset { min-width: 0; overflow-wrap: anywhere; }

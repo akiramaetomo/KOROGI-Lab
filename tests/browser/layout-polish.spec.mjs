@@ -464,7 +464,7 @@ test('TIMBRE nodes use compact equal geometry and distinguish enabled from editi
   expect(await page.locator('#flow-filter1').evaluate(node => getComputedStyle(node).boxShadow)).toContain('rgb(176, 210, 223)');
 });
 
-test('FILTER Type and Order sit above Frequency and Q at the standard width', async ({ page }, testInfo) => {
+test('FILTER Type and Order sit above Frequency and Q at the standard width (FILTER2: Type row, then Order and Gain)', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 1024, height: 768 });
   await start(page);
   await expect(page.locator('#filter1-type')).toBeEnabled();
@@ -475,11 +475,21 @@ test('FILTER Type and Order sit above Frequency and Q at the standard width', as
     const order = await page.locator(`#filter${index}-order + .segmented-choice`).boundingBox();
     const frequency = await page.locator(`[data-numeric-control="filter${index}-frequency"]`).boundingBox();
     const q = await page.locator(`[data-numeric-control="filter${index}-q"]`).boundingBox();
-    expect(type.y).toBeCloseTo(order.y, 0);
     expect(frequency.y).toBeCloseTo(q.y, 0);
     expect(type.y + type.height).toBeLessThanOrEqual(frequency.y + 1);
-    expect(type.x).toBeLessThan(order.x);
     expect(frequency.x).toBeLessThan(q.x);
+    if (index === 1) {
+      expect(type.y).toBeCloseTo(order.y, 0);
+      expect(type.x).toBeLessThan(order.x);
+    } else {
+      // FILTER2's six Types take the full row; Order and Gain share the next row, above Freq and Q.
+      const orderCell = await page.locator('#filter2-order').locator('xpath=..').boundingBox();
+      const gainCell = await page.locator('[data-numeric-control="filter2-gain"]').boundingBox();
+      expect(type.y + type.height).toBeLessThanOrEqual(order.y + 1);
+      expect(orderCell.y).toBeCloseTo(gainCell.y, 0);
+      expect(orderCell.x).toBeLessThan(gainCell.x);
+      expect(order.y + order.height).toBeLessThanOrEqual(frequency.y + 1);
+    }
   }
   await page.screenshot({ path: testInfo.outputPath('filters-1024x768.png') });
 });

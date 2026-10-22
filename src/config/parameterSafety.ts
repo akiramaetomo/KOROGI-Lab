@@ -9,6 +9,8 @@ const SAFETY: Record<ParameterKey, { min: number; max: number }> = {
   'osc-multi-count': { min: 1, max: 16 }, 'osc-multi-spread': { min: 0, max: 2_400 },
   // Positive ratios keep every partial frequency positive under the shared 0.1 Hz PEnv floor.
   'osc-multi-ratio': { min: 1 / 1_024, max: 1_024 }, 'osc-multi-amplitude': { min: 0, max: 1 },
+  // One 10 s Float32 table per (clock, bits); generation is O(table frames + clock * bits / 13), never per Gate.
+  'osc-lfsr-clock': { min: 100, max: 192_000 }, 'osc-lfsr-bits': { min: 1, max: 16 },
   'penv-start': { min: -100, max: 100 }, 'penv-attack-level': { min: -100, max: 100 },
   'penv-sustain-level': { min: -100, max: 100 }, 'penv-release-level': { min: -100, max: 100 },
   'penv-attack-time': { min: 0, max: 5_000 }, 'penv-decay-time': { min: 0, max: 5_000 },
@@ -16,6 +18,8 @@ const SAFETY: Record<ParameterKey, { min: number; max: number }> = {
   'am-depth': { min: 0, max: 200 }, 'am-offset': { min: 0, max: 2 }, 'fm-depth': { min: 0, max: 4_800 },
   'filter-frequency': { min: .1, max: 20_000 }, 'filter-q': { min: .1, max: 30 },
   'filter1-cutoff-depth': { min: 0, max: 4_800 },
+  // Shelf/Peak boost up to 24 dB on noise stays finite; the master limiter bounds the level.
+  'filter-gain': { min: -24, max: 24 },
   // Balance gains stay within 0..1 per side; Filter2 FEnv depth never exceeds the FEnv Amount itself.
   'osc-balance': { min: -100, max: 100 }, 'fenv-filter2-depth': { min: -100, max: 100 },
   attack: { min: 0, max: 5_000 }, decay: { min: 0, max: 5_000 }, sustain: { min: 0, max: 1 }, release: { min: 0, max: 5_000 },
@@ -69,7 +73,7 @@ export function validateParameterRanges(ranges: Record<ParameterKey, ParameterRa
     if (value.max > SAFETY[key].max) fail(key, 'max', `above audited safety limit ${SAFETY[key].max}`);
     for (const field of ['fineMin', 'fineMax'] as const) {
       if (value[field] === undefined) continue;
-      if (key !== 'osc1-frequency' && key !== 'osc2-frequency') fail(key, field, 'separate value bounds are supported only for OSC frequency');
+      if (key !== 'osc1-frequency' && key !== 'osc2-frequency' && key !== 'osc-lfsr-clock') fail(key, field, 'separate value bounds are supported only for OSC frequency and LFSR clock');
       if (!Number.isFinite(value[field])) fail(key, field, 'must be a finite number');
       if (value.integer && !Number.isInteger(value[field])) fail(key, field, 'must be an integer for an integer control');
     }
